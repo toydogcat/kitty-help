@@ -28,32 +28,35 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-const ALLOWED_ORIGINS = [
-  "https://ai-factory-tarot.web.app",
-  "https://ai-factory-tarot.firebaseapp.com",
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "http://localhost:3000"
-];
-
-const corsOptions: cors.CorsOptions = {
-  origin: (origin, callback) => {
-    // Check if origin is allowed or if it's a non-browser request (origin is undefined)
-    if (!origin || ALLOWED_ORIGINS.indexOf(origin) !== -1 || origin.includes('ngrok-free.dev') || origin.includes('web.app')) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
-};
-
-const io = new Server(server, {
-  cors: corsOptions
+// --- Aggressive CORS Middleware ---
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, ngrok-skip-browser-warning');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  
+  // Handle Preflight (OPTIONS)
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
 });
 
-app.use(cors(corsOptions));
+const io = new Server(server, {
+  cors: {
+    origin: (origin, callback) => {
+      // Reflect origin for Socket.io too
+      callback(null, true);
+    },
+    credentials: true
+  }
+});
+
 app.use(express.json());
 app.use('/uploads', express.static(uploadsDir));
 
