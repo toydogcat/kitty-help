@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted, computed } from 'vue';
+import { ref, onUnmounted, computed } from 'vue';
 
 const hours = ref(0);
 const minutes = ref(0);

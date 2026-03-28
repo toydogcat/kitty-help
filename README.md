@@ -55,12 +55,17 @@ npm install
 
 由於後端伺服器 (Node.js) 目前跑在本地，我們需要透過 **ngrok** 來讓 Firebase 上的前端能連到你的電腦。
 
-### 1. 啟動 ngrok 隧道
-在你的伺服器電腦上執行：
-```bash
-ngrok http 3000
-```
-複製得到的 `https://xxxx.ngrok-free.app` 網址。
+### 1. 取得 ngrok 公網網址
+
+- **一般模式** (每次隨機網址):
+  ```bash
+  ngrok http 3000
+  ```
+
+- **進階：單行啟動固定網址** (如果您有 Authtoken 與固定 Domain):
+  ```bash
+  ngrok http 3000 --authtoken <你的-TOKEN> --url <你的-固定-網址>.ngrok-free.app
+  ```
 
 ### 2. 設定生產環境變數
 在根目錄建立 `.env.production`：
