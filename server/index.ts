@@ -28,14 +28,25 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
+const ALLOWED_ORIGINS = [
+  "https://ai-factory-tarot.web.app",
+  "https://ai-factory-tarot.firebaseapp.com",
+  "http://localhost:5173",
+  "http://localhost:5174"
+];
+
 const io = new Server(server, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
+    origin: ALLOWED_ORIGINS,
+    methods: ["GET", "POST"],
+    credentials: true
   }
 });
 
-app.use(cors());
+app.use(cors({
+  origin: ALLOWED_ORIGINS,
+  credentials: true
+}));
 app.use(express.json());
 app.use('/uploads', express.static(uploadsDir));
 
