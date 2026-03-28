@@ -45,6 +45,10 @@ export const apiService = {
     const response = await axios.get(`${API_BASE}/common`);
     return response.data;
   },
+  async getCommonHistory() {
+    const response = await axios.get(`${API_BASE}/common/history`);
+    return response.data;
+  },
   async updateCommonState(key: 'text' | 'image', data: { content?: string; fileUrl?: string; fileName?: string; userId?: string }) {
     const response = await axios.post(`${API_BASE}/common/update`, { key, ...data });
     return response.data;

@@ -11,6 +11,7 @@ const props = defineProps<{
 const currentUser = ref<any>(null);
 const commonText = ref<any>(null);
 const commonImage = ref<any>(null);
+const commonHistory = ref<any[]>([]);
 const inputText = ref('');
 const isUploading = ref(false);
 const isRecording = ref(false);
@@ -48,19 +49,27 @@ onMounted(async () => {
     console.error("Init error:", err);
   }
 
-  // 2. Fetch Common State
+  // 2. Fetch Common State & History
   try {
-    const state = await apiService.getCommonState();
+    const [state, history] = await Promise.all([
+      apiService.getCommonState(),
+      apiService.getCommonHistory()
+    ]);
     commonText.value = state.text;
     commonImage.value = state.image;
+    commonHistory.value = history;
   } catch (err) {
-    console.error("Fetch common state failed:", err);
+    console.error("Fetch common state/history failed:", err);
   }
 
   // 3. Socket Listeners
   socket.on('commonUpdate', (updated) => {
     if (updated.key === 'text') commonText.value = updated;
     if (updated.key === 'image') commonImage.value = updated;
+  });
+
+  socket.on('commonHistoryUpdate', (history) => {
+    commonHistory.value = history;
   });
 });
 
@@ -147,7 +156,10 @@ const copyImageToClipboard = async (url: string) => {
   const fullUrl = formatUrl(url);
   if (!fullUrl) return;
   try {
-    const response = await fetch(fullUrl);
+    // Add ngrok-skip-browser-warning to bypass interstitial page
+    const response = await fetch(fullUrl, {
+      headers: { 'ngrok-skip-browser-warning': 'any' }
+    });
     let blob = await response.blob();
     
     // Clipboard API usually only supports PNG for writing
@@ -193,7 +205,7 @@ const copyImageToClipboard = async (url: string) => {
       <p class="hint">管理員請至上方「Admin Dashboard」中的「Approved Devices」將此裝置分配給使用者（例如：Toby），即可看到個人 Board。</p>
     </div>
 
-    <!-- Phase 2: Common View (RESTORED) -->
+    <!-- Main Layout -->
     <div class="main-layout">
       <!-- Left Column: Image -->
       <div class="card shared-card image-card">
@@ -236,12 +248,27 @@ const copyImageToClipboard = async (url: string) => {
             🚀 更新內容
           </button>
         </div>
+
+        <!-- NEW: Text History Section -->
+        <div class="history-section" v-if="commonHistory.length > 0">
+          <h4>🕒 歷史紀錄 (最近 10 筆)</h4>
+          <div class="history-list">
+            <div v-for="item in commonHistory" :key="item.id" class="history-item" @click="copyToClipboard(item.content)">
+              <div class="history-content">{{ item.content }}</div>
+              <div class="history-meta">
+                <span class="history-user">{{ item.user_name || '系統' }}</span>
+                <span class="history-time">{{ new Date(item.created_at).toLocaleTimeString() }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+/* ... (existing styles) ... */
 .common-clipboard {
   max-width: 1200px;
   margin: 0 auto;
@@ -312,7 +339,7 @@ const copyImageToClipboard = async (url: string) => {
 .shared-card {
   display: flex;
   flex-direction: column;
-  height: 550px;
+  height: 650px; /* Increased height to accommodate history */
   background: var(--card-bg);
   border: 2px solid var(--border-color);
   overflow: hidden;
@@ -328,7 +355,8 @@ const copyImageToClipboard = async (url: string) => {
 }
 
 .content-box {
-  flex: 1;
+  flex: 0 0 auto; /* Don't grow, keep fixed if possible */
+  min-height: 150px;
   padding: 1rem;
   display: flex;
   flex-direction: column;
@@ -411,14 +439,14 @@ const copyImageToClipboard = async (url: string) => {
 
 textarea {
   flex: 1;
-  height: 80px;
-  padding: 1rem;
+  height: 60px;
+  padding: 0.8rem;
   padding-right: 3rem;
   border-radius: 12px;
   border: 1px solid var(--border-color);
   background: var(--card-bg);
   color: var(--text-color);
-  font-size: 1rem;
+  font-size: 0.95rem;
   resize: none;
 }
 
@@ -457,4 +485,65 @@ textarea {
 .send { background: var(--primary-color); color: white; }
 .send:disabled { opacity: 0.5; cursor: not-allowed; }
 .hidden { display: none; }
+
+/* NEW: History Styles */
+.history-section {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 1rem 1rem;
+  background: rgba(0,0,0,0.2);
+  border-top: 1px solid var(--border-color);
+}
+
+.history-section h4 {
+  margin: 0.5rem 0;
+  font-size: 0.9rem;
+  opacity: 0.7;
+}
+
+.history-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+.history-item {
+  background: rgba(255,255,255,0.05);
+  padding: 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+.history-item:hover {
+  background: rgba(255,255,255,0.1);
+  border-color: var(--primary-color);
+  transform: translateY(-2px);
+}
+
+.history-content {
+  font-size: 0.95rem;
+  margin-bottom: 0.25rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.history-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  opacity: 0.5;
+}
+
+.history-user {
+  color: var(--secondary-color);
+}
 </style>

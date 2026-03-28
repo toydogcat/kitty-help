@@ -129,6 +129,15 @@ const initDb = async () => {
       )
     `);
 
+    // 4. Common text history table (FIFO 10)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS common_text_history (
+        id SERIAL PRIMARY KEY,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        user_id UUID REFERENCES users(id) ON DELETE SET NULL
+      )
+    `);
     console.log('Database tables initialized');
   } catch (err) {
     console.error('Error initializing database:', err);
@@ -298,6 +307,21 @@ app.get('/api/common', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/common/history', async (req: Request, res: Response) => {
+  try {
+    const result = await pool.query(`
+      SELECT h.*, u.name as user_name 
+      FROM common_text_history h
+      LEFT JOIN users u ON h.user_id = u.id
+      ORDER BY h.created_at DESC 
+      LIMIT 10
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch history' });
+  }
+});
+
 app.post('/api/common/update', async (req: Request, res: Response) => {
   const { key, content, fileUrl, fileName, userId } = req.body;
   try {
@@ -305,11 +329,40 @@ app.post('/api/common/update', async (req: Request, res: Response) => {
       'UPDATE common_state SET content = $1, file_url = $2, file_name = $3, updated_by = $4, updated_at = CURRENT_TIMESTAMP WHERE key = $5',
       [content, fileUrl, fileName, userId, key]
     );
+
+    // If it's text, also add to history
+    if (key === 'text' && content) {
+      await pool.query(
+        'INSERT INTO common_text_history (content, user_id) VALUES ($1, $2)',
+        [content, userId]
+      );
+      
+      // Keep only 10 items (Clean up)
+      await pool.query(`
+        DELETE FROM common_text_history 
+        WHERE id NOT IN (
+          SELECT id FROM common_text_history 
+          ORDER BY created_at DESC 
+          LIMIT 10
+        )
+      `);
+
+      const historyResult = await pool.query(`
+        SELECT h.*, u.name as user_name 
+        FROM common_text_history h
+        LEFT JOIN users u ON h.user_id = u.id
+        ORDER BY h.created_at DESC 
+        LIMIT 10
+      `);
+      io.emit('commonHistoryUpdate', historyResult.rows);
+    }
+
     const result = await pool.query('SELECT * FROM common_state WHERE key = $1', [key]);
     const updated = result.rows[0];
     res.json(updated);
     io.emit('commonUpdate', updated);
   } catch (err) {
+    console.error('Update failed:', err);
     res.status(500).json({ error: 'Common update failed' });
   }
 });
