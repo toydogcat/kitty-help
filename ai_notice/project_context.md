@@ -31,8 +31,18 @@
 ### 核心難點與解決方案
 - **ngrok 警告頁面 (Interstitial Page)**：
   - **現象**：API 請求回傳 200 OK 但內容是 HTML（ngrok 的警告頁），導致 JSON 解析失敗或 CORS 報錯。
-  - **解決方案**：在前端 API 請求 Header 中加入 `ngrok-skip-browser-warning: "true"` (Vite / Axios 中設定 `defaults.headers.common`)。
+  - **解決方案**：
+    - 前端 **Axios**：設定 `defaults.headers.common['ngrok-skip-browser-warning'] = 'true'`。
+    - 前端 **Fetch (圖片複製)**：在 `fetch(url, { headers: { 'ngrok-skip-browser-warning': 'any' } })` 中加入標頭。
 - **CORS 跨域攔截**：
+  ... (No change) ...
+
+## 8. 共同文字歷史紀錄 (Text History)
+為了解決多人共同作業時文字被覆蓋的問題，實作了歷史追蹤功能：
+- **存儲策略**：獨立資料表 `common_text_history`，紀錄 `content`, `user_id`, `created_at`。
+- **維護邏輯**：後端採取 **FIFO (先進先出)**，每次更新 `common_state` 時寫入歷史，並主動刪除超過 10 筆的舊資料，僅保留最新 10 筆。
+- **即時廣播**：透過 `commonHistoryUpdate` Socket 事件，讓所有連結裝置的歷史清單同步更新。
+- **快速複製**：UI 實作「點擊項目即複製」，方便使用者找回被洗掉的資訊。
   - **現象**：`Access-Control-Allow-Origin` 缺失或與 `credentials` 衝突。
   - **解決方案**：後端實作「暴力 CORS Middleware」，動態反射 Request Origin，並顯式處理並結束 `OPTIONS` 預檢請求，避免 matched route 衝突。
 - **Socket.io 輪詢失敗**：
