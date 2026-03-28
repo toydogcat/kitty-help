@@ -30,6 +30,7 @@ const upload = multer({ storage: storage });
 
 // --- Aggressive CORS Middleware ---
 app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - Origin: ${req.headers.origin}`);
   const origin = req.headers.origin;
   if (origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);

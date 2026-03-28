@@ -3,6 +3,10 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const API_BASE = `${API_URL}/api`;
+
+// Add ngrok skip warning header to all axios requests
+axios.defaults.headers.common['ngrok-skip-browser-warning'] = 'true';
+
 export const socket = io(API_URL, {
   transports: ['websocket']
 });
