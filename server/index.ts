@@ -32,21 +32,29 @@ const ALLOWED_ORIGINS = [
   "https://ai-factory-tarot.web.app",
   "https://ai-factory-tarot.firebaseapp.com",
   "http://localhost:5173",
-  "http://localhost:5174"
+  "http://localhost:5174",
+  "http://localhost:3000"
 ];
 
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    // Check if origin is allowed or if it's a non-browser request (origin is undefined)
+    if (!origin || ALLOWED_ORIGINS.indexOf(origin) !== -1 || origin.includes('ngrok-free.dev') || origin.includes('web.app')) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
+};
+
 const io = new Server(server, {
-  cors: {
-    origin: ALLOWED_ORIGINS,
-    methods: ["GET", "POST"],
-    credentials: true
-  }
+  cors: corsOptions
 });
 
-app.use(cors({
-  origin: ALLOWED_ORIGINS,
-  credentials: true
-}));
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Handle preflight requests
 app.use(express.json());
 app.use('/uploads', express.static(uploadsDir));
 
