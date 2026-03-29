@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      network: host  # Enabled to avoid DNS issues during build
+    container_name: kitty-help-backend
+    network_mode: host
+    env_file: .env
+    volumes:
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: kitty-help-cloudflared
+    network_mode: host
+    command: tunnel --url http://127.0.0.1:3000
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+networks:
+  kitty-net:
+    name: kitty-net

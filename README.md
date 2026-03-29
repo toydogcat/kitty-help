@@ -15,65 +15,39 @@ Kitty-Help 是一個跨裝置的輔助溝通工具，專門為家庭或小團隊
 ## 🛠️ 技術棧
 
 -   **Frontend**: Vue 3 (Vite), TypeScript, CSS Variables (Glassmorphism).
--   **Backend**: Node.js (Express), Socket.io, Multer.
--   **Database**: PostgreSQL (Managed on **Supabase**).
--   **Hosting**: Firebase Hosting.
+-   **Backend**: Node.js (Express), Socket.io, Multer, PostgreSQL.
+-   **Containerization**: Docker, Docker Compose.
+-   **Connectivity**: Cloudflare Tunnel (`cloudflared`).
+-   **Hosting**: Firebase Hosting (Targeting: `kitty-help.web.app`).
 
 ---
 
-## ⚙️ 本地開發設定
+## 🏗️ 穩定性開發三階段
 
-### 1. 安裝環境
-在根目錄與 `/server` 目錄下分別執行：
+### 第一階段：本地開發 (Dev)
+- **環境**：根目錄執行 `npm run dev`，`/server` 目錄執行 `npm run dev`。
+- **重點**：快速迭代業務邏輯，直接連接本地或 Supabase 資料庫。
+
+### 第二階段：預行環境 (Staging)
+- **環境**：透過 `ngrok` 或 `cloudflared` 手動轉發本地 3000 埠。
+- **目標**：驗證 Firebase Hosting 上的前端能與動態後端正常通訊。
+
+### 第三階段：生產隔離測試 (Prod-Isolated)
+- **環境**：使用 **Docker Compose** 與 **Cloudflare Tunnel**。
+- **目標**：驗證「容器化 + 外部存取」的完整性。
+
+#### 1. 啟動 Docker 後端
 ```bash
-npm install
+docker compose up -d --build
 ```
 
-### 2. 資料庫設定 (Supabase)
-本專案已遷移至 Supabase。若要自行建立新資料庫：
-1.  在 Supabase 建立新專案。
-2.  前往 **SQL Editor** 並執行專案中的 `migration.sql` 腳本。
-3.  在根目錄建立 `.env` 檔案，填入你的 Supabase 連線資訊：
-    ```bash
-    DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-ID].supabase.co:6543/postgres
-    ```
-
-### 3. 啟動服務
--   **啟動後端** (Port 3000):
-    ```bash
-    cd server
-    npm run dev
-    ```
--   **啟動前端** (Port 5173):
-    ```bash
-    npm run dev
-    ```
-
----
-
-## 🚀 部署指南 (Firebase Hosting)
-
-由於後端伺服器 (Node.js) 目前跑在本地，我們需要透過 **ngrok** 來讓 Firebase 上的前端能連到你的電腦。
-
-### 1. 取得 ngrok 公網網址
-
-- **一般模式** (每次隨機網址):
-  ```bash
-  ngrok http 3000
-  ```
-
-- **進階：單行啟動固定網址** (如果您有 Authtoken 與固定 Domain):
-  ```bash
-  ngrok http 3000 --authtoken <你的-TOKEN> --url <你的-固定-網址>.ngrok-free.app
-  ```
-
-### 2. 設定生產環境變數
-在根目錄建立 `.env.production`：
+#### 2. 自動更新前端網址
+使用 `catch_url.py` 自動抓取隧道網址並寫入 `.env.production`：
 ```bash
-VITE_API_URL=https://您的-ngrok-網址.ngrok-free.app
+python3 catch_url.py
 ```
 
-### 3. 建置與部署
+#### 3. 部署前端至 Firebase
 ```bash
 npm run build
 firebase deploy --only hosting
@@ -81,18 +55,27 @@ firebase deploy --only hosting
 
 ---
 
-## 🔒 安全注意事項 (機密檔案)
+## 🚀 部署細節 (Firebase Hosting)
 
-以下檔案包含敏感資訊（如資料庫密碼、API Key），**切勿上傳至 Git 公開倉庫**：
--   `.env`：包含 Supabase 資料庫主密碼與連線字串。
--   `.env.production`：包含暫時性的 ngrok 存取網址。
--   `uploads/`：包含使用者上傳的私密圖檔。
--   `firebaseConfig.ts`：包含 Firebase 專案憑證。
+本專案已設定專屬 Hosting Site：`https://kitty-help.web.app`。
+執行部署時將自動鎖定該站台，不會影響同 Project 下的其他應用程式。
 
-本專案已在 `.gitignore` 中設定忽略上述檔案。
+```bash
+firebase deploy --only hosting
+```
 
 ---
 
-## 🎥 演示影片與文檔
--   [Walkthrough & Demo](file:///home/toymsi/.gemini/antigravity/brain/660367df-c9ca-4ded-accb-304c19165ac2/walkthrough.md)
--   [Initial Implementation Plan](file:///home/toymsi/.gemini/antigravity/brain/660367df-c9ca-4ded-accb-304c19165ac2/implementation_plan.md)
+## 🔒 安全注意事項
+
+以下檔案包含敏感資訊，已在 `.gitignore` 中排除：
+-   `.env`：資料庫連線字串。
+-   `.env.production`：暫時性的後端隧道網址。
+-   `uploads/`：使用者上傳的私密圖檔。
+-   `firebaseConfig.ts`：Firebase 專案金鑰。
+
+---
+
+## 🎥 參考文檔
+- [Stage 3 Walkthrough & Demo](file:///home/toymsi/.gemini/antigravity/brain/2b51a0d3-068b-4fe5-9011-6db68c6acc9d/walkthrough.md)
+- [Project Implementation Plan](file:///home/toymsi/.gemini/antigravity/brain/2b51a0d3-068b-4fe5-9011-6db68c6acc9d/implementation_plan.md)
