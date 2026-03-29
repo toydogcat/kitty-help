@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue';
 import { apiService, socket } from '../services/api';
 import SnippetExplorer from './SnippetExplorer.vue';
 import CountdownTimer from './CountdownTimer.vue';
+import Calculator from './Calculator.vue';
 
 const props = defineProps<{
   deviceId: string;
@@ -190,9 +191,14 @@ const copyImageToClipboard = async (url: string) => {
       <code class="user-id" title="Current Device ID">Device: {{ deviceId.substring(0, 8) }}</code>
     </div>
 
-    <!-- New: Countdown Timer Section -->
-    <div v-if="currentUser" class="timer-section">
-      <CountdownTimer />
+    <!-- New: Tools Section (Timer & Calculator) -->
+    <div v-if="currentUser" class="tools-grid">
+      <div class="tool-item timer-section">
+        <CountdownTimer />
+      </div>
+      <div class="tool-item calculator-section">
+        <Calculator />
+      </div>
     </div>
 
     <!-- Phase 3: Personal Snippets Section -->
@@ -297,7 +303,20 @@ const copyImageToClipboard = async (url: string) => {
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.timer-section {
+.tools-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .tools-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.timer-section, .calculator-section {
   width: 100%;
 }
 
