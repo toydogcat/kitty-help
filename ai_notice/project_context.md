@@ -8,22 +8,24 @@
 - **Phase 3.5**: 新增 **生產力倒數計時器**，整合 Web Notification 與報警音效。
 - **Phase 4**: **資料庫遷移至 Supabase (PostgreSQL)**。
 - **Phase 5**: 部署至 **Firebase Hosting**，後端採 **ngrok 隧道** 模式。
+- **Phase 6 (Stage 3 - Current)**: 全面容器化。使用 **Docker Compose** 啟動本地 PostgreSQL 與 Node.js 後端，並透過 **Cloudflare Tunnel** 提供公網存取。
 
 ## 2. 核心架構 (Current)
-- **Frontend**: Vite + Vue 3。
+- **Frontend**: Vite + Vue 3 (部署於 Firebase Hosting)。
 - **Backend Service**: 
-  - Node.js Express 伺服器處理業務邏輯、檔案上傳與 Socket.io 即時通訊。
-  - 接介 Supabase PostgreSQL。
+  - Node.js Express 伺服器 (容器化)。
+  - 處理業務邏輯、檔案上傳 (本地 Volume) 與 Socket.io 即時通訊。
 - **Database**:
-  - 資料表：`users`, `devices`, `common_state`, `snippets`。
-  - 使用者識別：透過 `kitty_device_id` (UUID) 進行裝置綁定。
-- **Real-time**: 
-  - 使用 Socket.io 確保多裝置間的「共同剪貼簿」即時同步。
+  - **Local PostgreSQL (Docker Container)**：取代了先前的 Supabase。
+  - 資料表：`users`, `devices`, `common_state`, `snippets`, `calendar_events`, `common_text_history`。
+- **Connectivity**: 
+  - 使用 **Cloudflare Tunnel** (`cloudflared`) 代替 ngrok，解決了 interstitial 警告頁面問題。
+  - 自動網址抓取：透過 `catch_url.py` 監頻 Log 並自動更新 `.env.production`。
 
 ## 3. 關鍵技術決策
-- **IPv4 相容性**：由於部分網路環境不支援 IPv6，DB 連線應優先使用 Supabase 的 **Transaction Pooler (Port 6543)**。
-- **圖片相容性修復**：瀏覽器 Clipboard API 僅支援 PNG。系統內建 **JPEG-to-PNG Canvas 轉換器**，確保所有複製行為皆能成功。
-- **檔案存取**：後端上傳採相對路徑 `/uploads/`。前端透過 `VITE_API_URL` 變數動態組合成完成網址，相容 localhost 與 ngrok 環境。
+- **One-Click Deploy**: 實作 `run.sh` 腳本整合「後端重啟 -> 網址更新 -> 前端編譯 -> Firebase 部署」的完整自動化流程。
+- **Role-Based Access (RBAC)**: 新增 `subadmin` 角色。管理員可在 Admin Dashboard 分配權限。
+- **即時性能監測**：實作端到端延遲追蹤（Pill 顯示），監控 瀏覽器 -> 隧道 -> 後端 的回應速度。
 
 ## 5. Firebase + ngrok 聯動指南 (Critical Lessons)
 當前端部署在 Firebase Hosting，而後端透過 ngrok 隧道連回本地開發機時，會遇到嚴重的連線挑戰。
