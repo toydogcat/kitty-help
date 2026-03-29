@@ -17,6 +17,17 @@ export const apiService = {
     const response = await axios.post(`${API_BASE}/devices/register`, { id, userAgent });
     return response.data;
   },
+
+  async getBulletin() {
+    const res = await axios.get(`${API_URL}/api/bulletin`);
+    return res.data;
+  },
+
+  async updateBulletin(message: string, adminEmail: string) {
+    const res = await axios.post(`${API_URL}/api/bulletin`, { message, adminEmail });
+    return res.data;
+  },
+
   async getDevices() {
     const response = await axios.get(`${API_BASE}/devices`);
     return response.data;

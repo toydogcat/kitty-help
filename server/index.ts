@@ -8,6 +8,7 @@ import fs from 'fs';
 import { pool } from './db';
 
 const app = express();
+const ADMIN_EMAIL = 'toydogcat@gmail.com';
 const server = http.createServer(app);
 
 // Ensure uploads directory exists
@@ -99,6 +100,21 @@ const initDb = async () => {
     // Add missing columns if they don't exist
     await pool.query("ALTER TABLE devices ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id)");
     await pool.query("ALTER TABLE devices ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
+
+    // Bulletin board table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS bulletin (
+        id SERIAL PRIMARY KEY,
+        message TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Ensure at least one row exists
+    const res = await pool.query('SELECT COUNT(*) FROM bulletin');
+    if (res.rows[0].count === '0') {
+      await pool.query("INSERT INTO bulletin (message) VALUES ('Welcome to kitty-help! Admin has not set any notice yet.')");
+    }
 
     // 4. Common State table
     await pool.query(`
@@ -376,6 +392,31 @@ app.post('/api/upload', upload.single('file'), (req: Request, res: Response) => 
   }
   const fileUrl = `/uploads/${req.file.filename}`;
   res.json({ url: fileUrl, name: req.file.originalname });
+});
+
+// Bulletin Board Endpoints
+app.get('/api/bulletin', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT message FROM bulletin ORDER BY updated_at DESC LIMIT 1');
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch bulletin' });
+  }
+});
+
+app.post('/api/bulletin', async (req, res) => {
+  const { message, adminEmail } = req.body;
+  if (adminEmail !== ADMIN_EMAIL) {
+    return res.status(403).json({ error: 'Permission denied' });
+  }
+
+  try {
+    await pool.query('UPDATE bulletin SET message = $1, updated_at = CURRENT_TIMESTAMP', [message]);
+    io.emit('bulletinUpdate', { message });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update bulletin' });
+  }
 });
 
 const PORT = 3000;

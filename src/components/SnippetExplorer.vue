@@ -153,6 +153,95 @@ const copyText = (text: string) => {
   navigator.clipboard.writeText(text);
   alert("Copied to clipboard!");
 };
+
+// JSON Export
+const exportToJSON = () => {
+  const dataStr = JSON.stringify(allSnippets.value, null, 2);
+  const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+  const exportFileDefaultName = `kitty_snippets_${new Date().toISOString().split('T')[0]}.json`;
+  
+  const linkElement = document.createElement('a');
+  linkElement.setAttribute('href', dataUri);
+  linkElement.setAttribute('download', exportFileDefaultName);
+  linkElement.click();
+};
+
+// JSON Import
+const fileInput = ref<HTMLInputElement | null>(null);
+const importFromJSON = async (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  if (!target.files || !target.files[0]) return;
+  
+  const file = target.files[0];
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const importedData = JSON.parse(e.target?.result as string);
+      if (!Array.isArray(importedData)) throw new Error("Invalid format");
+      
+      loading.value = true;
+      for (const item of importedData) {
+        // Try to create snippets, ignoring existing ones or duplicates for now
+        // A better way would be to check if they exist, but for simplicity we'll just push
+        await apiService.createSnippet({
+          userId: props.userId,
+          parentId: null, // Importing to root for safety
+          name: item.name + ' (Imported)',
+          content: item.content,
+          isFolder: item.is_folder
+        });
+      }
+      alert(`Successfully imported ${importedData.length} items!`);
+      await fetchData();
+    } catch (err) {
+      alert("Import failed: " + (err as Error).message);
+    } finally {
+      loading.value = false;
+      if (fileInput.value) fileInput.value.value = '';
+    }
+  };
+  reader.readAsText(file);
+};
+
+// Voice Input Logic
+const isRecordingName = ref(false);
+const isRecordingContent = ref(false);
+const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+const recognition = SpeechRecognition ? new SpeechRecognition() : null;
+
+if (recognition) {
+  recognition.lang = 'zh-TW';
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  
+  recognition.onresult = (event: any) => {
+    const transcript = event.results[0][0].transcript;
+    if (isRecordingName.value) newItemName.value += transcript;
+    if (isRecordingContent.value) newItemContent.value += transcript;
+    isRecordingName.value = false;
+    isRecordingContent.value = false;
+  };
+
+  recognition.onend = () => {
+    isRecordingName.value = false;
+    isRecordingContent.value = false;
+  };
+}
+
+const toggleVoice = (target: 'name' | 'content') => {
+  if (!recognition) {
+    alert("Speech recognition not supported in this browser.");
+    return;
+  }
+  
+  if (isRecordingName.value || isRecordingContent.value) {
+    recognition.stop();
+  } else {
+    if (target === 'name') isRecordingName.value = true;
+    else isRecordingContent.value = true;
+    recognition.start();
+  }
+};
 </script>
 
 <template>
@@ -181,7 +270,12 @@ const copyText = (text: string) => {
             <span @click="enterFolder(folder)" class="crumb" :class="{ last: index === pathStack.length - 1 }">{{ folder.name }}</span>
           </span>
         </div>
-        <button @click="openAddModal" class="add-btn">+ New</button>
+        <div class="header-actions">
+          <button @click="exportToJSON" class="secondary-btn" title="Export to JSON">📤 Export</button>
+          <button @click="fileInput?.click()" class="secondary-btn" title="Import from JSON">📥 Import</button>
+          <input type="file" ref="fileInput" @change="importFromJSON" accept=".json" class="hidden" />
+          <button @click="openAddModal" class="add-btn">+ New</button>
+        </div>
       </div>
 
       <div v-if="loading" class="mini-loader">Loading snippets...</div>
@@ -224,7 +318,11 @@ const copyText = (text: string) => {
     <Teleport to="body">
       <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
         <div class="modal card">
-          <h3>{{ isEditing ? 'Edit Item' : 'Create New Item' }}</h3>
+          <div class="modal-header">
+            <h3>{{ isEditing ? 'Edit Item' : 'Create New Item' }}</h3>
+            <button @click="showAddModal = false" class="close-modal">✕</button>
+          </div>
+          
           <div v-if="!isEditing" class="form-group">
             <label>Type:</label>
             <div class="type-toggle">
@@ -232,14 +330,37 @@ const copyText = (text: string) => {
               <button @click="newItemIsFolder = true" :class="{ active: newItemIsFolder }">📁 Folder</button>
             </div>
           </div>
+
           <div class="form-group">
             <label>Name:</label>
-            <input v-model="newItemName" placeholder="e.g., Breakfast Order" />
+            <div class="input-with-voice">
+              <input v-model="newItemName" placeholder="e.g., Breakfast Order" />
+              <button 
+                @click="toggleVoice('name')" 
+                class="voice-btn" 
+                :class="{ recording: isRecordingName }"
+                title="Voice Input"
+              >
+                🎙️
+              </button>
+            </div>
           </div>
+
           <div v-if="!newItemIsFolder" class="form-group">
             <label>Content:</label>
-            <textarea v-model="newItemContent" placeholder="Paste your text here..."></textarea>
+            <div class="input-with-voice">
+              <textarea v-model="newItemContent" placeholder="Paste your text here..."></textarea>
+              <button 
+                @click="toggleVoice('content')" 
+                class="voice-btn textarea-voice" 
+                :class="{ recording: isRecordingContent }"
+                title="Voice Input"
+              >
+                🎙️
+              </button>
+            </div>
           </div>
+
           <div class="modal-actions">
             <button @click="showAddModal = false" class="cancel-btn">Cancel</button>
             <button @click="saveItem" class="confirm-btn">{{ isEditing ? 'Update' : 'Create' }}</button>
@@ -598,6 +719,102 @@ const copyText = (text: string) => {
   border-radius: 8px;
   font-weight: bold;
   cursor: pointer;
+}
+
+.header-actions {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.secondary-btn {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.secondary-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--secondary-color);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.close-modal {
+  background: transparent;
+  border: none;
+  color: var(--secondary-color);
+  font-size: 1.2rem;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.close-modal:hover {
+  opacity: 1;
+}
+
+.input-with-voice {
+  position: relative;
+  display: flex;
+  width: 100%;
+}
+
+.input-with-voice input, 
+.input-with-voice textarea {
+  width: 100%;
+  padding-right: 3rem !important;
+}
+
+.voice-btn {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  filter: grayscale(1);
+  transition: all 0.3s;
+  z-index: 5;
+}
+
+.textarea-voice {
+  top: 1.5rem;
+  transform: none;
+}
+
+.voice-btn.recording {
+  filter: none;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: translateY(-50%) scale(1); opacity: 1; }
+  50% { transform: translateY(-50%) scale(1.3); opacity: 0.7; }
+  100% { transform: translateY(-50%) scale(1); opacity: 1; }
+}
+
+.textarea-voice.recording {
+  animation: pulse-textarea 1.5s infinite;
+}
+
+@keyframes pulse-textarea {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.7; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 .empty-hint {
