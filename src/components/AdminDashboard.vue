@@ -4,6 +4,9 @@ import { apiService, socket } from '../services/api';
 
 const props = defineProps<{
   currentDeviceId?: string;
+  userRole?: string;
+  latency?: number | null;
+  adminEmail?: string;
 }>();
 
 const pendingDevices = ref<any[]>([]);
@@ -124,17 +127,43 @@ const addUser = async () => {
   }
 };
 
+const updateUserRole = async (userId: string, role: string) => {
+  if (!props.adminEmail) {
+    alert("Only Google-authenticated Primary Admin can change roles.");
+    return;
+  }
+  try {
+    await apiService.updateUserRole(userId, role, props.adminEmail);
+    await fetchData();
+  } catch (err) {
+    alert("Failed to update role.");
+  }
+};
+
 const isCollapsed = ref(localStorage.getItem('admin_dashboard_collapsed') === 'true');
 const toggleCollapse = () => {
   isCollapsed.value = !isCollapsed.value;
   localStorage.setItem('admin_dashboard_collapsed', isCollapsed.value.toString());
 };
+
+const latencyLevel = computed(() => {
+  if (props.latency === null || props.latency === undefined) return 'unknown';
+  if (props.latency < 100) return 'excellent';
+  if (props.latency < 300) return 'good';
+  return 'poor';
+});
 </script>
 
 <template>
   <div class="admin-dashboard card" :class="{ collapsed: isCollapsed }">
     <div class="dashboard-header" @click="toggleCollapse">
-      <h2>🛡️ Admin Dashboard</h2>
+      <div class="title-with-latency">
+        <h2>🛡️ Admin Dashboard</h2>
+        <div v-if="!isCollapsed" class="latency-pill" :class="latencyLevel">
+          <span class="dot"></span>
+          {{ latency === null ? 'Checking...' : `${latency}ms` }}
+        </div>
+      </div>
       <button class="collapse-toggle">
         {{ isCollapsed ? '▼ 展開 (Expand)' : '▲ 縮起 (Collapse)' }}
       </button>
@@ -144,15 +173,46 @@ const toggleCollapse = () => {
       <div v-if="loading" class="loader">Loading data...</div>
       
       <div v-else class="dashboard-content">
+      <!-- Performance Section -->
+      <section class="admin-section perf-monitor">
+        <h3>📈 System Performance (End-to-End)</h3>
+        <div class="perf-grid">
+          <div class="perf-item">
+            <span class="label">Cloudflare Tunnel:</span>
+            <span class="value" :class="latencyLevel">{{ (latencyLevel || 'UNKNOWN').toUpperCase() }}</span>
+          </div>
+          <div class="perf-item">
+            <span class="label">Round-trip Delay:</span>
+            <span class="value">{{ latency || '--' }} ms</span>
+          </div>
+          <p class="perf-hint">Monitoring traffic from Browser -> Firebase -> Tunnel -> Backend</p>
+        </div>
+      </section>
+
       <!-- User Management Section -->
       <section class="admin-section user-mgmt">
-        <h3>👥 User Roles</h3>
+        <h3>👥 Staff Roles & Management</h3>
         <div class="user-grid">
-          <div v-for="user in users" :key="user.id" class="user-tag" :class="{ admin: user.is_admin }">
-            {{ user.name }} {{ user.is_admin ? '(Admin)' : '' }}
+          <div v-for="user in users" :key="user.id" class="user-row">
+            <span class="user-name">{{ user.name }}</span>
+            <div class="role-control">
+              <span v-if="props.userRole !== 'admin' || user.name === 'Toby'" class="badge" :class="user.role || 'user'">
+                {{ (user.role || 'user').toUpperCase() }}
+              </span>
+              <select 
+                v-else
+                :value="user.role || 'user'" 
+                @change="(e: any) => updateUserRole(user.id, e.target.value)"
+                class="role-select"
+              >
+                <option value="user">User</option>
+                <option value="subadmin">Sub-Admin</option>
+                <option value="admin">Primary Admin</option>
+              </select>
+            </div>
           </div>
         </div>
-        <div class="add-user">
+        <div v-if="props.userRole === 'admin'" class="add-user">
           <input v-model="newUserName" placeholder="New User Name..." />
           <button @click="addUser" class="text-btn">+ Add User</button>
         </div>
@@ -201,6 +261,7 @@ const toggleCollapse = () => {
                     <select 
                       :value="device.user_id || ''" 
                       @change="(e: any) => assignUser(device.id, e.target.value, device.device_name)"
+                      :disabled="props.userRole !== 'admin' && props.userRole !== 'subadmin'"
                     >
                       <option value="">Unassigned</option>
                       <option v-for="user in users" :key="user.id" :value="user.id">
@@ -236,6 +297,115 @@ const toggleCollapse = () => {
 .admin-dashboard.collapsed {
   padding: 1rem 2rem;
   margin-bottom: 1rem;
+}
+
+.title-with-latency {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.latency-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 0.2rem 0.6rem;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+}
+
+.latency-pill .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.latency-pill.excellent { color: #22c55e; border-color: rgba(34, 197, 94, 0.3); }
+.latency-pill.excellent .dot { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+.latency-pill.good { color: #eab308; border-color: rgba(234, 179, 8, 0.3); }
+.latency-pill.good .dot { background: #eab308; }
+.latency-pill.poor { color: #ef4444; border-color: rgba(239, 68, 68, 0.3); }
+.latency-pill.poor .dot { background: #ef4444; animation: blink 1s infinite; }
+
+@keyframes blink {
+  50% { opacity: 0.3; }
+}
+
+.perf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.perf-item {
+  background: rgba(255, 255, 255, 0.03);
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.perf-item .label {
+  display: block;
+  font-size: 0.75rem;
+  opacity: 0.6;
+  margin-bottom: 0.2rem;
+}
+
+.perf-item .value {
+  font-size: 1.2rem;
+  font-weight: bold;
+  font-family: monospace;
+}
+
+.perf-item .value.excellent { color: #22c55e; }
+.perf-item .value.good { color: #eab308; }
+.perf-item .value.poor { color: #ef4444; }
+
+.perf-hint {
+  grid-column: 1 / -1;
+  font-size: 0.7rem;
+  opacity: 0.4;
+  margin-top: 0.5rem;
+}
+
+.user-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.role-control {
+  min-width: 120px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.badge {
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.badge.admin { background: #ef4444; color: white; }
+.badge.subadmin { background: #f97316; color: white; }
+.badge.user { background: var(--border-color); color: var(--text-color); }
+
+.role-select {
+  background: var(--card-bg);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  padding: 0.2rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
 }
 
 .dashboard-header {

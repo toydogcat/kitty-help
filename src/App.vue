@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, computed } from 'vue';
 import { useTheme } from './composables/useTheme';
 import { auth, googleProvider, signInWithRedirect, getRedirectResult, signOut } from './firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -14,8 +14,13 @@ useTheme();
 const loading = ref(true);
 const deviceId = ref(localStorage.getItem('kitty_device_id') || '');
 const deviceStatus = ref<'pending' | 'approved' | 'revoked' | 'unknown'>('unknown');
+const userRole = ref<string>('user');
+const userName = ref<string>('');
 const showAdminLogin = ref(false);
 const adminUser = ref<any>(null);
+
+// Performance Monitoring State
+const latency = ref<number | null>(null);
 
 const ADMIN_EMAIL = 'toydogcat@gmail.com';
 
@@ -46,6 +51,8 @@ onMounted(async () => {
   try {
     const device = await apiService.registerDevice(deviceId.value, navigator.userAgent);
     deviceStatus.value = device.status;
+    userRole.value = device.user_role || 'user';
+    userName.value = device.user_name || '';
   } catch (err) {
     console.error("Failed to connect to backend:", err);
   } finally {
@@ -63,9 +70,21 @@ onMounted(async () => {
   onAuthStateChanged(auth, (currentUser) => {
     if (currentUser && currentUser.email === ADMIN_EMAIL) {
       adminUser.value = currentUser;
+      userRole.value = 'admin';
     } else {
       adminUser.value = null;
     }
+  });
+
+  // 5. Latency Monitoring Heartbeat
+  setInterval(() => {
+    socket.emit('clientPing', { time: Date.now() });
+  }, 5000);
+
+  socket.on('serverPong', (data) => {
+    const now = Date.now();
+    // Round-trip latency
+    latency.value = now - data.clientTime;
   });
 });
 
@@ -82,6 +101,10 @@ const logout = () => {
     adminUser.value = null;
   });
 };
+
+const isAdminUI = computed(() => {
+  return adminUser.value?.email === ADMIN_EMAIL || userRole.value === 'admin' || userRole.value === 'subadmin';
+});
 </script>
 
 <template>
@@ -91,26 +114,28 @@ const logout = () => {
         <h1>🐱 kitty-help</h1>
         <p>Cross-device Auxiliary Communication (PG Edition)</p>
       </div>
-      <div v-if="adminUser" class="admin-auth-info">
-        <span class="badge admin-badge">ADMIN</span>
-        <span class="email">{{ adminUser.email }}</span>
-        <button @click="logout" class="logout-btn">Logout</button>
+      <div v-if="adminUser || userRole === 'admin' || userRole === 'subadmin'" class="admin-auth-info">
+        <span class="badge admin-badge">{{ (userRole || 'USER').toUpperCase() }}</span>
+        <span class="email">{{ adminUser?.email || userName }}</span>
+        <button v-if="adminUser" @click="logout" class="logout-btn">Logout</button>
       </div>
     </header>
 
     <main v-if="!loading">
       <!-- App Router Content (only for approved devices or admin) -->
-      <template v-if="adminUser || deviceStatus === 'approved'">
+      <template v-if="isAdminUI || deviceStatus === 'approved'">
         <router-view v-slot="{ Component }">
           <transition name="page-fade" mode="out-in">
             <component 
               :is="Component" 
               :device-id="deviceId" 
               :admin-email="adminUser?.email" 
+              :user-role="userRole"
+              :latency="latency"
             />
           </transition>
         </router-view>
-        <Navbar :is-admin="!!adminUser" />
+        <Navbar :is-admin="isAdminUI" />
       </template>
 
       <!-- Unauthorized View -->

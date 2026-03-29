@@ -23,8 +23,13 @@ export const apiService = {
     return res.data;
   },
 
-  async updateBulletin(message: string, adminEmail: string) {
-    const res = await axios.post(`${API_URL}/api/bulletin`, { message, adminEmail });
+  async updateBulletin(message: string, adminEmail: string, deviceId: string) {
+    const res = await axios.post(`${API_URL}/api/bulletin`, { message, adminEmail, deviceId });
+    return res.data;
+  },
+
+  async updateUserRole(userId: string, role: string, adminEmail: string) {
+    const res = await axios.post(`${API_URL}/api/users/role`, { userId, role, adminEmail });
     return res.data;
   },
 

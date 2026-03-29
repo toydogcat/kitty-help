@@ -6,6 +6,8 @@ import { apiService } from '../services/api';
 const props = defineProps<{ 
   deviceId: string;
   adminEmail: string;
+  userRole?: string;
+  latency?: number | null;
 }>();
 
 const bulletinMessage = ref('');
@@ -24,7 +26,7 @@ const saveBulletin = async () => {
   if (!bulletinMessage.value.trim()) return;
   saving.value = true;
   try {
-    await apiService.updateBulletin(bulletinMessage.value, props.adminEmail);
+    await apiService.updateBulletin(bulletinMessage.value, props.adminEmail, props.deviceId);
     alert('Bulletin updated successfully! 📢');
   } catch (err) {
     alert('Failed to update bulletin. Please check permissions.');
@@ -36,7 +38,12 @@ const saveBulletin = async () => {
 
 <template>
   <div class="admin-view">
-    <AdminDashboard :current-device-id="props.deviceId" />
+    <AdminDashboard 
+      :current-device-id="props.deviceId" 
+      :user-role="props.userRole"
+      :latency="props.latency"
+      :admin-email="props.adminEmail"
+    />
     
     <section class="card bulletin-editor">
       <div class="header-with-icon">

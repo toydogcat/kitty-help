@@ -70,7 +70,7 @@ const initDb = async () => {
       CREATE TABLE IF NOT EXISTS users (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         name TEXT UNIQUE NOT NULL,
-        is_admin BOOLEAN DEFAULT false,
+        role TEXT DEFAULT 'user', -- 'admin', 'subadmin', 'user'
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -78,12 +78,20 @@ const initDb = async () => {
     // 2. Insert default users if empty
     const usersCount = await pool.query('SELECT count(*) FROM users');
     if (parseInt(usersCount.rows[0].count) === 0) {
-      const defaultUsers = ['Toby', '爸爸', '媽媽', '如如'];
-      for (const name of defaultUsers) {
-        await pool.query('INSERT INTO users (name, is_admin) VALUES ($1, $2)', [name, name === 'Toby']);
+      const defaultUsers = [
+        { name: 'Toby', role: 'admin' },
+        { name: '爸爸', role: 'user' },
+        { name: '媽媽', role: 'user' },
+        { name: '如如', role: 'user' }
+      ];
+      for (const u of defaultUsers) {
+        await pool.query('INSERT INTO users (name, role) VALUES ($1, $2)', [u.name, u.role]);
       }
-      console.log('Default users created');
+      console.log('Default users with roles created');
     }
+
+    // Ensure Toby is always admin (for migration of existing DBs)
+    await pool.query("UPDATE users SET role = 'admin' WHERE name = 'Toby'");
 
     // 3. Devices table
     await pool.query(`
@@ -264,23 +272,52 @@ app.get('/api/devices', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/devices/register', async (req: Request, res: Response) => {
+ // Helper to check if a user is admin or subadmin
+const hasAdminAccess = async (deviceId: string, adminEmail?: string) => {
+  if (adminEmail === ADMIN_EMAIL) return true;
+  if (!deviceId) return false;
+  
+  const res = await pool.query(`
+    SELECT u.role 
+    FROM devices d
+    JOIN users u ON d.user_id = u.id
+    WHERE d.id = $1 AND d.status = 'approved'
+  `, [deviceId]);
+  
+  if (res.rows.length > 0) {
+    const role = res.rows[0].role;
+    return role === 'admin' || role === 'subadmin';
+  }
+  return false;
+};
+
+// Endpoints
+app.post('/api/register', async (req, res) => {
   const { id, userAgent } = req.body;
   try {
-    const checkResult = await pool.query('SELECT * FROM devices WHERE id = $1', [id]);
-    if (checkResult.rows.length === 0) {
-      const insertResult = await pool.query(
-        'INSERT INTO devices (id, user_agent, status, last_active) VALUES ($1, $2, $3, CURRENT_TIMESTAMP) RETURNING *',
+    const check = await pool.query('SELECT * FROM devices WHERE id = $1', [id]);
+    if (check.rows.length === 0) {
+      await pool.query(
+        'INSERT INTO devices (id, user_agent, status) VALUES ($1, $2, $3)',
         [id, userAgent, 'pending']
       );
-      const newDevice = insertResult.rows[0];
-      res.json(newDevice);
-      io.emit('newDevice', newDevice);
+      io.emit('newDevice', { id, userAgent });
+    }
+    
+    // Update last_active and get current status + user role
+    const updated = await pool.query(`
+      UPDATE devices d
+      SET last_active = CURRENT_TIMESTAMP
+      FROM users u
+      WHERE d.id = $1 AND d.user_id = u.id
+      RETURNING d.*, u.role as user_role, u.name as user_name
+    `, [id]);
+
+    if (updated.rows.length > 0) {
+      res.json(updated.rows[0]);
     } else {
-      // Update last_active on every check-in
-      await pool.query('UPDATE devices SET last_active = CURRENT_TIMESTAMP WHERE id = $1', [id]);
-      const updatedDevice = { ...checkResult.rows[0], last_active: new Date() };
-      res.json(updatedDevice);
+      const basic = await pool.query('SELECT * FROM devices WHERE id = $1', [id]);
+      res.json(basic.rows[0]);
     }
   } catch (err) {
     res.status(500).json({ error: 'Registration failed' });
@@ -405,8 +442,9 @@ app.get('/api/bulletin', async (req, res) => {
 });
 
 app.post('/api/bulletin', async (req, res) => {
-  const { message, adminEmail } = req.body;
-  if (adminEmail !== ADMIN_EMAIL) {
+  const { message, adminEmail, deviceId } = req.body;
+  const authorized = await hasAdminAccess(deviceId, adminEmail);
+  if (!authorized) {
     return res.status(403).json({ error: 'Permission denied' });
   }
 
@@ -417,6 +455,32 @@ app.post('/api/bulletin', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: 'Failed to update bulletin' });
   }
+});
+
+// Role Management (Primary Admin only)
+app.post('/api/users/role', async (req, res) => {
+  const { userId, role, adminEmail } = req.body;
+  if (adminEmail !== ADMIN_EMAIL) {
+    return res.status(403).json({ error: 'Only primary admin can manage roles' });
+  }
+
+  try {
+    await pool.query('UPDATE users SET role = $1 WHERE id = $2', [role, userId]);
+    io.emit('usersUpdate');
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update role' });
+  }
+});
+
+// Latency Tracking Socket
+io.on('connection', (socket) => {
+  socket.on('clientPing', (data) => {
+    socket.emit('serverPong', {
+      clientTime: data.time,
+      serverTime: Date.now()
+    });
+  });
 });
 
 const PORT = 3000;
