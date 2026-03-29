@@ -4,11 +4,15 @@ import { io } from 'socket.io-client';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const API_BASE = `${API_URL}/api`;
 
-// Add ngrok skip warning header to all axios requests
-axios.defaults.headers.common['ngrok-skip-browser-warning'] = 'true';
+// Add Cloudflare skip warning header to all axios requests
+axios.defaults.headers.common['cf-skip-browser-warning'] = 'any';
+axios.defaults.headers.common['ngrok-skip-browser-warning'] = 'true'; // Keep for legacy if needed
 
 export const socket = io(API_URL, {
-  transports: ['websocket']
+  transports: ['websocket'],
+  extraHeaders: {
+    'cf-skip-browser-warning': 'any'
+  }
 });
 
 export const apiService = {

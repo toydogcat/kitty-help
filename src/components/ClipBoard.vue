@@ -158,9 +158,9 @@ const copyImageToClipboard = async (url: string) => {
   const fullUrl = formatUrl(url);
   if (!fullUrl) return;
   try {
-    // Add ngrok-skip-browser-warning to bypass interstitial page
+    // Add cf-skip-browser-warning to bypass interstitial page
     const response = await fetch(fullUrl, {
-      headers: { 'ngrok-skip-browser-warning': 'any' }
+      headers: { 'cf-skip-browser-warning': 'any' }
     });
     let blob = await response.blob();
     
