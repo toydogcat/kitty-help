@@ -91,6 +91,7 @@ const initDb = async () => {
     }
 
     // Ensure Toby is always admin (for migration of existing DBs)
+    await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user'");
     await pool.query("UPDATE users SET role = 'admin' WHERE name = 'Toby'");
 
     // 3. Devices table
