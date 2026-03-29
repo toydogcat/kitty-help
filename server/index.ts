@@ -307,7 +307,7 @@ const hasAdminAccess = async (deviceId: string, adminEmail?: string) => {
 };
 
 // Endpoints
-app.post('/api/register', async (req, res) => {
+app.post('/api/devices/register', async (req, res) => {
   const { id, userAgent } = req.body;
   try {
     const check = await pool.query('SELECT * FROM devices WHERE id = $1', [id]);
