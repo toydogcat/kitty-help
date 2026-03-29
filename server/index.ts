@@ -162,6 +162,19 @@ const initDb = async () => {
         user_id UUID REFERENCES users(id) ON DELETE SET NULL
       )
     `);
+
+    // 5. Calendar events table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS calendar_events (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        event_date TEXT NOT NULL, -- Format: YYYY-MM-DD
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, event_date)
+      )
+    `);
     console.log('Database tables initialized');
   } catch (err) {
     console.error('Error initializing database:', err);
@@ -470,6 +483,39 @@ app.post('/api/users/role', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update role' });
+  }
+});
+
+// Calendar API
+app.get('/api/calendar', async (req: Request, res: Response) => {
+  try {
+    const result = await pool.query(`
+      SELECT c.*, u.name as user_name 
+      FROM calendar_events c
+      JOIN users u ON c.user_id = u.id
+      ORDER BY c.event_date ASC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch calendar events' });
+  }
+});
+
+app.post('/api/calendar', async (req: Request, res: Response) => {
+  const { userId, date, content } = req.body;
+  try {
+    const result = await pool.query(`
+      INSERT INTO calendar_events (user_id, event_date, content, updated_at)
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+      ON CONFLICT (user_id, event_date) 
+      DO UPDATE SET content = EXCLUDED.content, updated_at = CURRENT_TIMESTAMP
+      RETURNING *
+    `, [userId, date, content]);
+    
+    res.json(result.rows[0]);
+    io.emit('calendarUpdate');
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update calendar' });
   }
 });
 

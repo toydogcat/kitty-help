@@ -96,5 +96,14 @@ export const apiService = {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
     return response.data;
+  },
+  // Calendar
+  async getCalendarEvents() {
+    const res = await axios.get(`${API_URL}/api/calendar`);
+    return res.data;
+  },
+  async updateCalendarEvent(userId: string, date: string, content: string) {
+    const res = await axios.post(`${API_URL}/api/calendar`, { userId, date, content });
+    return res.data;
   }
 };

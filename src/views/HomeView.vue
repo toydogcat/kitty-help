@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 import StyleSwitcher from '../components/StyleSwitcher.vue';
+import FamilyCalendar from '../components/FamilyCalendar.vue';
 import { apiService, socket } from '../services/api';
 
 const bulletin = ref('Loading notice...');
@@ -44,6 +45,10 @@ document.documentElement.setAttribute('data-font-size', fontSize.value);
       </div>
     </section>
 
+    <section class="calendar-section">
+      <FamilyCalendar mode="home" />
+    </section>
+
     <section class="settings-grid">
       <div class="card">
         <h3>🎨 Theme Style</h3>
@@ -74,6 +79,10 @@ document.documentElement.setAttribute('data-font-size', fontSize.value);
   margin-bottom: 2rem;
   border-left: 5px solid var(--primary-color);
   background: linear-gradient(to right, var(--card-bg), transparent);
+}
+
+.calendar-section {
+  margin-bottom: 2rem;
 }
 
 .bulletin-content {

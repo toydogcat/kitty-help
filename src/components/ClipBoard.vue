@@ -4,6 +4,7 @@ import { apiService, socket } from '../services/api';
 import SnippetExplorer from './SnippetExplorer.vue';
 import CountdownTimer from './CountdownTimer.vue';
 import Calculator from './Calculator.vue';
+import FamilyCalendar from './FamilyCalendar.vue';
 
 const props = defineProps<{
   deviceId: string;
@@ -206,6 +207,11 @@ const copyImageToClipboard = async (url: string) => {
       <h3>📚 個人剪貼簿 (Personal Hierarchical Board)</h3>
       <SnippetExplorer :user-id="currentUser.id" />
     </div>
+
+    <!-- New: Calendar Section -->
+    <div v-if="currentUser" class="calendar-section">
+      <FamilyCalendar mode="personal" :user-id="currentUser.id" />
+    </div>
     <div v-else class="snippets-placeholder card">
       <p>💡 <strong>提示：</strong> 目前裝置尚未連結至使用者，因此隱藏了個人剪貼簿。</p>
       <p class="hint">管理員請至上方「Admin Dashboard」中的「Approved Devices」將此裝置分配給使用者（例如：Toby），即可看到個人 Board。</p>
@@ -331,6 +337,10 @@ const copyImageToClipboard = async (url: string) => {
 
 .snippets-section {
   text-align: left;
+}
+
+.calendar-section {
+  width: 100%;
 }
 
 .snippets-section h3 {
