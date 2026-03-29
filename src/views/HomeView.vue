@@ -61,12 +61,12 @@ document.documentElement.setAttribute('data-font-size', fontSize.value);
         <p class="desc">Adjust the legibility of the interface.</p>
         <div class="size-options">
           <button 
-            v-for="size in ['small', 'normal', 'large']" 
+            v-for="size in ['small', 'normal', 'large', 'xlarge', 'huge']" 
             :key="size"
             @click="setFontSize(size)"
             :class="['size-btn', { active: fontSize === size }]"
           >
-            {{ size.toUpperCase() }}
+            {{ size === 'xlarge' ? 'XL' : (size === 'huge' ? 'HUGE' : size.toUpperCase()) }}
           </button>
         </div>
       </div>
@@ -86,7 +86,7 @@ document.documentElement.setAttribute('data-font-size', fontSize.value);
 }
 
 .bulletin-content {
-  font-size: 1.1rem;
+  font-size: 1.25em; /* Scale relatively to parent base size */
   padding: 1rem;
   line-height: 1.6;
   color: var(--text-color);

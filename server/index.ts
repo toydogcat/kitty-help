@@ -11,8 +11,8 @@ const app = express();
 const ADMIN_EMAIL = 'toydogcat@gmail.com';
 const server = http.createServer(app);
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, '../uploads');
+// Ensure uploads directory exists (use project root for consistency)
+const uploadsDir = path.resolve(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -182,7 +182,7 @@ const initDb = async () => {
   }
 };
 
-initDb();
+// initDb(); // Replaced with awaited call below
 
 // --- API Endpoints ---
 
@@ -531,6 +531,13 @@ io.on('connection', (socket) => {
 });
 
 const PORT = 3000;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+
+// Initialize Database before starting the server
+initDb().then(() => {
+  server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}).catch(err => {
+  console.error("Critical failure during DB initialization:", err);
+  process.exit(1);
 });

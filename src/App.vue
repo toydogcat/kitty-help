@@ -196,9 +196,21 @@ const isAdminUI = computed(() => {
 html[data-font-size="small"] { --base-font-size: 14px; }
 html[data-font-size="normal"] { --base-font-size: 16px; }
 html[data-font-size="large"] { --base-font-size: 18px; }
+html[data-font-size="xlarge"] { --base-font-size: 22px; }
+html[data-font-size="huge"] { --base-font-size: 28px; }
+
+html {
+  font-size: var(--base-font-size);
+}
 
 body {
-  font-size: var(--base-font-size);
+  margin: 0;
+  padding: 1rem;
+  font-family: 'Inter', -apple-system, sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  transition: background-color 0.3s, color 0.3s;
+  line-height: 1.5;
 }
 
 .container {
