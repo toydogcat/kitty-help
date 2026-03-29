@@ -480,11 +480,33 @@ const latencyLevel = computed(() => {
   justify-content: space-between;
   align-items: center;
   padding: 1.2rem;
-  background: rgba(255, 255, 255, 0.05);
-  margin-bottom: 0.8rem;
-  border-radius: 8px;
-  transition: all 0.2s ease;
-  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  gap: 1rem;
+}
+
+@media (max-width: 600px) {
+  .device-item {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 1rem;
+  }
+  .device-header {
+    margin-bottom: 0.3rem;
+  }
+  .device-actions {
+    flex-direction: row;
+    justify-content: space-between;
+    margin-top: 1rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .device-actions button {
+    flex: 1;
+    font-size: 0.8rem;
+    padding: 0.6rem;
+  }
 }
 
 .device-item.is-current {

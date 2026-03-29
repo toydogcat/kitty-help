@@ -304,20 +304,29 @@ const copyImageToClipboard = async (url: string) => {
 }
 
 .tools-grid {
-  display: grid;
-  grid-template-columns: 1fr auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: 2rem;
   align-items: start;
 }
 
-@media (max-width: 900px) {
-  .tools-grid {
-    grid-template-columns: 1fr;
-  }
+.timer-section {
+  flex: 1;
+  min-width: 320px;
 }
 
-.timer-section, .calculator-section {
-  width: 100%;
+.calculator-section {
+  flex: 0 0 320px;
+}
+
+@media (max-width: 768px) {
+  .tools-grid {
+    flex-direction: column;
+  }
+  .calculator-section {
+    flex: 1;
+    width: 100%;
+  }
 }
 
 .snippets-section {
@@ -328,6 +337,7 @@ const copyImageToClipboard = async (url: string) => {
   margin-bottom: 1rem;
   color: var(--secondary-color);
 }
+
 
 .snippets-placeholder {
   text-align: left;
@@ -408,6 +418,7 @@ const copyImageToClipboard = async (url: string) => {
   flex-direction: column;
   gap: 0.5rem;
 }
+
 
 .copy-float {
   background: rgba(0,0,0,0.6);

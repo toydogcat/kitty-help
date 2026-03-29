@@ -103,7 +103,9 @@ const logout = () => {
 };
 
 const isAdminUI = computed(() => {
-  return adminUser.value?.email === ADMIN_EMAIL || userRole.value === 'admin' || userRole.value === 'subadmin';
+  const role = (userRole.value || '').toLowerCase();
+  const isAdminEmail = adminUser.value?.email === ADMIN_EMAIL;
+  return isAdminEmail || role === 'admin' || role === 'subadmin';
 });
 </script>
 
