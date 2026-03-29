@@ -21,7 +21,7 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: kitty-help-cloudflared
     network_mode: host
-    command: tunnel --url http://127.0.0.1:3000
+    command: tunnel --url http://localhost:3000
     depends_on:
       - backend
     restart: unless-stopped
