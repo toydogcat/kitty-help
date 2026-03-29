@@ -21,6 +21,9 @@ RUN cd server && npx tsc
 # Production stage
 FROM node:20-alpine
 
+# Install curl for healthcheck
+RUN apk add --no-cache curl
+
 WORKDIR /app
 
 # Copy built files and production dependencies
