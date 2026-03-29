@@ -4,9 +4,11 @@ import { useTheme, type Theme } from '../composables/useTheme';
 const { currentTheme, setTheme } = useTheme();
 
 const themes: { id: Theme; label: string; icon: string }[] = [
-  { id: 'modern', label: 'Modern', icon: '✨' },
-  { id: 'retro', label: 'Retro', icon: '👾' },
   { id: 'futurist', label: 'Futurist', icon: '🚀' },
+  { id: 'cyberpunk', label: 'Cyberpunk', icon: '🌌' },
+  { id: 'forest', label: 'Forest', icon: '🌿' },
+  { id: 'ocean', label: 'Ocean', icon: '🌊' },
+  { id: 'sunset', label: 'Sunset', icon: '🌅' },
 ];
 </script>
 

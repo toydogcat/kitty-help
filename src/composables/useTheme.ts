@@ -1,12 +1,12 @@
 import { ref, onMounted } from 'vue';
 import Cookies from 'js-cookie';
 
-export type Theme = 'modern' | 'retro' | 'futurist';
+export type Theme = 'futurist' | 'cyberpunk' | 'forest' | 'ocean' | 'sunset';
 
 const THEME_COOKIE_KEY = 'kitty-help-theme';
 
 export function useTheme() {
-  const currentTheme = ref<Theme>('modern');
+  const currentTheme = ref<Theme>('futurist');
 
   const setTheme = (theme: Theme) => {
     currentTheme.value = theme;
@@ -16,16 +16,17 @@ export function useTheme() {
 
   const applyThemeToBody = (theme: Theme) => {
     const body = document.body;
-    body.classList.remove('theme-modern', 'theme-retro', 'theme-futurist');
+    body.classList.remove('theme-modern', 'theme-retro', 'theme-futurist', 'theme-cyberpunk', 'theme-forest', 'theme-ocean', 'theme-sunset');
     body.classList.add(`theme-${theme}`);
   };
 
   onMounted(() => {
     const savedTheme = Cookies.get(THEME_COOKIE_KEY) as Theme;
-    if (savedTheme && ['modern', 'retro', 'futurist'].includes(savedTheme)) {
+    const validThemes: Theme[] = ['futurist', 'cyberpunk', 'forest', 'ocean', 'sunset'];
+    if (savedTheme && validThemes.includes(savedTheme)) {
       setTheme(savedTheme);
     } else {
-      setTheme('modern');
+      setTheme('futurist');
     }
   });
 

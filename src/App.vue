@@ -4,7 +4,7 @@ import StyleSwitcher from './components/StyleSwitcher.vue';
 import AdminDashboard from './components/AdminDashboard.vue';
 import ClipBoard from './components/ClipBoard.vue';
 import { useTheme } from './composables/useTheme';
-import { auth, googleProvider, signInWithPopup, signOut } from './firebaseConfig';
+import { auth, googleProvider, signInWithRedirect, getRedirectResult, signOut } from './firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 import { apiService, socket } from './services/api';
 import { v4 as uuidv4 } from 'uuid';
@@ -21,6 +21,16 @@ const adminUser = ref<any>(null);
 const ADMIN_EMAIL = 'toydogcat@gmail.com';
 
 onMounted(async () => {
+  // 0. Handle Redirect Result (from Google login)
+  try {
+    const result = await getRedirectResult(auth);
+    if (result?.user && result.user.email === ADMIN_EMAIL) {
+      adminUser.value = result.user;
+    }
+  } catch (error) {
+    console.error("Redirect login handle failed:", error);
+  }
+
   // 1. Handle Device Identity
   if (!deviceId.value) {
     deviceId.value = uuidv4();
@@ -44,7 +54,7 @@ onMounted(async () => {
     }
   });
 
-  // 4. Handle Admin Session (Still using Google Auth for convenience)
+  // 4. Handle Admin Session
   onAuthStateChanged(auth, (currentUser) => {
     if (currentUser && currentUser.email === ADMIN_EMAIL) {
       adminUser.value = currentUser;
@@ -56,7 +66,7 @@ onMounted(async () => {
 
 const loginAsAdmin = async () => {
   try {
-    await signInWithPopup(auth, googleProvider);
+    await signInWithRedirect(auth, googleProvider);
   } catch (error) {
     console.error("Admin login failed:", error);
   }
@@ -85,7 +95,7 @@ const logout = () => {
       
       <!-- Admin View -->
       <template v-if="adminUser">
-        <AdminDashboard />
+        <AdminDashboard :current-device-id="deviceId" />
         <ClipBoard :device-id="deviceId" />
       </template>
 

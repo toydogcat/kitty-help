@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, signInAnonymously, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
+import { getAuth, signInAnonymously, GoogleAuthProvider, signInWithPopup, signOut, signInWithRedirect, getRedirectResult } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getAnalytics } from "firebase/analytics";
@@ -23,4 +23,4 @@ const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null;
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-export { app, auth, db, storage, analytics, signInAnonymously, googleProvider, signInWithPopup, signOut };
+export { app, auth, db, storage, analytics, signInAnonymously, googleProvider, signInWithPopup, signOut, signInWithRedirect, getRedirectResult };

@@ -3,41 +3,70 @@
   --transition-speed: 0.3s;
 }
 
-/* Theme: Modern (Default) */
-.theme-modern {
-  --bg-color: #f8fafc;
-  --text-color: #1e293b;
-  --primary-color: #3b82f6;
-  --secondary-color: #64748b;
-  --accent-color: #10b981;
-  --card-bg: #ffffff;
-  --border-color: #e2e8f0;
-  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-}
-
-/* Theme: Retro (8-bit / Classic) */
-.theme-retro {
-  --bg-color: #ffeadb;
-  --text-color: #2b2118;
-  --primary-color: #d95763;
-  --secondary-color: #639bff;
-  --accent-color: #6abe30;
-  --card-bg: #fff1e8;
-  --border-color: #2b2118;
-  --shadow: 4px 4px 0px 0px #2b2118;
-  --font-family: 'Courier New', Courier, monospace;
-}
-
-/* Theme: Futurist (Neon / Cyber) */
+/* Theme: Futurist (Rocket 🚀 - Default) */
 .theme-futurist {
   --bg-color: #0d0221;
   --text-color: #e0e0e0;
   --primary-color: #00f5ff;
+  --primary-rgb: 0, 245, 255;
   --secondary-color: #7000ff;
   --accent-color: #ff007a;
   --card-bg: #1a0b2e;
   --border-color: #7000ff;
   --shadow: 0 0 10px #00f5ff, 0 0 20px #7000ff;
+}
+
+/* Theme: Cyberpunk (Neon 🌌) */
+.theme-cyberpunk {
+  --bg-color: #050510;
+  --text-color: #fdfdfd;
+  --primary-color: #ff00ff;
+  --primary-rgb: 255, 0, 255;
+  --secondary-color: #00f2ff;
+  --accent-color: #ffff00;
+  --card-bg: #101030;
+  --border-color: #ff00ff;
+  --shadow: 0 0 15px #ff00ff, 0 0 25px #ff00ff;
+  --font-family: 'Orbitron', 'Inter', sans-serif;
+}
+
+/* Theme: Forest (Organic 🌿) */
+.theme-forest {
+  --bg-color: #1a2f23;
+  --text-color: #e8f5e9;
+  --primary-color: #81c784;
+  --primary-rgb: 129, 199, 132;
+  --secondary-color: #4caf50;
+  --accent-color: #ffb74d;
+  --card-bg: #263f33;
+  --border-color: #4caf50;
+  --shadow: 0 4px 10px rgba(0,0,0,0.3);
+}
+
+/* Theme: Ocean (Deep Sea 🌊) */
+.theme-ocean {
+  --bg-color: #011627;
+  --text-color: #d6deeb;
+  --primary-color: #00d1ff;
+  --primary-rgb: 0, 209, 255;
+  --secondary-color: #5f7e97;
+  --accent-color: #ff9d00;
+  --card-bg: #0a2540;
+  --border-color: #00d1ff;
+  --shadow: 0 8px 20px rgba(0,0,0,0.4);
+}
+
+/* Theme: Sunset (Warm 🌅) */
+.theme-sunset {
+  --bg-color: #2b0b3d;
+  --text-color: #ffffff;
+  --primary-color: #ff8c00;
+  --primary-rgb: 255, 140, 0;
+  --secondary-color: #9400d3;
+  --accent-color: #ff1493;
+  --card-bg: #3d1a5a;
+  --border-color: #ff8c00;
+  --shadow: 0 4px 15px rgba(255,140,0,0.2);
 }
 
 body {

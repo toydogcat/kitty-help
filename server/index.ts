@@ -254,14 +254,17 @@ app.post('/api/devices/register', async (req: Request, res: Response) => {
     const checkResult = await pool.query('SELECT * FROM devices WHERE id = $1', [id]);
     if (checkResult.rows.length === 0) {
       const insertResult = await pool.query(
-        'INSERT INTO devices (id, user_agent, status) VALUES ($1, $2, $3) RETURNING *',
+        'INSERT INTO devices (id, user_agent, status, last_active) VALUES ($1, $2, $3, CURRENT_TIMESTAMP) RETURNING *',
         [id, userAgent, 'pending']
       );
       const newDevice = insertResult.rows[0];
       res.json(newDevice);
       io.emit('newDevice', newDevice);
     } else {
-      res.json(checkResult.rows[0]);
+      // Update last_active on every check-in
+      await pool.query('UPDATE devices SET last_active = CURRENT_TIMESTAMP WHERE id = $1', [id]);
+      const updatedDevice = { ...checkResult.rows[0], last_active: new Date() };
+      res.json(updatedDevice);
     }
   } catch (err) {
     res.status(500).json({ error: 'Registration failed' });
