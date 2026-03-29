@@ -10,6 +10,12 @@ services:
     volumes:
       - ./uploads:/app/uploads
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/users"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   cloudflared:
     image: cloudflare/cloudflared:latest

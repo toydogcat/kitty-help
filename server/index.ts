@@ -39,8 +39,9 @@ app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, ngrok-skip-browser-warning');
+  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, ngrok-skip-browser-warning, cf-skip-browser-warning');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
   
   // Handle Preflight (OPTIONS)
   if (req.method === 'OPTIONS') {
@@ -534,8 +535,8 @@ const PORT = 3000;
 
 // Initialize Database before starting the server
 initDb().then(() => {
-  server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on all interfaces (0.0.0.0) at port ${PORT}`);
   });
 }).catch(err => {
   console.error("Critical failure during DB initialization:", err);
