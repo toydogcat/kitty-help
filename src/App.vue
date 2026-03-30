@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue';
 import { useTheme } from './composables/useTheme';
-import { auth, googleProvider, signInWithRedirect, getRedirectResult, signOut } from './firebaseConfig';
+import { auth, googleProvider, signInWithPopup, getRedirectResult, signOut } from './firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 import { apiService, socket } from './services/api';
 import { v4 as uuidv4 } from 'uuid';
@@ -90,7 +90,11 @@ onMounted(async () => {
 
 const loginAsAdmin = async () => {
   try {
-    await signInWithRedirect(auth, googleProvider);
+    const result = await signInWithPopup(auth, googleProvider);
+    if (result.user && result.user.email === ADMIN_EMAIL) {
+      adminUser.value = result.user;
+      userRole.value = 'admin';
+    }
   } catch (error) {
     console.error("Admin login failed:", error);
   }
