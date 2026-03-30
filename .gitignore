@@ -39,3 +39,4 @@ uploads/
 *.njsproj
 *.sln
 *.sw?
+.firebase/
