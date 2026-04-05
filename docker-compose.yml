@@ -32,7 +32,7 @@ services:
       - ~/.kitty-help/workspace:/root/.kitty-help/workspace
       - ./scripts:/scripts:ro
     environment:
-      - TUNNEL_URL=http://kitty-server:3001
+      - TUNNEL_URL=http://kitty-server:3000
     entrypoint: ["sh", "/scripts/tunnel-manager.sh"]
     restart: unless-stopped
 
