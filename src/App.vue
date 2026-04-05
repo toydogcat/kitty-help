@@ -17,7 +17,7 @@ const deviceId = ref(localStorage.getItem('kitty_device_id') || '');
 const deviceStatus = ref<'pending' | 'approved' | 'revoked' | 'unknown'>('unknown');
 const userRole = ref<string>('user');
 const userName = ref<string>('');
-const showAdminLogin = ref(false);
+
 const adminUser = ref<any>(null);
 
 // Bot Auth (Kitty-Auth) State

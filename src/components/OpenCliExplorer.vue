@@ -259,7 +259,7 @@ const runCommand = async (customArgs?: string) => {
       <!-- Structured JSON List View -->
       <div v-if="isJsonArray && viewMode === 'pretty'" class="pretty-list">
         <div v-for="(item, idx) in result" :key="idx" class="news-card">
-          <div class="card-rank">{{ Number(item.rank || item.Rank || 0) + (idx + 1) }}</div>
+          <div class="card-rank">{{ Number(item.rank || item.Rank || 0) + Number(idx + 1) }}</div>
           <div class="card-body">
             <div class="title-meta-row">
                  <h4 class="card-title">{{ item.title || item.Title || item.name || 'Untitled' }}</h4>
