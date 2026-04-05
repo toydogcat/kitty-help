@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { apiService, socket } from '../services/api';
 import SnippetTreeNode from './SnippetTreeNode.vue';
 
@@ -9,9 +9,20 @@ const props = defineProps<{
 
 const allSnippets = ref<any[]>([]);
 const snippets = ref<any[]>([]);
-const pathStack = ref<any[]>([]);
-const currentFolderId = ref<string | 'root'>('root');
+
+// Persistent state restoration
+const savedFolder = localStorage.getItem('snippet_last_folder') || 'root';
+const savedPath = localStorage.getItem('snippet_last_path');
+
+const pathStack = ref<any[]>(savedPath ? JSON.parse(savedPath) : []);
+const currentFolderId = ref<string | 'root'>(savedFolder);
 const loading = ref(true);
+
+// Watcher to save state on change
+watch([currentFolderId, pathStack], () => {
+  localStorage.setItem('snippet_last_folder', currentFolderId.value);
+  localStorage.setItem('snippet_last_path', JSON.stringify(pathStack.value));
+}, { deep: true });
 
 // Modal state
 const showAddModal = ref(false);
@@ -20,15 +31,19 @@ const editingId = ref<string | null>(null);
 const newItemName = ref('');
 const newItemContent = ref('');
 const newItemIsFolder = ref(false);
+const isFullScreen = ref(false);
+const draggedItem = ref<any>(null);
+const dropTargetId = ref<string | null>(null);
 
 const fetchData = async () => {
+  if (!props.userId) return;
   loading.value = true;
   try {
     // 1. Fetch ALL snippets for the tree view
-    allSnippets.value = await apiService.getSnippets(props.userId, undefined, true);
+    allSnippets.value = await apiService.getSnippets(undefined, true);
     
     // 2. Fetch current folder's snippets for the main view
-    snippets.value = await apiService.getSnippets(props.userId, currentFolderId.value === 'root' ? null : currentFolderId.value);
+    snippets.value = await apiService.getSnippets(currentFolderId.value === 'root' ? null : currentFolderId.value);
   } catch (err) {
     console.error("Failed to fetch snippets:", err);
   } finally {
@@ -39,6 +54,11 @@ const fetchData = async () => {
 onMounted(() => {
   fetchData();
   socket.on('snippetsUpdate', fetchData);
+});
+
+// WATCH for identity resolution - CRITICAL for first load persistence
+watch(() => props.userId, (newVal) => {
+  if (newVal) fetchData();
 });
 
 // Build Tree Structure for Sidebar
@@ -53,9 +73,9 @@ const treeData = computed(() => {
   });
   
   items.forEach(item => {
-    if (item.parent_id) {
-      if (map[item.parent_id]) {
-        map[item.parent_id].children.push(item);
+    if (item.parentId) {
+      if (map[item.parentId]) {
+        map[item.parentId].children.push(item);
       }
     } else {
       roots.push(item);
@@ -76,7 +96,7 @@ const enterFolder = (folder: any) => {
     let curr = folder;
     while (curr) {
       newStack.unshift(curr);
-      curr = allSnippets.value.find(s => s.id === curr.parent_id);
+      curr = allSnippets.value.find(s => s.id === curr.parentId);
     }
     pathStack.value = newStack;
   }
@@ -104,12 +124,16 @@ const openAddModal = () => {
   showAddModal.value = true;
 };
 
+const editingParentId = ref<string | null>(null);
+
 const openEditModal = (item: any) => {
   isEditing.value = true;
   editingId.value = item.id;
+  editingParentId.value = item.parentId; // Store original parentId
   newItemName.value = item.name;
   newItemContent.value = item.content || '';
-  newItemIsFolder.value = item.is_folder;
+  newItemIsFolder.value = item.isFolder;
+  isFullScreen.value = false; 
   showAddModal.value = true;
 };
 
@@ -120,11 +144,11 @@ const saveItem = async () => {
     if (isEditing.value && editingId.value) {
       await apiService.updateSnippet(editingId.value, {
         name: newItemName.value,
-        content: newItemContent.value
+        content: newItemContent.value,
+        parentId: editingParentId.value // Keep it where it was
       });
     } else {
       await apiService.createSnippet({
-        userId: props.userId,
         parentId: currentFolderId.value === 'root' ? null : currentFolderId.value,
         name: newItemName.value,
         content: newItemContent.value,
@@ -184,11 +208,10 @@ const importFromJSON = async (event: Event) => {
         // Try to create snippets, ignoring existing ones or duplicates for now
         // A better way would be to check if they exist, but for simplicity we'll just push
         await apiService.createSnippet({
-          userId: props.userId,
           parentId: null, // Importing to root for safety
           name: item.name + ' (Imported)',
           content: item.content,
-          isFolder: item.is_folder
+          isFolder: item.isFolder || item.is_folder // Support both for now
         });
       }
       alert(`Successfully imported ${importedData.length} items!`);
@@ -242,6 +265,63 @@ const toggleVoice = (target: 'name' | 'content') => {
     recognition.start();
   }
 };
+
+// --- DRAG & DROP LOGIC ---
+const handleDragStart = (item: any) => {
+  draggedItem.value = item;
+};
+
+const handleDragEnd = () => {
+  draggedItem.value = null;
+  dropTargetId.value = null;
+};
+
+const handleDragOver = (item: any) => {
+  if (draggedItem.value?.id === item.id) return;
+  dropTargetId.value = item.id;
+};
+
+const handleDragLeave = (item: any) => {
+  if (dropTargetId.value === item.id) {
+    dropTargetId.value = null;
+  }
+};
+
+const handleDrop = async (targetItem: any) => {
+  if (!draggedItem.value || draggedItem.value.id === targetItem.id) {
+    draggedItem.value = null;
+    dropTargetId.value = null;
+    return;
+  }
+
+  try {
+    loading.value = true;
+    // CASE 1: Move into folder
+    if (targetItem.isFolder) {
+      await apiService.updateSnippet(draggedItem.value.id, {
+        name: draggedItem.value.name,
+        content: draggedItem.value.content,
+        parentId: targetItem.id,
+        sortOrder: 0 // Put at top of new folder
+      });
+    } else {
+      // CASE 2: Reorder in same folder
+      let newOrder = targetItem.sortOrder + 1;
+      await apiService.updateSnippet(draggedItem.value.id, {
+        name: draggedItem.value.name,
+        content: draggedItem.value.content,
+        parentId: targetItem.parentId,
+        sortOrder: newOrder
+      });
+    }
+  } catch (err) {
+    console.error("Drop failed:", err);
+  } finally {
+    draggedItem.value = null;
+    dropTargetId.value = null;
+    await fetchData();
+  }
+};
 </script>
 
 <template>
@@ -256,6 +336,9 @@ const toggleVoice = (target: 'name' | 'content') => {
             :node="node" 
             :current-id="currentFolderId"
             @select="enterFolder"
+            @drop-on-node="(data) => handleDrop(data.targetNode)"
+            @drag-start="handleDragStart"
+            @drag-end="handleDragEnd"
           />
         </div>
       </div>
@@ -285,8 +368,23 @@ const toggleVoice = (target: 'name' | 'content') => {
           📁 .. (Back)
         </div>
         
-        <div v-for="item in snippets" :key="item.id" class="item-row" :class="{ 'is-selected': item.id === editingId }">
-          <div v-if="item.is_folder" class="item-content folder">
+        <div 
+          v-for="item in snippets" 
+          :key="item.id" 
+          class="item-row" 
+          :class="{ 
+            'is-selected': item.id === editingId,
+            'is-dragging': draggedItem?.id === item.id,
+            'is-drop-target': dropTargetId === item.id
+          }"
+          draggable="true"
+          @dragstart="handleDragStart(item)"
+          @dragover.prevent="handleDragOver(item)"
+          @dragleave="handleDragLeave(item)"
+          @drop="handleDrop(item)"
+          @dragend="handleDragEnd"
+        >
+          <div v-if="item.isFolder" class="item-content folder">
             <div @click="enterFolder(item)" class="folder-link">
               📁 <strong>{{ item.name }}</strong>
             </div>
@@ -317,10 +415,15 @@ const toggleVoice = (target: 'name' | 'content') => {
     <!-- Modal for New/Edit Item -->
     <Teleport to="body">
       <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
-        <div class="modal card">
+        <div class="modal card" :class="{ 'is-full': isFullScreen }">
           <div class="modal-header">
             <h3>{{ isEditing ? 'Edit Item' : 'Create New Item' }}</h3>
-            <button @click="showAddModal = false" class="close-modal">✕</button>
+            <div class="modal-controls">
+              <button @click="isFullScreen = !isFullScreen" class="expand-btn" title="Toggle Fullscreen">
+                {{ isFullScreen ? '❐' : '⛶' }}
+              </button>
+              <button @click="showAddModal = false" class="close-modal">✕</button>
+            </div>
           </div>
           
           <div v-if="!isEditing" class="form-group">
@@ -346,7 +449,7 @@ const toggleVoice = (target: 'name' | 'content') => {
             </div>
           </div>
 
-          <div v-if="!newItemIsFolder" class="form-group">
+          <div v-if="!newItemIsFolder" class="form-group content-group">
             <label>Content:</label>
             <div class="input-with-voice">
               <textarea v-model="newItemContent" placeholder="Paste your text here..."></textarea>
@@ -374,20 +477,20 @@ const toggleVoice = (target: 'name' | 'content') => {
 <style scoped>
 .snippet-explorer-container {
   display: flex;
-  gap: 1.5rem;
-  height: 600px;
-  margin-top: 1rem;
+  gap: 1rem;
+  height: calc(100vh - 250px);
+  min-height: 500px;
+  margin-top: 0.5rem;
 }
 
 .tree-sidebar {
-  width: 280px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 2px solid var(--border-color);
-  border-radius: 20px;
-  padding: 1.25rem;
+  width: 240px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1rem;
   display: flex;
   flex-direction: column;
-  backdrop-filter: blur(10px);
 }
 
 .sidebar-header {
@@ -436,11 +539,10 @@ const toggleVoice = (target: 'name' | 'content') => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: rgba(255, 255, 255, 0.03);
-  border: 2px solid var(--border-color);
-  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid var(--border-color);
+  border-radius: 15px;
   overflow: hidden;
-  backdrop-filter: blur(10px);
 }
 
 .explorer-header {
@@ -519,13 +621,13 @@ const toggleVoice = (target: 'name' | 'content') => {
 .item-row {
   display: flex;
   align-items: center;
-  padding: 1rem 1.25rem;
-  border-radius: 10px;
-  margin-bottom: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 0.4rem;
   background: rgba(255,255,255,0.02);
-  border: 1px solid transparent;
-  transition: all 0.2s ease;
-  gap: 1rem;
+  border: 1px solid rgba(255,255,255,0.02);
+  transition: all 0.15s ease;
+  gap: 0.8rem;
 }
 
 .item-row:hover {
@@ -636,6 +738,70 @@ const toggleVoice = (target: 'name' | 'content') => {
   border: 2px solid var(--border-color);
   border-radius: 20px;
   box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.modal.is-full {
+  max-width: 95vw;
+  width: 95vw;
+  height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal.is-full .content-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.modal.is-full .input-with-voice {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal.is-full textarea {
+  height: 100% !important;
+  flex: 1;
+  font-size: 1.1rem;
+  resize: none;
+}
+
+.expand-btn {
+  background: transparent;
+  border: none;
+  color: var(--secondary-color);
+  font-size: 1.1rem;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: all 0.2s;
+  padding: 0.2rem 0.5rem;
+}
+
+.expand-btn:hover {
+  opacity: 1;
+  color: var(--primary-color);
+  transform: scale(1.2);
+}
+
+.modal-controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.item-row.is-dragging {
+  opacity: 0.3;
+  transform: scale(0.95);
+  border: 1px dashed var(--primary-color);
+}
+
+.item-row.is-drop-target {
+  background: rgba(var(--primary-rgb), 0.1) !important;
+  border: 2px solid var(--primary-color) !important;
+  transform: scale(1.02);
 }
 
 .form-group {

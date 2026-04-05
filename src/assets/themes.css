@@ -79,10 +79,10 @@ body {
 }
 
 #app {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  text-align: left;
 }
 
 .card {
@@ -92,4 +92,10 @@ body {
   padding: 1.5rem;
   box-shadow: var(--shadow);
   transition: all var(--transition-speed);
+}
+
+@media (max-width: 600px) {
+  .card {
+    padding: 0.8rem; /* Slimmer padding for mobile */
+  }
 }

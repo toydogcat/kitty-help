@@ -2,24 +2,59 @@
 import { computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 
-const props = defineProps<{ isAdmin: boolean }>();
+const props = defineProps<{ 
+  isAdmin: boolean,
+  isToby: boolean,
+  userRole: string
+}>();
 const router = useRouter();
 const route = useRoute();
 
 const navItems = computed(() => {
+  const role = props.userRole.toLowerCase();
+  
+  // 1. Base Items (User+)
   const items = [
     { name: 'home', label: 'Home', icon: '🏠', path: '/' },
-    { name: 'personal', label: 'Personal', icon: '📋', path: '/personal' },
   ];
-  if (props.isAdmin) {
+
+  if (!props.userRole) {
+    items.push({ name: 'login', label: 'Login', icon: '🔑', path: '/login_trigger' });
+  }
+
+  // Everyone above visitor sees Chat
+  if (role !== 'visitor') {
+    items.push({ name: 'chat', label: 'Chat', icon: '💬', path: '/chat' });
+  }
+
+  // 2. VIP level items (VIP, Admin, SuperAdmin)
+  if (['vip', 'admin', 'superadmin', 'toby'].includes(role)) {
+    items.push({ name: 'impression', label: 'Impress', icon: '🧠', path: '/impression' });
+    items.push({ name: 'personal', label: 'Personal', icon: '📋', path: '/personal' });
+  }
+
+  // 3. Admin level items (Admin, SuperAdmin)
+  if (['admin', 'superadmin', 'toby'].includes(role)) {
+    items.push({ name: 'storehouse', label: 'Store', icon: '📦', path: '/storehouse' });
+  }
+
+  // 4. SuperAdmin level items (SuperAdmin Only)
+  if (role === 'superadmin' || role === 'toby') {
     items.push({ name: 'admin', label: 'Admin', icon: '⚙️', path: '/admin' });
   }
+
   return items;
 });
 
 const currentRouteName = computed(() => route.name);
 
+const emit = defineEmits(['login-requested']);
+
 const navigate = (path: string) => {
+  if (path === '/login_trigger') {
+    emit('login-requested');
+    return;
+  }
   router.push(path);
 };
 </script>

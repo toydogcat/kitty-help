@@ -1,27 +1,38 @@
 services:
-  backend:
+  # ─────────────────────────────────────────────
+  # Go Backend Service
+  # ─────────────────────────────────────────────
+  kitty-server:
+    build:
+      context: ./go-server
+      dockerfile: Dockerfile
+    container_name: kitty-server
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    working_dir: /root/
+    command: ["./kitty-server"]
+    env_file:
+      - .env
+    volumes:
+      - ./uploads:/root/uploads
+      - ~/.kitty-help/workspace:/root/.kitty-help/workspace
+
+  # ─────────────────────────────────────────────
+  # Webhook Tunnel (Cloudflared)
+  # ─────────────────────────────────────────────
+  tunnel-manager:
     build:
       context: .
-      dockerfile: Dockerfile
-      network: host  # Enabled to avoid DNS issues during build
-    container_name: kitty-help-backend
-    network_mode: host
-    env_file: .env
+      dockerfile: Dockerfile.tunnel
+    container_name: kitty-tunnel
+    user: root
     volumes:
-      - ./uploads:/app/uploads
+      - ~/.kitty-help/workspace:/root/.kitty-help/workspace
+      - ./scripts:/scripts:ro
+    environment:
+      - TUNNEL_URL=http://kitty-server:3001
+    entrypoint: ["sh", "/scripts/tunnel-manager.sh"]
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/users"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
 
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: kitty-help-cloudflared
-    network_mode: host
-    command: tunnel --url http://localhost:3000
-    depends_on:
-      - backend
-    restart: unless-stopped
+volumes:

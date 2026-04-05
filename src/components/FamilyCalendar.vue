@@ -34,7 +34,7 @@ const calendarDays = computed(() => {
   // Fill current month days
   for (let i = 1; i <= daysInMonth.value; i++) {
     const dateStr = `${year.value}-${String(month.value + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-    const dayEvents = events.value.filter(e => e.event_date === dateStr);
+    const dayEvents = events.value.filter(e => e.eventDate === dateStr);
     days.push({ day: i, dateStr, events: dayEvents });
   }
   return days;
@@ -81,7 +81,7 @@ const openDay = (day: any) => {
   selectedDate.value = day.dateStr;
   
   if (props.mode === 'personal' && props.userId) {
-    const myEvent = day.events.find((e: any) => e.user_id === props.userId);
+    const myEvent = day.events.find((e: any) => e.userId === props.userId);
     editContent.value = myEvent ? myEvent.content : '';
     showModal.value = true;
   } else if (props.mode === 'home') {
@@ -95,7 +95,7 @@ const saveEvent = async () => {
   if (!props.userId || !selectedDate.value) return;
   isSaving.value = true;
   try {
-    await apiService.updateCalendarEvent(props.userId, selectedDate.value, editContent.value);
+    await apiService.updateCalendarEvent(selectedDate.value, editContent.value);
     showModal.value = false;
   } catch (err) {
     alert("Save failed");
@@ -115,7 +115,7 @@ const getUserColor = (userName: string) => {
 };
 
 const selectedDateEvents = computed(() => {
-  return events.value.filter(e => e.event_date === selectedDate.value);
+  return events.value.filter(e => e.eventDate === selectedDate.value);
 });
 </script>
 
@@ -150,8 +150,8 @@ const selectedDateEvents = computed(() => {
             v-for="e in d.events" 
             :key="e.id" 
             class="event-dot" 
-            :style="{ background: getUserColor(e.user_name) }"
-            :title="e.user_name"
+            :style="{ background: getUserColor(e.userName) }"
+            :title="e.userName"
           ></span>
         </div>
       </div>
@@ -182,8 +182,8 @@ const selectedDateEvents = computed(() => {
           <div v-else class="view-mode">
             <div v-if="selectedDateEvents.length" class="event-list">
               <div v-for="e in selectedDateEvents" :key="e.id" class="event-item">
-                <span class="user-tag" :style="{ background: getUserColor(e.user_name) + '22', color: getUserColor(e.user_name), border: '1px solid ' + getUserColor(e.user_name) }">
-                  {{ e.user_name }}
+                <span class="user-tag" :style="{ background: getUserColor(e.userName) + '22', color: getUserColor(e.userName), border: '1px solid ' + getUserColor(e.userName) }">
+                  {{ e.userName }}
                 </span>
                 <p>{{ e.content }}</p>
               </div>

@@ -39,29 +39,6 @@ onMounted(() => {
   socket.on('usersUpdate', fetchData);
 });
 
-// Grouping logic for approved devices
-const groupedDevices = computed(() => {
-  const groups: Record<string, any[]> = {};
-  
-  // Initialize groups with user names
-  users.value.forEach(user => {
-    groups[user.name] = [];
-  });
-  groups['Unassigned'] = [];
-
-  approvedDevices.value.forEach(device => {
-    const user = users.value.find(u => u.id === device.user_id);
-    const groupName = user ? user.name : 'Unassigned';
-    if (!groups[groupName]) groups[groupName] = [];
-    groups[groupName].push(device);
-  });
-
-  // Filter out empty groups except for Unassigned if it has items
-  return Object.fromEntries(
-    Object.entries(groups).filter(([name, items]) => items.length > 0 || (name !== 'Unassigned' && users.value.some(u => u.name === name)))
-  );
-});
-
 const formatTime = (dateStr: string) => {
   if (!dateStr) return 'Never';
   const date = new Date(dateStr);
@@ -82,15 +59,6 @@ const approveDevice = async (deviceId: string) => {
     } catch (err) {
       alert("Approval failed.");
     }
-  }
-};
-
-const assignUser = async (deviceId: string, userId: string, deviceName: string) => {
-  try {
-    await apiService.updateDeviceStatus(deviceId, 'approved', deviceName, userId);
-    await fetchData();
-  } catch (err) {
-    alert("Assignment failed.");
   }
 };
 
@@ -140,6 +108,17 @@ const updateUserRole = async (userId: string, role: string) => {
   }
 };
 
+const deleteUser = async (userId: string) => {
+  if (confirm('Permanently delete this user profile? This will also un-link all THEIR platform bot accounts.')) {
+    try {
+      await apiService.deleteUser(userId);
+      await fetchData();
+    } catch (err) {
+      alert("Delete failed.");
+    }
+  }
+};
+
 const isCollapsed = ref(localStorage.getItem('admin_dashboard_collapsed') === 'true');
 const toggleCollapse = () => {
   isCollapsed.value = !isCollapsed.value;
@@ -161,7 +140,7 @@ const latencyLevel = computed(() => {
         <h2>🛡️ Admin Dashboard</h2>
         <div v-if="!isCollapsed" class="latency-pill" :class="latencyLevel">
           <span class="dot"></span>
-          {{ latency === null ? 'Checking...' : `${latency}ms` }}
+          {{ (latency === null || latency === undefined) ? 'Checking...' : `${latency}ms` }}
         </div>
       </div>
       <button class="collapse-toggle">
@@ -183,7 +162,7 @@ const latencyLevel = computed(() => {
           </div>
           <div class="perf-item">
             <span class="label">Round-trip Delay:</span>
-            <span class="value">{{ latency || '--' }} ms</span>
+            <span class="value">{{ latency !== null && latency !== undefined ? latency : '--' }} ms</span>
           </div>
           <p class="perf-hint">Monitoring traffic from Browser -> Firebase -> Tunnel -> Backend</p>
         </div>
@@ -194,9 +173,9 @@ const latencyLevel = computed(() => {
         <h3>👥 Staff Roles & Management</h3>
         <div class="user-grid">
           <div v-for="user in users" :key="user.id" class="user-row">
-            <span class="user-name">{{ user.name }}</span>
+            <span class="user-name">{{ user.name || user.email }}</span>
             <div class="role-control">
-              <span v-if="props.userRole !== 'admin' || user.name === 'Toby'" class="badge" :class="user.role || 'user'">
+              <span v-if="props.userRole !== 'superadmin' || user.email === props.adminEmail" class="badge" :class="user.role || 'user'">
                 {{ (user.role || 'user').toUpperCase() }}
               </span>
               <select 
@@ -206,9 +185,18 @@ const latencyLevel = computed(() => {
                 class="role-select"
               >
                 <option value="user">User</option>
-                <option value="subadmin">Sub-Admin</option>
-                <option value="admin">Primary Admin</option>
+                <option value="vip">VIP</option>
+                <option value="admin">Admin</option>
+                <option value="superadmin">SuperAdmin</option>
               </select>
+              <button 
+                v-if="props.userRole === 'superadmin' && user.email !== props.adminEmail" 
+                @click="deleteUser(user.id)" 
+                class="remove-btn mini-del-btn"
+                title="Permanently remove user"
+              >
+                🗑️
+              </button>
             </div>
           </div>
         </div>
@@ -239,44 +227,30 @@ const latencyLevel = computed(() => {
         </ul>
       </section>
 
-      <!-- Approved Devices Section (Grouped) -->
+      <!-- Approved Devices Section (Flat List) -->
       <section class="admin-section">
         <h3>📱 Approved Devices ({{ approvedDevices.length }})</h3>
         <div v-if="approvedDevices.length > 0">
-          <div v-for="(groupItems, groupName) in groupedDevices" :key="groupName" class="user-group">
-            <h4 class="group-title">{{ groupName }}</h4>
-            <ul class="device-list">
-              <li v-for="device in groupItems" :key="device.id" class="device-item approved" :class="{ 'is-current': device.id === props.currentDeviceId }">
-                <div class="device-info">
-                  <div class="device-header">
-                    <span class="device-name">{{ device.device_name }}</span>
-                    <span v-if="device.id === props.currentDeviceId" class="me-badge">YOU</span>
-                  </div>
-                  <span class="device-id">ID: {{ device.id.substring(0, 8) }}...</span>
-                  <span class="device-time">Last Active: {{ formatTime(device.last_active) }}</span>
-                  
-                  <!-- User Assignment Dropdown -->
-                  <div class="user-assignment">
-                    <label>Assign to:</label>
-                    <select 
-                      :value="device.user_id || ''" 
-                      @change="(e: any) => assignUser(device.id, e.target.value, device.device_name)"
-                      :disabled="props.userRole !== 'admin' && props.userRole !== 'subadmin'"
-                    >
-                      <option value="">Unassigned</option>
-                      <option v-for="user in users" :key="user.id" :value="user.id">
-                        {{ user.name }}
-                      </option>
-                    </select>
-                  </div>
+          <ul class="device-list grid-layout">
+            <li v-for="device in approvedDevices" :key="device.id" class="device-item approved" :class="{ 'is-current': device.id === props.currentDeviceId }">
+              <div class="device-info">
+                <div class="device-header">
+                  <span class="device-name">{{ device.device_name }}</span>
+                  <span v-if="device.id === props.currentDeviceId" class="me-badge">YOU</span>
                 </div>
-                <div class="device-actions">
-                  <button @click="revokeDevice(device.id)" class="revoke-btn">Revoke</button>
-                  <button @click="removeDevice(device.id)" class="remove-btn">Remove</button>
+                <span class="device-id">ID: {{ device.id.substring(0, 8) }}...</span>
+                <span class="device-time">Last Active: {{ formatTime(device.last_active) }}</span>
+                
+                <div class="user-owner" v-if="device.user_id">
+                  <span class="owner-pill">{{ users.find(u => u.id === device.user_id)?.name || 'Linked' }}</span>
                 </div>
-              </li>
-            </ul>
-          </div>
+              </div>
+              <div class="device-actions">
+                <button @click="revokeDevice(device.id)" class="revoke-btn">Revoke</button>
+                <button @click="removeDevice(device.id)" class="remove-btn">Remove</button>
+              </div>
+            </li>
+          </ul>
         </div>
         <p v-else class="empty-text">No approved devices yet.</p>
       </section>

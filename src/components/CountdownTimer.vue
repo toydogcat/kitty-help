@@ -208,6 +208,35 @@ const progress = computed(() => {
   margin-top: 1rem;
 }
 
+@media (max-width: 600px) {
+  .countdown-timer {
+    padding: 1rem !important;
+  }
+  
+  .input-group input {
+    width: 48px !important;
+    height: 48px !important;
+    font-size: 1.2rem !important;
+  }
+
+  .time-text {
+    font-size: 2.2rem !important;
+  }
+
+  .timer-display {
+    margin: 1rem 0 !important;
+  }
+
+  .timer-actions {
+    gap: 0.5rem;
+  }
+
+  .timer-actions button {
+    padding: 0.6rem;
+    font-size: 0.85rem;
+  }
+}
+
 .timer-actions button {
   flex: 1;
   max-width: 150px;

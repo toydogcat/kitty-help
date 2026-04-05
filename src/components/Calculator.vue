@@ -5,6 +5,12 @@ const display = ref('0');
 const prevValue = ref<number | null>(null);
 const operator = ref<string | null>(null);
 const resetDisplay = ref(false);
+const expression = ref('');
+const history = ref<string[]>(JSON.parse(localStorage.getItem('calc_history') || '[]'));
+
+const saveHistory = () => {
+  localStorage.setItem('calc_history', JSON.stringify(history.value));
+};
 
 const appendNumber = (num: string) => {
   if (display.value === '0' || resetDisplay.value) {
@@ -21,6 +27,7 @@ const setOperator = (op: string) => {
   }
   prevValue.value = parseFloat(display.value);
   operator.value = op;
+  expression.value = `${display.value} ${op}`;
   resetDisplay.value = true;
 };
 
@@ -28,6 +35,7 @@ const calculate = () => {
   if (operator.value === null || prevValue.value === null) return;
   const current = parseFloat(display.value);
   let result = 0;
+  const oldExp = `${prevValue.value} ${operator.value} ${current}`;
   
   switch (operator.value) {
     case '+': result = prevValue.value + current; break;
@@ -36,7 +44,15 @@ const calculate = () => {
     case '/': result = current !== 0 ? prevValue.value / current : 0; break;
   }
   
-  display.value = Number(result.toFixed(8)).toString();
+  const resultStr = Number(result.toFixed(8)).toString();
+  display.value = resultStr;
+  expression.value = `${oldExp} =`;
+  
+  // Add to history
+  history.value.unshift(`${oldExp} = ${resultStr}`);
+  if (history.value.length > 5) history.value.pop();
+  saveHistory();
+
   operator.value = null;
   prevValue.value = null;
   resetDisplay.value = true;
@@ -46,7 +62,13 @@ const clear = () => {
   display.value = '0';
   prevValue.value = null;
   operator.value = null;
+  expression.value = '';
   resetDisplay.value = false;
+};
+
+const clearHistory = () => {
+  history.value = [];
+  saveHistory();
 };
 </script>
 
@@ -58,7 +80,20 @@ const clear = () => {
     </div>
     
     <div class="display">
+      <div class="display-expression">{{ expression }}&nbsp;</div>
       <div class="display-value">{{ display }}</div>
+    </div>
+    
+    <div v-if="history.length > 0" class="history">
+      <div class="history-header">
+        <span>History</span>
+        <button @click="clearHistory" class="clear-history">Clear</button>
+      </div>
+      <div class="history-items">
+        <div v-for="(item, i) in history" :key="i" class="history-item" @click="display = item.split('= ')[1]">
+          {{ item }}
+        </div>
+      </div>
     </div>
     
     <div class="keypad">
@@ -115,12 +150,69 @@ const clear = () => {
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.display-expression {
+  font-size: 0.85rem;
+  opacity: 0.5;
+  height: 1.2rem;
+  margin-bottom: 0.2rem;
+}
+
 .display-value {
   font-size: 1.8rem;
   font-family: 'JetBrains Mono', monospace;
   color: var(--primary-color);
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.history {
+  margin-bottom: 1.2rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 12px;
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  opacity: 0.5;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+}
+
+.clear-history {
+  background: transparent;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  font-size: 0.7rem;
+}
+
+.history-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.history-item {
+  font-size: 0.85rem;
+  opacity: 0.7;
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.history-item:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--primary-color);
 }
 
 .keypad {

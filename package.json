@@ -1,7 +1,7 @@
 {
-  "name": "temp_vite",
+  "name": "kitty-help",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,13 +12,17 @@
     "axios": "^1.14.0",
     "firebase": "^12.11.0",
     "js-cookie": "^3.0.5",
+    "marked": "^17.0.5",
     "socket.io-client": "^4.8.3",
     "uuid": "^9.0.1",
+    "vis-data": "^8.0.3",
+    "vis-network": "^10.0.2",
     "vue": "^3.5.30",
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@types/js-cookie": "^3.0.6",
+    "@types/marked": "^5.0.2",
     "@types/node": "^24.12.0",
     "@types/uuid": "^9.0.8",
     "@vitejs/plugin-vue": "^6.0.5",

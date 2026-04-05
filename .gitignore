@@ -40,3 +40,20 @@ uploads/
 *.sln
 *.sw?
 .firebase/
+
+# AI Notices
+ai_notices/
+
+# Compiled Binaries
+go-server/main
+go-server/kitty-help-server
+go-server/tmp/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Specific Executables
+main
+kitty-help-server

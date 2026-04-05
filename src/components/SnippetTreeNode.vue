@@ -6,12 +6,12 @@ const props = defineProps<{
   currentId: string | 'root';
 }>();
 
-const emit = defineEmits(['select']);
+const emit = defineEmits(['select', 'drop-on-node', 'drag-start', 'drag-end']);
 
 const isOpen = ref(false);
 
 const toggle = () => {
-  if (props.node.is_folder) {
+  if (props.node.isFolder) {
     isOpen.value = !isOpen.value;
   }
 };
@@ -19,19 +19,57 @@ const toggle = () => {
 const select = () => {
   emit('select', props.node);
 };
+
+const isDropOver = ref(false);
+
+const handleDragOver = (e: DragEvent) => {
+  if (!props.node.isFolder) return;
+  e.preventDefault();
+  isDropOver.value = true;
+};
+
+const handleDragLeave = () => {
+  isDropOver.value = false;
+};
+
+const handleDragStart = (e: DragEvent) => {
+  emit('drag-start', props.node);
+};
+
+const handleDrop = (e: DragEvent) => {
+  if (!props.node.isFolder) return;
+  isDropOver.value = false;
+  // Emit event to parent (SnippetExplorer) to handle the actual move
+  emit('drop-on-node', { targetNode: props.node });
+};
+
+const handleDragEnd = () => {
+  isDropOver.value = false;
+  emit('drag-end');
+};
 </script>
 
 <template>
   <div class="tree-node">
     <div 
       class="node-content" 
-      :class="{ active: node.id === currentId, 'is-folder': node.is_folder }"
+      :class="{ 
+        active: node.id === currentId, 
+        'is-folder': node.isFolder,
+        'drop-over': isDropOver
+      }"
+      draggable="true"
       @click="select"
+      @dragstart="handleDragStart"
+      @dragover="handleDragOver"
+      @dragleave="handleDragLeave"
+      @drop="handleDrop"
+      @dragend="handleDragEnd"
     >
-      <span class="toggle-icon" @click.stop="toggle" v-if="node.is_folder">
+      <span class="toggle-icon" @click.stop="toggle" v-if="node.isFolder">
         {{ isOpen ? '▼' : '▶' }}
       </span>
-      <span class="type-icon">{{ node.is_folder ? '📁' : '📄' }}</span>
+      <span class="type-icon">{{ node.isFolder ? '📁' : '📄' }}</span>
       <span class="node-name">{{ node.name }}</span>
     </div>
     
@@ -42,6 +80,9 @@ const select = () => {
         :node="child"
         :current-id="currentId"
         @select="(n) => emit('select', n)"
+        @drop-on-node="(data) => emit('drop-on-node', data)"
+        @drag-start="(n) => emit('drag-start', n)"
+        @drag-end="() => emit('drag-end')"
       />
     </div>
   </div>
@@ -71,6 +112,12 @@ const select = () => {
   background: rgba(var(--primary-rgb), 0.2);
   color: var(--primary-color);
   font-weight: bold;
+}
+
+.node-content.drop-over {
+  background: rgba(var(--primary-rgb), 0.3) !important;
+  border: 1px dashed var(--primary-color);
+  transform: scale(1.05);
 }
 
 .toggle-icon {
