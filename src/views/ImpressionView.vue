@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick, watch, computed } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { Network } from 'vis-network';
 import { DataSet } from 'vis-data';
 import { apiService } from '../services/api';
 import { useAuth } from '../composables/useAuth';
 
-const { user } = useAuth();
+const { } = useAuth();
 const canvas = ref<HTMLElement | null>(null);
 const network = ref<Network | null>(null);
 const importFileRef = ref<HTMLInputElement | null>(null);
@@ -56,7 +56,7 @@ const options = {
   edges: {
     width: 2, color: { color: 'rgba(255,255,255,0.15)', highlight: '#22d3ee' },
     font: { size: 11, color: '#94a3b8', align: 'top' },
-    smooth: { type: 'continuous', roundness: 0.5 },
+    smooth: { enabled: true, type: 'continuous', roundness: 0.5 },
     arrows: { to: { enabled: true, scaleFactor: 0.4 } }
   },
   physics: {

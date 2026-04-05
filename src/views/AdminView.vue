@@ -147,7 +147,7 @@ const saveBulletin = async () => {
         </button>
       </div>
 
-      <div class="bot-control-content" v-if="bots[activeBotTab]">
+      <div class="bot-control-content" v-if="(bots as any)[activeBotTab]">
         <div class="auth-box full-width">
           <div class="header-with-tag">
             <h5 class="section-title">🗝️ Pending Requests & Sign-ups</h5>

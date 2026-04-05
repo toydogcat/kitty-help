@@ -177,7 +177,7 @@ const getItemThumbnail = (item: any) => {
         >
           <div class="card-media">
             <template v-if="getItemThumbnail(item)">
-              <img :src="getItemThumbnail(item)" loading="lazy" />
+              <img :src="getItemThumbnail(item) || ''" loading="lazy" />
             </template>
             <div v-else class="media-placeholder">
               {{ getCategoryIcon(item.category) }}

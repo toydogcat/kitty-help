@@ -191,7 +191,7 @@ const getFavicon = (url: string) => {
   }
 };
 
-const isProtected = (bookmark: Bookmark) => !!bookmark.passwordId;
+
 
 const isWithinGracePeriod = (bookmark: Bookmark) => {
   if (!bookmark.createdAt) return false;
@@ -258,7 +258,7 @@ const confirmDelete = (bookmark: Bookmark) => {
     <!-- Navigation Breadcrumbs -->
     <div class="breadcrumbs-row" v-if="currentFolderId !== 'root' || breadcrumbs.length > 0">
       <span class="breadcrumb-item" @click="goBack('root')">🏠 Root</span>
-      <template v-for="(crumb, index) in breadcrumbs" :key="crumb.id">
+      <template v-for="crumb in breadcrumbs" :key="crumb.id">
         <span class="breadcrumb-separator">›</span>
         <span class="breadcrumb-item" @click="goBack(crumb.id)">{{ crumb.title }}</span>
       </template>

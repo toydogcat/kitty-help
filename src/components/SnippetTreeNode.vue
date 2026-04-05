@@ -32,11 +32,11 @@ const handleDragLeave = () => {
   isDropOver.value = false;
 };
 
-const handleDragStart = (e: DragEvent) => {
+const handleDragStart = (_e: DragEvent) => {
   emit('drag-start', props.node);
 };
 
-const handleDrop = (e: DragEvent) => {
+const handleDrop = (_e: DragEvent) => {
   if (!props.node.isFolder) return;
   isDropOver.value = false;
   // Emit event to parent (SnippetExplorer) to handle the actual move
