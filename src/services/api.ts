@@ -9,8 +9,15 @@ const API_URL = BASE_URL;
 // socket must use the explicit API_URL
 export const socket = io(API_URL, {
   path: '/socket.io',
-  transports: ['websocket', 'polling'] // Force stable connection over tunnels
+  transports: ['websocket', 'polling'], // Force stable connection over tunnels
+  extraHeaders: {
+    "cf-skip-browser-warning": "true"
+  }
 });
+
+// Skip Cloudflare/Ngrok browser warnings globally for Axios
+axios.defaults.headers.common['cf-skip-browser-warning'] = 'true';
+axios.defaults.headers.common['ngrok-skip-browser-warning'] = 'true';
 
 // Set Global Axios Auth Header
 export const setAuthToken = (token: string | null) => {
