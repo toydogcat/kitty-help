@@ -7,13 +7,10 @@ cd "$(dirname "$0")"
 
 echo "🚀 Starting Full Stack Update..."
 
-# 0. Pre-flight Check: Ensure port 3000 is available
-echo "🔍 0/4: Checking for port conflicts on 3000..."
-CONFLICT_PID=$(lsof -t -i:3000)
-if [ ! -z "$CONFLICT_PID" ]; then
-  echo "⚠️  Port 3000 is occupied by PID $CONFLICT_PID. Killing it..."
-  kill -9 $CONFLICT_PID
-fi
+# 0. Pre-flight Check: Ensure port 3000 is available (Aggressive)
+echo "🔍 0/4: Force-clearing port 3000 connections..."
+sudo fuser -k 3000/tcp 2>/dev/null || true
+sleep 1
 
 # 1. Update Backend
 echo "📦 1/4: Rebuilding and restarting Backend Containers..."
