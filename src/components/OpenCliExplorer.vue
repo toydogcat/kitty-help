@@ -208,9 +208,9 @@ const runCommand = async (customArgs?: string) => {
   }
 };
 
-const getRank = (item: any, idx: number) => {
+const getRank = (item: any, idx: any) => {
   const r = Number(item.rank || item.Rank || 0);
-  return r + (idx + 1);
+  return r + (Number(idx) + 1);
 };
 </script>
 
