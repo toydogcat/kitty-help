@@ -52,7 +52,7 @@ export const apiService = {
     const response = await axios.get(`${API_BASE}/devices`);
     return response.data;
   },
-  async updateDeviceStatus(id: string, status: string, deviceName: string, userId: string) {
+  async updateDeviceStatus(id: string, status: string, deviceName: string = 'Unknown Device', userId: string = '') {
     const response = await axios.put(`${API_BASE}/devices/status`, { id, status, deviceName, userId });
     return response.data;
   },
@@ -65,7 +65,11 @@ export const apiService = {
     const response = await axios.get(`${API_BASE}/users`);
     return response.data;
   },
-  async updateUserRole(userId: string, role: string) {
+  async createUser(name: string, isAdmin: boolean = false) {
+    const response = await axios.post(`${API_BASE}/users`, { name, role: isAdmin ? 'admin' : 'user' });
+    return response.data;
+  },
+  async updateUserRole(userId: string, role: string, _adminEmail?: string) {
     const res = await axios.post(`${API_BASE}/users/role`, { userId, role });
     return res.data;
   },
@@ -74,7 +78,7 @@ export const apiService = {
   },
 
   // Password Vault
-  async getPasswords() {
+  async getPasswords(_userId?: string) {
     const response = await axios.get(`${API_BASE}/passwords`);
     return response.data;
   },
@@ -114,12 +118,16 @@ export const apiService = {
     });
     return response.data;
   },
-  async getStorehouseItems() {
-    // Alias for getArchives to support older view naming
-    return this.getArchives();
+  async getStorehouseItems(params?: any) {
+    // Forward params if provided
+    const response = await axios.get(`${API_BASE}/storehouse`, { params });
+    return response.data;
   },
-  async updateStorehouseItem(id: string, data: { title: string; caption: string; notes?: string }) {
-    const response = await axios.put(`${API_BASE}/storehouse/${id}`, data);
+  async updateStorehouseItem(id: string, data: { title: string; caption?: string; notes?: string }) {
+    const response = await axios.put(`${API_BASE}/storehouse/${id}`, {
+      ...data,
+      caption: data.caption || ''
+    });
     return response.data;
   },
   async indexStorehouseItem(id: string) {
@@ -134,7 +142,7 @@ export const apiService = {
     });
     return response.data;
   },
-  getStorehouseFileUrl(fileID: string) {
+  getStorehouseFileUrl(fileID: string, ..._args: any[]) {
     return `${API_BASE}/storehouse/file/${fileID}`;
   },
 
@@ -166,7 +174,7 @@ export const apiService = {
   },
   async addBookmark(data: { 
     title: string; 
-    url?: string; 
+    url?: string | null; 
     category?: string; 
     iconUrl?: string; 
     passwordId?: string | null;
@@ -179,7 +187,7 @@ export const apiService = {
   },
   async updateBookmark(id: string, data: {
     title?: string;
-    url?: string;
+    url?: string | null;
     category?: string;
     parentId?: string | null;
     sortOrder?: number;
@@ -249,13 +257,15 @@ export const apiService = {
   },
 
   // Security 2FA
-  requestSecurityChallenge(deviceId: string) {
-    return axios.post(`${API_BASE}/security/challenge`, { deviceId });
+  async requestSecurityChallenge(_id: string, _deviceId?: string) {
+    const res = await axios.post(`${API_BASE}/security/challenge`, { id: _id, deviceId: _deviceId });
+    return res.data;
   },
-  getSecurityStatus(deviceId: string, token?: string) {
-    return axios.get(`${API_BASE}/security/status`, {
-      params: { deviceId, token }
+  async getSecurityStatus(_id: string, _deviceId?: string, token?: string) {
+    const res = await axios.get(`${API_BASE}/security/status`, {
+      params: { id: _id, deviceId: _deviceId, token }
     });
+    return res.data;
   },
 
   // Auth
