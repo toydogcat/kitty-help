@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
@@ -96,9 +97,12 @@ func main() {
 	// Start all bot channels
 	bots.BotManager.StartAll(context.Background())
 
-	// 3. Setup Fiber App
+	// 3. Setup Fiber App with Robust Timeouts
 	app := fiber.New(fiber.Config{
-		AppName: "Kitty-Help Go Backend",
+		AppName:      "Kitty-Help Go Backend",
+		ReadTimeout:  60 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	})
 
 	app.Use(logger.New())
