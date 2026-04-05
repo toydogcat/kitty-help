@@ -25,11 +25,8 @@ echo "🔍 2/4: Catching Tunnel URL (This might take a few seconds)..."
 python catch_url.py
 
 # 3. Build Frontend
-echo "🏗️ 3/4: Building Frontend for Production..."
+echo "🏗️ 3/3: Building Frontend for Production (NUC Local)..."
 npm run build
 
-# 4. Deploy to Firebase
-echo "🚀 4/4: Deploying to Firebase Hosting..."
-firebase deploy --only hosting
-
-echo "✅ All done! Your site is live and the backend is synchronized."
+echo "✅ All done! Super Kitty is now hosting both backend and frontend on your NUC."
+echo "🔗 Access it via your Cloudflare Tunnel URL or local IP:3000"

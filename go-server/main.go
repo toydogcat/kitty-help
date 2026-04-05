@@ -11,7 +11,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
-	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/joho/godotenv"
 	"github.com/toydogcat/kitty-help/go-server/bots"
@@ -103,19 +102,24 @@ func main() {
 	})
 
 	app.Use(logger.New())
-	// 4. CORS Strategy
-	// Global API CORS (skips socket.io to avoid duplicate headers)
-	app.Use(cors.New(cors.Config{
-		Next: func(c *fiber.Ctx) bool {
-			p := c.Path()
-			return p == "/socket.io/" || (len(p) > 10 && p[:10] == "/socket.io/")
-		},
-		AllowOrigins:     "*",
-		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, cf-skip-browser-warning, ngrok-skip-browser-warning",
-		AllowMethods:     "GET, POST, PUT, DELETE, OPTIONS",
-		AllowCredentials: false,
-		ExposeHeaders:    "Content-Length",
-	}))
+	// 4. Aggressive CORS Strategy
+	// Manually inject headers for ALL requests to ensure reliability over tunnels
+	app.Use(func(c *fiber.Ctx) error {
+		origin := c.Get("Origin")
+		if origin == "" {
+			origin = "*"
+		}
+		c.Set("Access-Control-Allow-Origin", origin)
+		c.Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, cf-skip-browser-warning, ngrok-skip-browser-warning")
+		c.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Set("Access-Control-Allow-Credentials", "true")
+		c.Set("Access-Control-Expose-Headers", "Content-Length")
+
+		if c.Method() == "OPTIONS" {
+			return c.SendStatus(204)
+		}
+		return c.Next()
+	})
 
 	// Dedicated Socket.io CORS (Handles Preflight and custom headers like cf-skip-browser-warning)
 	app.Use("/socket.io", func(c *fiber.Ctx) error {
@@ -273,6 +277,19 @@ func main() {
 		_ = app.Shutdown()
 		bots.BotManager.StopAll(context.Background())
 	}()
+
+	// 6. Serve Frontend Static Files (NUC Deployment)
+	app.Static("/", "./dist")
+	
+	// SPA Fallback: Any route that doesn't match API or static files gets index.html
+	app.Get("/*", func(c *fiber.Ctx) error {
+		path := c.Path()
+		// If it's an API or socket request, don't serve index.html, let it 404 or pass
+		if strings.HasPrefix(path, "/api") || strings.HasPrefix(path, "/socket.io") {
+			return c.Next()
+		}
+		return c.SendFile("./dist/index.html")
+	})
 
 	port := os.Getenv("PORT")
 	if port == "" {

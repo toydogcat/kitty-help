@@ -1,10 +1,16 @@
 import axios from 'axios';
 import { io } from 'socket.io-client';
 
-const API_BASE = '/api';
-const API_URL = window.location.origin;
+const BASE_URL = import.meta.env.VITE_API_URL || window.location.origin;
+const API_BASE = BASE_URL + '/api';
+const API_URL = BASE_URL;
 
-export const socket = io(API_URL);
+// For production (e.g., Firebase), if API_URL and current origin differ, 
+// socket must use the explicit API_URL
+export const socket = io(API_URL, {
+  path: '/socket.io',
+  transports: ['websocket', 'polling'] // Force stable connection over tunnels
+});
 
 // Set Global Axios Auth Header
 export const setAuthToken = (token: string | null) => {

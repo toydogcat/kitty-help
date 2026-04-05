@@ -9,7 +9,7 @@ services:
     container_name: kitty-server
     restart: unless-stopped
     ports:
-      - "3001:3001"
+      - "3000:3000"
     working_dir: /root/
     command: ["./kitty-server"]
     env_file:
@@ -17,6 +17,7 @@ services:
     volumes:
       - ./uploads:/root/uploads
       - ~/.kitty-help/workspace:/root/.kitty-help/workspace
+      - ./dist:/root/dist
 
   # ─────────────────────────────────────────────
   # Webhook Tunnel (Cloudflared)
@@ -35,4 +36,4 @@ services:
     entrypoint: ["sh", "/scripts/tunnel-manager.sh"]
     restart: unless-stopped
 
-volumes:
+
