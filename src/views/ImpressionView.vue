@@ -149,15 +149,18 @@ const loadGraph = async (nodeId?: string) => {
         let finalUrl = n.imageUrl ? apiService.getAbsoluteUrl(n.imageUrl) : '';
         if (!finalUrl && n.fileId) finalUrl = apiService.getStorehouseFileUrl(n.fileId, n.sourcePlatform);
         
+        // Use 256px Thumbnails for graph nodes to speed up loading
+        const thumbUrl = finalUrl ? `${finalUrl}${finalUrl.includes('?') ? '&' : '?'}w=256` : '';
+
         if (finalUrl && !finalUrl.includes('?t=')) {
            const sep = finalUrl.includes('?') ? '&' : '?';
            finalUrl = `${finalUrl}${sep}t=${Date.now()}`;
         }
         
-        // Convert to Base64 (DataURL)
+        // Convert to Base64 (DataURL) - using thumbUrl for nodes
         let safeImage: any = undefined;
-        if (finalUrl) {
-            safeImage = await getBase64Image(finalUrl);
+        if (thumbUrl) {
+            safeImage = await getBase64Image(thumbUrl);
         }
 
         n.imageUrl = finalUrl; 
