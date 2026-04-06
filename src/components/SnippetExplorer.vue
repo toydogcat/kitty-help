@@ -35,6 +35,7 @@ const newItemIsFolder = ref(false);
 const isFullScreen = ref(false);
 const draggedItem = ref<any>(null);
 const dropTargetId = ref<string | null>(null);
+const isDropOverRoot = ref(false);
 const editMode = ref<'txt' | 'md'>('txt');
 
 const fetchData = async () => {
@@ -282,6 +283,7 @@ const handleDragStart = (item: any) => {
 const handleDragEnd = () => {
   draggedItem.value = null;
   dropTargetId.value = null;
+  isDropOverRoot.value = false;
 };
 
 const handleDragOver = (item: any) => {
@@ -295,25 +297,31 @@ const handleDragLeave = (item: any) => {
   }
 };
 
-const handleDrop = async (targetItem: any) => {
-  if (!draggedItem.value || draggedItem.value.id === targetItem.id) {
+const handleDrop = async (targetItem: any | 'root') => {
+  if (!draggedItem.value) return;
+  
+  const targetId = targetItem === 'root' ? null : targetItem.id;
+  const targetIsFolder = targetItem === 'root' ? true : targetItem.isFolder;
+
+  if (draggedItem.value.id === targetId) {
     draggedItem.value = null;
     dropTargetId.value = null;
+    isDropOverRoot.value = false;
     return;
   }
 
   try {
     loading.value = true;
-    // CASE 1: Move into folder
-    if (targetItem.isFolder) {
+    // CASE 1: Move into folder (including root)
+    if (targetIsFolder) {
       await apiService.updateSnippet(draggedItem.value.id, {
         name: draggedItem.value.name,
         content: draggedItem.value.content,
-        parentId: targetItem.id,
-        sortOrder: 0 // Put at top of new folder
+        parentId: targetId,
+        sortOrder: 0 // Put at top
       });
     } else {
-      // CASE 2: Reorder in same folder
+      // CASE 2: Reorder
       let newOrder = targetItem.sortOrder + 1;
       await apiService.updateSnippet(draggedItem.value.id, {
         name: draggedItem.value.name,
@@ -327,6 +335,7 @@ const handleDrop = async (targetItem: any) => {
   } finally {
     draggedItem.value = null;
     dropTargetId.value = null;
+    isDropOverRoot.value = false;
     await fetchData();
   }
 };
@@ -336,7 +345,14 @@ const handleDrop = async (targetItem: any) => {
   <div class="snippet-explorer-container">
     <div class="tree-sidebar">
       <div class="sidebar-header">
-        <span @click="goHome" class="root-link" :class="{ active: currentFolderId === 'root' }">🏠 All Snippets</span>
+        <span 
+          @click="goHome" 
+          class="root-link" 
+          :class="{ active: currentFolderId === 'root', 'drop-over': isDropOverRoot }"
+          @dragover.prevent="isDropOverRoot = true"
+          @dragleave="isDropOverRoot = false"
+          @drop="handleDrop('root')"
+        >🏠 All Snippets</span>
       </div>
       <div class="tree-body">
         <div v-for="node in treeData" :key="node.id">
@@ -534,6 +550,13 @@ const handleDrop = async (targetItem: any) => {
 .root-link.active {
   background: rgba(var(--primary-rgb), 0.2);
   color: var(--primary-color);
+}
+
+.root-link.drop-over {
+  background: var(--primary-color) !important;
+  color: white;
+  transform: scale(1.05);
+  box-shadow: 0 0 15px var(--primary-color);
 }
 
 .tree-body {

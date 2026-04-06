@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import { apiService } from '../services/api';
+import BookmarkTreeNode from './BookmarkTreeNode.vue';
 
 interface Bookmark {
   id: string;
@@ -26,8 +27,10 @@ const savedFolder = localStorage.getItem('bookmark_last_folder') || 'root';
 const savedPath = localStorage.getItem('bookmark_last_path');
 
 const bookmarks = ref<Bookmark[]>([]);
+const allBookmarks = ref<Bookmark[]>([]);
 const vaultPasswords = ref<any[]>([]);
 const showAddModal = ref(false);
+const loading = ref(false);
 const currentFolderId = ref<string | 'root'>(savedFolder);
 const breadcrumbs = ref<{id: string, title: string}[]>(savedPath ? JSON.parse(savedPath) : []);
 
@@ -48,17 +51,39 @@ const newBookmark = ref({
 // Drag and drop state
 const draggedItem = ref<any>(null);
 const dropTargetId = ref<string | null>(null);
+const isDropOverRoot = ref(false);
 
 const categories = ['General', 'Work', 'Social', 'Dev', 'Entertainment', 'Tools'];
 
 const fetchBookmarks = async () => {
-  if (!props.userId) return;
+  loading.value = true;
   try {
-    bookmarks.value = await apiService.getBookmarks(currentFolderId.value);
+    const res = await apiService.getBookmarks(currentFolderId.value === 'root' ? undefined : currentFolderId.value);
+    bookmarks.value = res;
+    
+    const allRes = await apiService.getBookmarks(undefined);
+    allBookmarks.value = allRes;
   } catch (err) {
     console.error("Failed to fetch bookmarks:", err);
+  } finally {
+    loading.value = false;
   }
 };
+
+const treeData = computed(() => {
+  const map: any = {};
+  const roots: any[] = [];
+  const items = allBookmarks.value.map(b => ({ ...b, children: [] }));
+  items.forEach(b => map[b.id] = b);
+  items.forEach(b => {
+    if (b.parentId && map[b.parentId]) {
+      map[b.parentId].children.push(b);
+    } else {
+      roots.push(b);
+    }
+  });
+  return roots;
+});
 
 const enterFolder = (folder: Bookmark) => {
   currentFolderId.value = folder.id;
@@ -66,7 +91,15 @@ const enterFolder = (folder: Bookmark) => {
   fetchBookmarks();
 };
 
-const goBack = (id: string | 'root') => {
+const goBack = (id: string | 'root' | any) => {
+  if (typeof id === 'object' && id !== null) {
+    if (id.isFolder) {
+      currentFolderId.value = id.id;
+      fetchBookmarks();
+    }
+    return;
+  }
+
   if (id === 'root') {
     currentFolderId.value = 'root';
     breadcrumbs.value = [];
@@ -87,6 +120,7 @@ const handleDragStart = (item: any) => {
 const handleDragEnd = () => {
   draggedItem.value = null;
   dropTargetId.value = null;
+  isDropOverRoot.value = false;
 };
 
 const handleDragOver = (id: string, isFolder: boolean = true) => {
@@ -114,6 +148,7 @@ const handleDrop = async (targetId: string | 'root') => {
   } finally {
     draggedItem.value = null;
     dropTargetId.value = null;
+    isDropOverRoot.value = false;
   }
 };
 
@@ -137,7 +172,6 @@ watch(() => props.userId, () => {
   fetchVault();
 });
 
-// Refresh vault secrets when modal opens to ensure latest data
 watch(showAddModal, (newVal) => {
   if (newVal) fetchVault();
 });
@@ -189,18 +223,15 @@ const getFavicon = (url: string) => {
   }
 };
 
-
-
 const isWithinGracePeriod = (bookmark: Bookmark) => {
   if (!bookmark.createdAt) return false;
   const createdAtTime = new Date(bookmark.createdAt).getTime();
   const now = new Date().getTime();
   const diffMinutes = (now - createdAtTime) / (1000 * 60);
-  return diffMinutes < 30; // 30 minutes grace period
+  return diffMinutes < 30;
 };
 
 const copyToClipboard = async (bookmark: Bookmark) => {
-  // If linked to a password, check for security status OR grace period
   if (bookmark.passwordId && !isWithinGracePeriod(bookmark)) {
     if (!props.hasSecurityTrust) {
       emit('request-verify');
@@ -211,7 +242,6 @@ const copyToClipboard = async (bookmark: Bookmark) => {
   try {
     if (!bookmark.url) return;
     await navigator.clipboard.writeText(bookmark.url);
-    // Success feedback could be handled by a toast in parent
   } catch (err) {
     console.error('Failed to copy: ', err);
   }
@@ -227,7 +257,6 @@ const deleteBookmark = async (id: string) => {
 };
 
 const confirmDelete = (bookmark: Bookmark) => {
-  // Delete protection: 2FA required for protected stale items
   if (bookmark.passwordId && !isWithinGracePeriod(bookmark)) {
     if (!props.hasSecurityTrust) {
       emit('request-verify');
@@ -242,131 +271,131 @@ const confirmDelete = (bookmark: Bookmark) => {
 </script>
 
 <template>
-  <div class="bookmark-manager">
-    <div class="section-header">
-      <div class="title-group">
-        <h3>🌐 雲端書籤 (Cloud Bookmarks)</h3>
-        <p class="subtitle">Sync your favorite links with dual-platform password protection.</p>
+  <div class="bookmark-explorer-container">
+    <div class="tree-sidebar">
+      <div 
+        class="sidebar-header-root" 
+        :class="{ active: currentFolderId === 'root', 'drop-over': isDropOverRoot }"
+        @click="goBack('root')"
+        @dragover.prevent="isDropOverRoot = true"
+        @dragleave="isDropOverRoot = false"
+        @drop="handleDrop('root'); isDropOverRoot = false"
+      >
+        🏠 Root
       </div>
-      <button @click="showAddModal = true" class="add-btn">
-        <span>+</span> Add
-      </button>
+      <div class="tree-body">
+        <div v-for="node in treeData" :key="node.id">
+          <BookmarkTreeNode 
+            :node="node" 
+            :current-id="currentFolderId"
+            @select="goBack"
+            @drop-on-node="(data: any) => handleDrop(data.targetNode.id)"
+            @drag-start="handleDragStart"
+            @drag-end="handleDragEnd"
+          />
+        </div>
+      </div>
     </div>
 
-    <!-- Navigation Breadcrumbs -->
-    <div class="breadcrumbs-row" v-if="currentFolderId !== 'root' || breadcrumbs.length > 0">
-      <span 
-        class="breadcrumb-item" 
-        :class="{ 'drop-target-breadcrumb': dropTargetId === 'root' }"
-        @click="goBack('root')"
-        @dragover.prevent="handleDragOver('root')"
-        @dragleave="handleDragLeave"
-        @drop="handleDrop('root')"
-      >🏠 Root</span>
-      <template v-for="crumb in breadcrumbs" :key="crumb.id">
-        <span class="breadcrumb-separator">›</span>
+    <div class="main-panel">
+      <div class="section-header">
+        <div class="title-group">
+          <h3>🌐 雲端書籤 (Cloud Bookmarks)</h3>
+          <p class="subtitle">Sync your favorite links with dual-platform password protection.</p>
+        </div>
+        <button @click="showAddModal = true" class="add-btn">
+          <span>+</span> Add
+        </button>
+      </div>
+
+      <div class="breadcrumbs-row" v-if="currentFolderId !== 'root' || breadcrumbs.length > 0">
         <span 
           class="breadcrumb-item" 
-          :class="{ 'drop-target-breadcrumb': dropTargetId === crumb.id }"
-          @click="goBack(crumb.id)"
-          @dragover.prevent="handleDragOver(crumb.id)"
+          :class="{ 'drop-target-breadcrumb': dropTargetId === 'root' }"
+          @click="goBack('root')"
+          @dragover.prevent="handleDragOver('root')"
           @dragleave="handleDragLeave"
-          @drop="handleDrop(crumb.id)"
-        >{{ crumb.title }}</span>
-      </template>
-    </div>
-
-    <!-- Empty State -->
-    <div v-if="bookmarks.length === 0" class="empty-state card">
-      <div v-if="currentFolderId !== 'root'" @click="goBack('root')" class="back-link">
-        📁 .. (Back to Root)
-      </div>
-      <div class="empty-icon">📂</div>
-      <p>這裡目前是空的。點點右上角來新增吧！</p>
-    </div>
-
-    <!-- Bookmark Grid -->
-    <div v-else class="bookmark-grid">
-      <!-- Back Item if in subfolder -->
-      <div 
-        v-if="currentFolderId !== 'root'" 
-        class="bookmark-card card back-card" 
-        :class="{ 'drop-target': dropTargetId === (breadcrumbs.length > 1 ? breadcrumbs[breadcrumbs.length-2].id : 'root') }"
-        @click="goBack(breadcrumbs.length > 1 ? breadcrumbs[breadcrumbs.length-2].id : 'root')"
-        @dragover.prevent="handleDragOver(breadcrumbs.length > 1 ? breadcrumbs[breadcrumbs.length-2].id : 'root')"
-        @dragleave="handleDragLeave"
-        @drop="handleDrop(breadcrumbs.length > 1 ? breadcrumbs[breadcrumbs.length-2].id : 'root')"
-      >
-        <div class="card-header">
-          <div class="favicon-wrapper">📁</div>
-        </div>
-        <div class="card-body">
-          <h4 class="bm-title">.. (Back)</h4>
-          <p class="bm-url">Parent Directory</p>
-        </div>
+          @drop="handleDrop('root')"
+        >🏠 Root</span>
+        <template v-for="crumb in breadcrumbs" :key="crumb.id">
+          <span class="breadcrumb-separator">›</span>
+          <span 
+            class="breadcrumb-item" 
+            :class="{ 'drop-target-breadcrumb': dropTargetId === crumb.id }"
+            @click="goBack(crumb.id)"
+            @dragover.prevent="handleDragOver(crumb.id)"
+            @dragleave="handleDragLeave"
+            @drop="handleDrop(crumb.id)"
+          >{{ crumb.title }}</span>
+        </template>
       </div>
 
-      <div 
-        v-for="bm in bookmarks" 
-        :key="bm.id" 
-        class="bookmark-card card" 
-        :class="{ 
-          protected: bm.passwordId,
-          'is-folder': bm.isFolder,
-          'is-dragging': draggedItem?.id === bm.id,
-          'drop-target': dropTargetId === bm.id
-        }"
-        :draggable="true"
-        @dragstart="handleDragStart(bm)"
-        @dragover.prevent="handleDragOver(bm.id, bm.isFolder)"
-        @dragleave="handleDragLeave"
-        @drop="handleDrop(bm.id)"
-        @dragend="handleDragEnd"
-      >
-        <div class="card-bg-glow"></div>
-        
-        <div class="card-header">
-          <div class="favicon-wrapper" @click="bm.isFolder && enterFolder(bm)">
-            <template v-if="bm.isFolder">📁</template>
-            <template v-else-if="bm.url && getFavicon(bm.url)">
-              <img :src="getFavicon(bm.url)" alt="icon" @error="(e: any) => e.target.style.display = 'none'" />
+      <div v-if="bookmarks.length === 0" class="empty-state card">
+        <div class="empty-icon">📂</div>
+        <p>這裡目前是空的。點點右上角來新增吧！</p>
+      </div>
+
+      <div v-else class="bookmark-grid">
+        <div 
+          v-for="bm in bookmarks" 
+          :key="bm.id" 
+          class="bookmark-card card" 
+          :class="{ 
+            protected: bm.passwordId,
+            'is-folder': bm.isFolder,
+            'is-dragging': draggedItem?.id === bm.id,
+            'drop-target': dropTargetId === bm.id
+          }"
+          :draggable="true"
+          @dragstart="handleDragStart(bm)"
+          @dragover.prevent="handleDragOver(bm.id, bm.isFolder)"
+          @dragleave="handleDragLeave"
+          @drop="handleDrop(bm.id)"
+          @dragend="handleDragEnd"
+        >
+          <div class="card-bg-glow"></div>
+          
+          <div class="card-header">
+            <div class="favicon-wrapper" @click="bm.isFolder && enterFolder(bm)">
+              <template v-if="bm.isFolder">📁</template>
+              <template v-else-if="bm.url && getFavicon(bm.url)">
+                <img :src="getFavicon(bm.url)" alt="icon" @error="(e: any) => e.target.style.display = 'none'" />
+              </template>
+              <span v-else class="default-icon">🔗</span>
+            </div>
+            <div class="header-right">
+              <span v-if="bm.passwordId" class="lock-indicator" :class="{ unlocked: hasSecurityTrust }">
+                {{ hasSecurityTrust ? '🔓' : '🔒' }}
+              </span>
+              <span class="category-tag">{{ bm.category }}</span>
+            </div>
+          </div>
+
+          <div class="card-body" @click="bm.isFolder && enterFolder(bm)">
+            <h4 class="bm-title" :title="bm.title">{{ bm.title }}</h4>
+            <p class="bm-url">{{ bm.isFolder ? 'Folder' : getDisplayUrl(bm.url || '') }}</p>
+          </div>
+
+          <div class="card-actions">
+            <template v-if="!bm.isFolder">
+              <a :href="bm.url || '#'" target="_blank" class="action-btn launch" title="Open Link">🚀 Open</a>
+              <button @click="copyToClipboard(bm)" class="action-btn copy" :class="{ 'verify-needed': bm.passwordId && !hasSecurityTrust }" title="Copy URL">
+                {{ bm.passwordId && !hasSecurityTrust && !isWithinGracePeriod(bm) ? '🔑 Verify' : '📋 Copy' }}
+              </button>
             </template>
-            <span v-else class="default-icon">🔗</span>
+            <template v-else>
+              <button @click="enterFolder(bm)" class="action-btn launch">📂 Open Folder</button>
+            </template>
+            <button @click="confirmDelete(bm)" class="action-btn delete" title="Delete">🗑️</button>
           </div>
-          <div class="header-right">
-            <span v-if="bm.passwordId" class="lock-indicator" :class="{ unlocked: hasSecurityTrust }">
-              {{ hasSecurityTrust ? '🔓' : '🔒' }}
-            </span>
-            <span class="category-tag">{{ bm.category }}</span>
-          </div>
-        </div>
-
-        <div class="card-body" @click="bm.isFolder && enterFolder(bm)">
-          <h4 class="bm-title" :title="bm.title">{{ bm.title }}</h4>
-          <p class="bm-url">{{ bm.isFolder ? 'Folder' : getDisplayUrl(bm.url || '') }}</p>
-        </div>
-
-        <div class="card-actions">
-          <template v-if="!bm.isFolder">
-            <a :href="bm.url || '#'" target="_blank" class="action-btn launch" title="Open Link">🚀 Open</a>
-            <button @click="copyToClipboard(bm)" class="action-btn copy" :class="{ 'verify-needed': bm.passwordId && !hasSecurityTrust }" title="Copy URL">
-              {{ bm.passwordId && !hasSecurityTrust && !isWithinGracePeriod(bm) ? '🔑 Verify' : '📋 Copy' }}
-            </button>
-          </template>
-          <template v-else>
-            <button @click="enterFolder(bm)" class="action-btn launch">📂 Open Folder</button>
-          </template>
-          <button @click="confirmDelete(bm)" class="action-btn delete" title="Delete">🗑️</button>
         </div>
       </div>
     </div>
 
-    <!-- Add Modal -->
     <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
       <div class="modal-content card glow">
         <div class="modal-header">
           <h3>Add New Bookmark</h3>
-          <p>Link your sensitive URLs to your Password Vault for extra security.</p>
         </div>
         
         <div class="form-grid">
@@ -404,7 +433,6 @@ const confirmDelete = (bookmark: Bookmark) => {
               {{ p.site_name }} ({{ p.account }})
             </option>
           </select>
-          <p class="hinttext">Linking a password will require dual-bot verification to copy this link.</p>
         </div>
 
         <div class="modal-actions">
@@ -419,9 +447,60 @@ const confirmDelete = (bookmark: Bookmark) => {
 </template>
 
 <style scoped>
-.bookmark-manager {
-  margin-bottom: 2.5rem;
-  animation: fadeIn 0.4s ease-out;
+.bookmark-explorer-container {
+  display: flex;
+  gap: 1.25rem;
+  height: calc(100vh - 280px);
+  min-height: 550px;
+}
+
+.tree-sidebar {
+  width: 250px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  backdrop-filter: blur(10px);
+}
+
+.sidebar-header-root {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 800;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--secondary-color);
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-header-root.active {
+  background: rgba(var(--primary-rgb), 0.2);
+  color: var(--primary-color);
+}
+
+.sidebar-header-root.drop-over {
+  background: var(--primary-color) !important;
+  color: white;
+  transform: scale(1.05);
+  box-shadow: 0 0 20px var(--primary-color);
+}
+
+.tree-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.main-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .section-header {
@@ -433,22 +512,6 @@ const confirmDelete = (bookmark: Bookmark) => {
   padding-left: 1.2rem;
 }
 
-.title-group {
-  text-align: left;
-}
-
-.section-header h3 {
-  color: var(--text-color);
-  margin: 0;
-  font-size: 1.5rem;
-}
-
-.subtitle {
-  font-size: 0.85rem;
-  opacity: 0.5;
-  margin: 0.2rem 0 0 0;
-}
-
 .add-btn {
   background: var(--primary-color);
   color: white;
@@ -457,30 +520,6 @@ const confirmDelete = (bookmark: Bookmark) => {
   border-radius: 8px;
   font-weight: 600;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  transition: all 0.2s;
-  box-shadow: 0 4px 15px rgba(var(--primary-rgb), 0.3);
-}
-
-.add-btn:hover {
-  transform: translateY(-2px);
-  filter: brightness(1.1);
-  box-shadow: 0 6px 20px rgba(var(--primary-rgb), 0.4);
-}
-
-.empty-state {
-  padding: 3rem;
-  text-align: center;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px dashed var(--border-color);
-}
-
-.empty-icon {
-  font-size: 3rem;
-  margin-bottom: 1rem;
-  opacity: 0.3;
 }
 
 .bookmark-grid {
