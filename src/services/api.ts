@@ -154,10 +154,18 @@ export const apiService = {
     });
     return response.data;
   },
-  getStorehouseFileUrl(fileID: string, platform?: string) {
+  getStorehouseFileUrl(fileID: string, platform?: string, download: boolean = false) {
     let url = `${API_BASE}/storehouse/file/${fileID}`;
+    const params = new URLSearchParams();
     if (platform) {
-      url += `?platform=${platform}`;
+      params.append('platform', platform);
+    }
+    if (download) {
+      params.append('download', '1');
+    }
+    const query = params.toString();
+    if (query) {
+      url += `?${query}`;
     }
     return url;
   },

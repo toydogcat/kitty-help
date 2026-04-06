@@ -239,6 +239,9 @@ func IndexStorehouseItem(c *fiber.Ctx) error {
 func GetFileProxy(c *fiber.Ctx) error {
 	fileID := c.Params("fileID")
 	platform := c.Query("platform", "telegram")
+	if c.Query("download") == "1" {
+		c.Set("Content-Disposition", "attachment")
+	}
 
 	db := database.LocalDB
 	if db == nil {
