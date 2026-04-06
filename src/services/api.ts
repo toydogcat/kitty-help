@@ -41,15 +41,28 @@ if (savedToken) {
   setAuthToken(savedToken);
 }
 
-// Add generic response interceptor for debugging
+// Add generic response interceptor for debugging and Token Refresh
 axios.interceptors.response.use(
-  response => response,
+  response => {
+    // 🔄 Sliding Session: If backend sent a refreshed token, update it!
+    const refreshToken = response.headers['x-refresh-token'];
+    if (refreshToken) {
+      console.log('🔄 [Auth] Token refreshed automatically via Sliding Session');
+      setAuthToken(refreshToken);
+    }
+    return response;
+  },
   error => {
     console.error('API Error:', {
       url: error.config?.url,
       status: error.response?.status,
       data: error.response?.data
     });
+    // Optional: Log out if status is 401
+    if (error.response?.status === 401) {
+      // localStorage.removeItem('kitty_token');
+      // window.location.reload(); 
+    }
     return Promise.reject(error);
   }
 );

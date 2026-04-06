@@ -99,11 +99,12 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	})
 
-	// 4. Standard CORS Middleware (Handles Preflight Automatically)
+	// 4. Enhanced CORS Middleware: Standardized whitelist with Credentials support
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     "https://kitty-help.web.app, http://localhost:5173, http://localhost:4173",
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
-		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, cf-skip-browser-warning, ngrok-skip-browser-warning",
+		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, X-Refresh-Token, cf-skip-browser-warning, ngrok-skip-browser-warning",
+		ExposeHeaders:    "X-Refresh-Token, Content-Disposition",
 		AllowCredentials: true,
 	}))
 

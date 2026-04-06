@@ -142,7 +142,7 @@ func VerifyFirebaseToken(c *fiber.Ctx) error {
 	fmt.Printf("[AUTH DEBUG] Final assigned identity: ID=%s, Email=%s, Role=%s, Name=%s\n", dbID, resolvedEmail, role, name)
 
 	// 2. Issue our own JWT
-	expirationTime := time.Now().Add(24 * 7 * time.Hour) // 1 week
+	expirationTime := time.Now().Add(30 * 24 * time.Hour) // 30 days for extreme persistence
 	myClaims := &Claims{
 		ID:       dbID,
 		Email:    resolvedEmail,
@@ -208,6 +208,19 @@ func JWTMiddleware(c *fiber.Ctx) error {
 
 	if err != nil || !token.Valid {
 		return c.Status(401).JSON(fiber.Map{"error": "Invalid or expired token"})
+	}
+
+	// Dynamic Session Renewal: If token is valid, we can optionally 
+	// rotate it or simply update the last_active in database.
+	// For "Sliding Window", we check if we should issue a fresh one 
+	// in the response header for the frontend to save.
+	expiresAt, _ := token.Claims.GetExpirationTime()
+	if expiresAt != nil && time.Until(expiresAt.Time) < 24*time.Hour {
+		// Issue a refreshed token if less than 1 day left
+		claims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(24 * 7 * time.Hour))
+		newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, _ = newToken.SignedString(getJWTSecret())
+		c.Set("X-Refresh-Token", tokenString)
 	}
 
 	c.Locals("user", claims)

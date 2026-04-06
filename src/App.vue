@@ -125,17 +125,30 @@ onMounted(async () => {
     if (socket.connected) {
       const pingTime = Date.now();
       socket.emit('clientPing', { time: pingTime });
-      // console.log("📡 [Heartbeat] Ping sent...");
-    } else {
-      // console.warn("❌ [Heartbeat] Skipped: Socket not connected");
     }
   }, 5000);
 
   socket.on('serverPong', (data: any) => {
     const now = Date.now();
     latency.value = now - data.clientTime;
-    console.log(`⏱️ [Latency] Round-trip: ${latency.value}ms`);
   });
+
+  // 6. Idle Auto-Logout (1 hour)
+  let idleTimer: any = null;
+  const resetIdleTimer = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    if (adminUser.value) {
+      // 1 hour = 60 * 60 * 1000 ms
+      idleTimer = setTimeout(() => {
+        console.warn("🕒 [Auth] Idle for 1 hour. Logging out...");
+        logout();
+      }, 60 * 60 * 1000);
+    }
+  };
+
+  const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+  activityEvents.forEach(evt => window.addEventListener(evt, resetIdleTimer));
+  resetIdleTimer();
 });
 
 const loginAsAdmin = async () => {
