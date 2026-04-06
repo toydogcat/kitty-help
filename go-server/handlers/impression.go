@@ -55,26 +55,26 @@ func GetImpressionTemp(c *fiber.Ctx) error {
 		}
 	}
 
-	// 1. Resolve User ID and Discord ID
-	var dbUserID, discordID string
-	query := `SELECT id, discord_id FROM users WHERE email = $1 LIMIT 1`
-	err := db.QueryRow(context.Background(), query, userClaims.Email).Scan(&dbUserID, &discordID)
-	if err != nil || discordID == "" {
-		log.Printf("⚠️ No discordID found for identity %s (Error: %v)", userClaims.Email, err)
+	// 1. Resolve System User ID from email
+	var dbUserID string
+	query := `SELECT id FROM users WHERE email = $1 LIMIT 1`
+	err := db.QueryRow(context.Background(), query, userClaims.Email).Scan(&dbUserID)
+	if err != nil {
+		log.Printf("⚠️ No UserID found for identity %s (Error: %v)", userClaims.Email, err)
 		return c.JSON([]fiber.Map{}) 
 	}
 
-	// 2. Fetch recent Discord photos for this specific sender
-	sql := `SELECT id, file_id, media_type, title, caption, notes, created_at 
-	        FROM media_archives 
-	        WHERE source_platform = 'discord' 
-	        AND sender_id = $1
-	        AND (media_type = 'photo' OR media_type = 'image')
-	        AND created_at > (CURRENT_TIMESTAMP - INTERVAL '7 days')
-	        ORDER BY created_at DESC 
+	// 2. Fetch recent photos/videos from ALL platforms linked to this system user
+	sql := `SELECT m.id, m.file_id, m.media_type, m.title, m.caption, m.notes, m.created_at, m.source_platform
+	        FROM media_archives m
+	        JOIN bot_authorized_users b ON m.sender_id = b.account_id AND m.source_platform = b.platform
+	        WHERE b.user_id = $1 
+	        AND (m.media_type = 'photo' OR m.media_type = 'image' OR m.media_type = 'video')
+	        AND m.created_at > (CURRENT_TIMESTAMP - INTERVAL '7 days')
+	        ORDER BY m.created_at DESC 
 	        LIMIT 50`
 	
-	rows, err := db.Query(context.Background(), sql, discordID)
+	rows, err := db.Query(context.Background(), sql, dbUserID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -82,10 +82,10 @@ func GetImpressionTemp(c *fiber.Ctx) error {
 
 	items := []fiber.Map{}
 	for rows.Next() {
-		var id, fileID, mediaType string
+		var id, fileID, mediaType, sourcePlatform string
 		var createdAt time.Time
 		var title, caption, notes *string
-		err := rows.Scan(&id, &fileID, &mediaType, &title, &caption, &notes, &createdAt)
+		err := rows.Scan(&id, &fileID, &mediaType, &title, &caption, &notes, &createdAt, &sourcePlatform)
 		if err != nil {
 			continue
 		}
@@ -97,7 +97,8 @@ func GetImpressionTemp(c *fiber.Ctx) error {
 			"caption": caption,
 			"notes": notes,
 			"createdAt": createdAt,
-			"imageUrl": "/api/storehouse/file/" + fileID + "?platform=discord",
+			"sourcePlatform": sourcePlatform,
+			"imageUrl": "/api/storehouse/file/" + fileID + "?platform=" + sourcePlatform,
 		})
 	}
 
