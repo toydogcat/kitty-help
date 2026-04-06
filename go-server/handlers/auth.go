@@ -15,7 +15,7 @@ import (
 func getJWTSecret() []byte {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
-		return []byte("super_kitty_secret_2026!")
+		log.Fatal("❌ FATAL: JWT_SECRET environment variable is NOT SET. System shutdown for security.")
 	}
 	return []byte(secret)
 }
@@ -49,8 +49,22 @@ func VerifyFirebaseToken(c *fiber.Ctx) error {
 
 	email, _ := claims["email"].(string)
 	resolvedEmail := strings.ToLower(strings.TrimSpace(email))
-	isAdmin := resolvedEmail == "toydogcat@gmail.com" 
-	isToby := isAdmin || resolvedEmail == "chickenmilktea@gmail.com" || resolvedEmail == "tobywang2021@gmail.com"
+	
+	// Check if admin from environment variable
+	adminEmails := os.Getenv("ADMIN_EMAILS")
+	isAdmin := false
+	if adminEmails != "" {
+		for _, e := range strings.Split(adminEmails, ",") {
+			if strings.ToLower(strings.TrimSpace(e)) == resolvedEmail {
+				isAdmin = true
+				break
+			}
+		}
+	} else if resolvedEmail == "toydogcat@gmail.com" { 
+		isAdmin = true 
+	}
+	
+	isToby := isAdmin // Toby is currently treated as Admin
 
 	var role, name, dbID string
 	if database.LocalDB != nil {
@@ -141,5 +155,18 @@ func DeviceCheckMiddleware(c *fiber.Ctx) error {
 	return c.Next()
 }
 
-func TobyOnlyMiddleware(c *fiber.Ctx) error { return c.Next() }
-func VIPOnlyMiddleware(c *fiber.Ctx) error { return c.Next() }
+func TobyOnlyMiddleware(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(*Claims)
+	if !ok || (user.Role != "superadmin" && user.Role != "toby") {
+		return c.Status(403).JSON(fiber.Map{"error": "Toby or Admin privileges required"})
+	}
+	return c.Next()
+}
+
+func VIPOnlyMiddleware(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(*Claims)
+	if !ok || (user.Role != "superadmin" && user.Role != "toby" && user.Role != "vip") {
+		return c.Status(403).JSON(fiber.Map{"error": "VIP access required"})
+	}
+	return c.Next()
+}

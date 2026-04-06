@@ -65,8 +65,18 @@ func main() {
 		WriteTimeout: 120 * time.Second,
 	})
 
+	// Dynamic & Intelligent CORS Control
+	allowedOrigins := "https://kitty-help.web.app, http://localhost:5173, http://localhost:4173"
+	if extra := os.Getenv("ALLOWED_ORIGINS"); extra != "" {
+		allowedOrigins += ", " + extra
+	}
+
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:     "https://kitty-help.web.app, http://localhost:5173, http://localhost:4173",
+		AllowOrigins: allowedOrigins,
+		// 🛡️ [Security Booster] Automatically trust all Cloudflare Tunnels (trycloudflare.com)
+		AllowOriginsFunc: func(origin string) bool {
+			return strings.HasSuffix(origin, ".trycloudflare.com")
+		},
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, X-Refresh-Token, cf-skip-browser-warning, ngrok-skip-browser-warning",
 		ExposeHeaders:    "X-Refresh-Token, Content-Disposition",
