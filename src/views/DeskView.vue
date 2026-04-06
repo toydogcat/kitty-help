@@ -317,6 +317,9 @@ const saveItemEdit = async () => {
             <button @click="saveItemEdit" class="save-btn" :disabled="saving">
               {{ saving ? 'Saving...' : '✅ Save Changes' }}
             </button>
+          </div>
+        </div>
+      </div>
     </Teleport>
   </div>
 </template>
