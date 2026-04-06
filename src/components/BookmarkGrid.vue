@@ -61,7 +61,8 @@ const fetchBookmarks = async () => {
     const res = await apiService.getBookmarks(currentFolderId.value === 'root' ? undefined : currentFolderId.value);
     bookmarks.value = res;
     
-    const allRes = await apiService.getBookmarks(undefined);
+    // FETCH ALL RECURSIVELY for tree
+    const allRes = await apiService.getBookmarks(undefined, true);
     allBookmarks.value = allRes;
   } catch (err) {
     console.error("Failed to fetch bookmarks:", err);
@@ -303,9 +304,11 @@ const confirmDelete = (bookmark: Bookmark) => {
           <h3>🌐 雲端書籤 (Cloud Bookmarks)</h3>
           <p class="subtitle">Sync your favorite links with dual-platform password protection.</p>
         </div>
-        <button @click="showAddModal = true" class="add-btn">
-          <span>+</span> Add
-        </button>
+        <div class="header-actions">
+          <button @click="showAddModal = true" class="add-btn">
+            <span>+</span> Add
+          </button>
+        </div>
       </div>
 
       <div class="breadcrumbs-row" v-if="currentFolderId !== 'root' || breadcrumbs.length > 0">
@@ -392,57 +395,57 @@ const confirmDelete = (bookmark: Bookmark) => {
       </div>
     </div>
 
-    <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
-      <div class="modal-content card glow">
-        <div class="modal-header">
-          <h3>Add New Bookmark</h3>
-        </div>
-        
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Title</label>
-            <input v-model="newBookmark.title" placeholder="e.g. My Folder or Google" />
+    <Teleport to="body">
+      <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
+        <div class="modal-content card glow">
+          <div class="modal-header">
+            <h3>{{ editingId ? 'Edit Bookmark' : 'Add New Bookmark' }}</h3>
           </div>
-          <div class="form-group">
-            <label>Type</label>
-            <div class="type-toggle">
-              <button :class="{ active: !newBookmark.isFolder }" @click="newBookmark.isFolder = false">🔗 Link</button>
-              <button :class="{ active: newBookmark.isFolder }" @click="newBookmark.isFolder = true">📁 Folder</button>
+          
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Title</label>
+              <input v-model="newBookmark.title" placeholder="e.g. My Folder or Google" />
+            </div>
+            <div class="form-group">
+              <label>Type</label>
+              <div class="type-toggle">
+                <button :class="{ active: !newBookmark.isFolder }" @click="newBookmark.isFolder = false">🔗 Link</button>
+                <button :class="{ active: newBookmark.isFolder }" @click="newBookmark.isFolder = true">📁 Folder</button>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="form-grid" v-if="!newBookmark.isFolder">
-          <div class="form-group">
-            <label>URL</label>
-            <input v-model="newBookmark.url" placeholder="e.g. google.com" />
+          <div class="form-grid" v-if="!newBookmark.isFolder">
+            <div class="form-group">
+              <label>URL</label>
+              <input v-model="newBookmark.url" placeholder="e.g. google.com" />
+            </div>
+            <div class="form-group">
+              <label>Category</label>
+              <select v-model="newBookmark.category">
+                <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+              </select>
+            </div>
           </div>
-          <div class="form-group">
-            <label>Category</label>
-            <select v-model="newBookmark.category">
-              <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+
+          <div class="form-group security-link">
+            <label>🔑 Link to Password Vault (Optional)</label>
+            <select v-model="newBookmark.password_id">
+              <option value="">-- No Password Protection --</option>
+              <option v-for="p in vaultPasswords" :key="p.id" :value="p.id">
+                {{ p.site_name }} ({{ p.account }})
+              </option>
             </select>
           </div>
-        </div>
 
-        <div class="form-group security-link">
-          <label>🔑 Link to Password Vault (Optional)</label>
-          <select v-model="newBookmark.password_id">
-            <option value="">-- No Password Protection --</option>
-            <option v-for="p in vaultPasswords" :key="p.id" :value="p.id">
-              {{ p.site_name }} ({{ p.account }})
-            </option>
-          </select>
-        </div>
-
-        <div class="modal-actions">
-          <button @click="showAddModal = false" class="btn-cancel">Cancel</button>
-          <button @click="addBookmark" class="btn-confirm">
-            {{ newBookmark.isFolder ? 'Create Folder' : 'Add Bookmark' }}
-          </button>
+          <div class="modal-actions">
+            <button @click="showAddModal = false" class="cancel-btn">Cancel</button>
+            <button @click="saveBookmark" class="confirm-btn">{{ editingId ? 'Update' : 'Create' }}</button>
+          </div>
         </div>
       </div>
-    </div>
+    </Teleport>
   </div>
 </template>
 
@@ -525,19 +528,23 @@ const confirmDelete = (bookmark: Bookmark) => {
 .bookmark-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1.5rem;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  overflow-y: auto;
 }
 
 .bookmark-card {
-  position: relative;
+  height: 140px;
+  padding: 1rem;
   display: flex;
   flex-direction: column;
-  padding: 1.5rem;
+  justify-content: space-between;
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 16px;
   overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .bookmark-card.protected {

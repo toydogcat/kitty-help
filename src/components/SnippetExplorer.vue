@@ -380,7 +380,7 @@ const handleDrop = async (targetItem: any | 'root') => {
         <div class="header-actions">
           <button @click="exportToJSON" class="secondary-btn" title="Export to JSON">📤 Export</button>
           <button @click="fileInput?.click()" class="secondary-btn" title="Import from JSON">📥 Import</button>
-          <input type="file" ref="fileInput" @change="importFromJSON" accept=".json" class="hidden" />
+          <input type="file" ref="fileInput" @change="importFromJSON" accept=".json" style="display: none" />
           <button @click="openAddModal" class="add-btn">+ New</button>
         </div>
       </div>
