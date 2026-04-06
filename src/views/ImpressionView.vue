@@ -257,6 +257,13 @@ const deleteNode = async (id: string) => {
     try { await apiService.deleteImpressionNode(id); selectedNodeDetails.value = null; await loadGraph(); } catch (e) { console.error(e); }
 };
 
+const defaultBackgrounds = [
+    { name: 'Cosmic', url: 'https://images.unsplash.com/photo-1462331940025-496dfbfc7564?auto=format&fit=crop&w=1920&q=80' },
+    { name: 'Quantum', url: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1920&q=80' },
+    { name: 'Aurora', url: 'https://images.unsplash.com/photo-1483366759020-137255160894?auto=format&fit=crop&w=1920&q=80' },
+    { name: 'Vortex', url: 'https://images.unsplash.com/photo-1543722530-d2c3201371e7?auto=format&fit=crop&w=1920&q=80' }
+];
+
 const exportAsImage = () => {
     if (!network.value || !canvas.value) return;
     network.value.fit({ animation: false });
@@ -271,18 +278,28 @@ const exportAsImage = () => {
         const ctx = exportCanvas.getContext('2d');
         if (!ctx) return;
 
-        // 1. Draw Background
+        // 1. Draw Background (Safe Loader)
         if (exportBgImage.value) {
-            const bgImg = new Image();
-            bgImg.crossOrigin = "anonymous";
-            bgImg.src = exportBgImage.value;
-            await new Promise((resolve) => { bgImg.onload = resolve; });
-            
-            // Cover keeping aspect ratio
-            const scale = Math.max(exportCanvas.width / bgImg.width, exportCanvas.height / bgImg.height);
-            const x = (exportCanvas.width / 2) - (bgImg.width / 2) * scale;
-            const y = (exportCanvas.height / 2) - (bgImg.height / 2) * scale;
-            ctx.drawImage(bgImg, x, y, bgImg.width * scale, bgImg.height * scale);
+            try {
+                const bgImg = new Image();
+                bgImg.crossOrigin = "anonymous";
+                bgImg.src = exportBgImage.value;
+                await new Promise((resolve, reject) => { 
+                    bgImg.onload = resolve; 
+                    bgImg.onerror = reject;
+                    // Timeout fallback
+                    setTimeout(resolve, 3000); 
+                });
+                
+                const scale = Math.max(exportCanvas.width / bgImg.width, exportCanvas.height / bgImg.height);
+                const x = (exportCanvas.width / 2) - (bgImg.width / 2) * scale;
+                const y = (exportCanvas.height / 2) - (bgImg.height / 2) * scale;
+                ctx.drawImage(bgImg, x, y, bgImg.width * scale, bgImg.height * scale);
+            } catch (err) {
+                // Image failed, use fallback color
+                ctx.fillStyle = exportBgColor.value;
+                ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+            }
         } else {
             ctx.fillStyle = exportBgColor.value;
             ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
