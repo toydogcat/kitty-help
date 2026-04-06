@@ -124,11 +124,14 @@ const loadGraph = async (nodeId?: string) => {
     
     const visNodes = data.nodes.map((n: any) => {
         let finalUrl = n.imageUrl;
-        if (!finalUrl && n.id) finalUrl = apiService.getStorehouseFileUrl(n.id);
+        // 🚨 CRITICAL FIX: Use 'fileId' from the record, NOT the node 'id'
+        if (!finalUrl && n.fileId) finalUrl = apiService.getStorehouseFileUrl(n.fileId, n.sourcePlatform);
+        
         if (finalUrl && !finalUrl.includes('?t=')) {
            const sep = finalUrl.includes('?') ? '&' : '?';
            finalUrl = `${finalUrl}${sep}t=${Date.now()}`;
         }
+        n.imageUrl = finalUrl; // CRITICAL: Update the raw object so the card gets it!
         return {
             id: n.id, label: n.title, shape: n.imageUrl || n.fileId ? 'circularImage' : 'dot',
             image: finalUrl || undefined,
