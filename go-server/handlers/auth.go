@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -109,9 +110,13 @@ func JWTMiddleware(c *fiber.Ctx) error {
 		c.Set("X-Refresh-Token", tokenString)
 	}
 
-	// ROBUST ROLE LOCK: Even if the token is old, always ensure this specific email is Superadmin
-	if strings.ToLower(claims.Email) == "toydogcat@gmail.com" {
+	// ROBUST ROLE LOCK: Force Superadmin for whitelisted email
+	userEmail := strings.ToLower(strings.TrimSpace(claims.Email))
+	if userEmail == "toydogcat@gmail.com" {
 		claims.Role = "superadmin"
+		log.Printf("👑 [Auth] Whitelisted Superadmin access granted for: %s", userEmail)
+	} else {
+		log.Printf("👤 [Auth] Request from user: %s (Role: %s)", userEmail, claims.Role)
 	}
 
 	c.Locals("user", claims)
