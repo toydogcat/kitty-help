@@ -14,6 +14,7 @@ const desktopItems = ref<any[]>([]);
 const activeShelfId = ref<string | null>(null); // null means "Desktop"
 const loading = ref(true);
 const draggingItem = ref<any>(null);
+const dragOverShelfId = ref<string | null | 'desktop'>(null);
 
 // Modals
 const showAddShelfModal = ref(false);
@@ -72,14 +73,21 @@ const onDragStart = (item: any) => {
   draggingItem.value = item;
 };
 
+const onDragOverShelf = (id: string | null | 'desktop') => {
+  dragOverShelfId.value = id;
+};
+
 const onDropOnShelf = async (shelfId: string | null) => {
   if (!draggingItem.value) return;
   try {
     await apiService.updateDeskItem(draggingItem.value.id, { shelfId });
     draggingItem.value = null;
+    dragOverShelfId.value = null;
     await fetchData();
   } catch (err) {
     console.error("Move failed:", err);
+  } finally {
+    dragOverShelfId.value = null;
   }
 };
 
@@ -107,6 +115,14 @@ const getIcon = (type: string) => {
   }
 };
 
+const getThumbnail = (item: any) => {
+  if (item.type === 'media' && item.fileId) {
+    const baseUrl = apiService.getStorehouseFileUrl(item.fileId, item.source);
+    return `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}w=256`;
+  }
+  return null;
+};
+
 const openOriginal = (item: any) => {
   // Logic to open original item based on type
   if (item.type === 'bookmark' && item.url) {
@@ -120,7 +136,7 @@ const openOriginal = (item: any) => {
 
 <template>
   <div class="desk-view">
-    <--- Header -->
+    <!-- Header -->
     <div class="desk-header">
       <div class="title-group">
         <h1>🖥️ Desk Explorer</h1>
@@ -132,7 +148,7 @@ const openOriginal = (item: any) => {
       </div>
     </div>
 
-    <--- Desktop Area -->
+    <!-- Desktop Area -->
     <div 
       class="desktop-canvas" 
       :class="{ 'drop-active': draggingItem && activeShelfId !== null }"
@@ -156,7 +172,11 @@ const openOriginal = (item: any) => {
           @dragstart="onDragStart(it)"
           @dblclick="openOriginal(it)"
         >
-          <div class="tile-icon">{{ getIcon(it.type) }}</div>
+          <div v-if="getThumbnail(it)" class="tile-preview">
+            <img :src="getThumbnail(it) || ''" loading="lazy" />
+          </div>
+          <div v-else class="tile-icon">{{ getIcon(it.type) }}</div>
+          
           <div class="tile-content">
             <span class="tile-title">{{ it.title }}</span>
             <span class="tile-meta">{{ it.type.toUpperCase() }}</span>
@@ -166,39 +186,41 @@ const openOriginal = (item: any) => {
       </div>
     </div>
 
-    <--- Shelves Area (Bottom Rail) -->
+    <!-- Shelves Area (Bottom Rail) -->
     <div class="shelves-rail shadow-lg">
       <div class="rail-header">
-        <span class="rail-title">�� My Shelves</span>
+        <span class="rail-title">📚 My Shelves</span>
         <span class="rail-hint">Drag items below to store</span>
       </div>
       
       <div class="shelves-container">
-        <--- Main Desktop Entry -->
+        <!-- Main Desktop Entry -->
         <div 
           class="shelf-card desktop-link" 
-          :class="{ active: activeShelfId === null }"
+          :class="{ active: activeShelfId === null, 'drag-over': dragOverShelfId === 'desktop' }"
           @click="switchShelf(null)"
-          @dragover.prevent
+          @dragover.prevent="onDragOverShelf('desktop')"
+          @dragleave="onDragOverShelf(null)"
           @drop="onDropOnShelf(null)"
         >
-          <span class="s-icon">🏠</span>
+          <span class="s-icon">{{ dragOverShelfId === 'desktop' ? '📥' : '🏠' }}</span>
           <span class="s-name">Desktop</span>
         </div>
 
-        <--- Dynamic Shelves -->
+        <!-- Dynamic Shelves -->
         <div 
           v-for="s in shelves" 
           :key="s.id"
           class="shelf-card"
-          :class="{ active: activeShelfId === s.id }"
+          :class="{ active: activeShelfId === s.id, 'drag-over': dragOverShelfId === s.id }"
           @click="switchShelf(s.id)"
           @dblclick="switchShelf(s.id)"
-          @dragover.prevent
+          @dragover.prevent="onDragOverShelf(s.id)"
+          @dragleave="onDragOverShelf(null)"
           @drop="onDropOnShelf(s.id)"
         >
           <div class="shelf-top">
-            <span class="s-icon">📁</span>
+            <span class="s-icon">{{ dragOverShelfId === s.id ? '📥' : '📁' }}</span>
             <button @click.stop="deleteShelf(s.id)" class="s-del">×</button>
           </div>
           <span class="s-name">{{ s.name }}</span>
@@ -206,7 +228,7 @@ const openOriginal = (item: any) => {
       </div>
     </div>
 
-    <--- Modal for New Shelf -->
+    <!-- Modal for New Shelf -->
     <div v-if="showAddShelfModal" class="modal-overlay" @click.self="showAddShelfModal = false">
       <div class="modal-card mini">
         <h3>Create New Shelf</h3>
@@ -320,6 +342,26 @@ const openOriginal = (item: any) => {
 .desk-tile:active { cursor: grabbing; }
 
 .tile-icon { font-size: 2.5rem; }
+.tile-preview {
+  width: 100%;
+  height: 100px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(0,0,0,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tile-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+.desk-tile:hover .tile-preview img {
+  transform: scale(1.1);
+}
+
 .tile-content { text-align: center; width: 100%; }
 .tile-title {
   display: block;
@@ -365,21 +407,21 @@ const openOriginal = (item: any) => {
   display: flex;
   gap: 1rem;
   overflow-x: auto;
-  padding-bottom: 0.5rem;
+  padding: 0.5rem;
 }
 
 .shelf-card {
   min-width: 120px;
   background: rgba(255,255,255,0.05);
   border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 12px;
+  border-radius: 15px;
   padding: 0.8rem;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .shelf-card.active {
@@ -388,13 +430,26 @@ const openOriginal = (item: any) => {
   box-shadow: 0 0 20px rgba(var(--primary-rgb), 0.4);
 }
 
-.shelf-card:hover:not(.active) {
+.shelf-card.drag-over {
+  border-color: var(--primary-color);
+  background: rgba(var(--primary-rgb), 0.25);
+  transform: scale(1.08);
+  box-shadow: 0 0 15px var(--primary-color);
+}
+
+.shelf-card.desktop-link {
+  flex-direction: row;
+  justify-content: center;
+}
+
+.shelf-card:hover:not(.active):not(.drag-over) {
   background: rgba(255,255,255,0.1);
   border-color: var(--primary-color);
 }
 
 .shelf-top { display: flex; justify-content: space-between; width: 100%; align-items: flex-start; }
-.s-icon { font-size: 1.5rem; }
+.s-icon { font-size: 1.5rem; transition: transform 0.2s; }
+.drag-over .s-icon { transform: translateY(-2px); }
 .s-name { font-weight: 700; font-size: 0.85rem; }
 
 .s-del {

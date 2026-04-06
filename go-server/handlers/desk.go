@@ -88,8 +88,10 @@ func DeleteShelf(c *fiber.Ctx) error {
 
 type DeskItemResponse struct {
 	models.DeskItem
-	Title string `json:"title"`
-	URL   string `json:"url,omitempty"`
+	Title  string `json:"title"`
+	URL    string `json:"url,omitempty"`
+	FileID string `json:"fileId,omitempty"` // For media
+	Source string `json:"source,omitempty"` // For media
 }
 
 func GetDeskItems(c *fiber.Ctx) error {
@@ -113,7 +115,15 @@ func GetDeskItems(c *fiber.Ctx) error {
 		CASE 
 			WHEN di.type = 'bookmark' THEN (SELECT url FROM bookmarks WHERE id = di.ref_id)
 			ELSE ''
-		END as url
+		END as url,
+		CASE 
+			WHEN di.type = 'media' THEN (SELECT file_id FROM media_archives WHERE id = di.ref_id)
+			ELSE ''
+		END as file_id,
+		CASE 
+			WHEN di.type = 'media' THEN (SELECT source_platform FROM media_archives WHERE id = di.ref_id)
+			ELSE ''
+		END as source
 		FROM desk_items di
 		WHERE di.user_id = $1
 	`
@@ -139,7 +149,7 @@ func GetDeskItems(c *fiber.Ctx) error {
 	items := []DeskItemResponse{}
 	for rows.Next() {
 		var it DeskItemResponse
-		err := rows.Scan(&it.ID, &it.UserID, &it.ShelfID, &it.Type, &it.RefID, &it.SortOrder, &it.CreatedAt, &it.Title, &it.URL)
+		err := rows.Scan(&it.ID, &it.UserID, &it.ShelfID, &it.Type, &it.RefID, &it.SortOrder, &it.CreatedAt, &it.Title, &it.URL, &it.FileID, &it.Source)
 		if err != nil {
 			log.Printf("Scan DeskItem error: %v", err)
 			continue
