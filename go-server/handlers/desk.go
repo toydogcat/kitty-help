@@ -246,9 +246,16 @@ func UpdateDeskItem(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
+	// Fix for empty shelfId
+	var sId interface{} = it.ShelfID
+	if it.ShelfID == nil || *it.ShelfID == "" || *it.ShelfID == "null" {
+		sId = nil
+	}
+
 	query := "UPDATE desk_items SET shelf_id = $1, sort_order = $2 WHERE id = $3"
-	_, err := database.LocalDB.Exec(context.Background(), query, it.ShelfID, it.SortOrder, id)
+	_, err := database.LocalDB.Exec(context.Background(), query, sId, it.SortOrder, id)
 	if err != nil {
+		log.Printf("UpdateDeskItem error: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Update failed"})
 	}
 	return c.JSON(fiber.Map{"success": true})

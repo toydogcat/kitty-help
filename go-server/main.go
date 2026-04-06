@@ -159,6 +159,8 @@ func main() {
 	toby := protected.Group("/", handlers.TobyOnlyMiddleware)
 	toby.Get("/bot/requests", handlers.GetPendingBotRequests)
 	toby.Post("/bot/approve", handlers.ApproveBotRequest)
+	toby.Get("/bot/users", handlers.GetAuthorizedBotUsers)
+	toby.Post("/bot/users/delete", handlers.DeleteAuthorizedBotUser)
 	toby.Get("/passwords", handlers.GetPasswords)
 	toby.Post("/passwords", handlers.AddPassword)
 	toby.Delete("/passwords/:id", handlers.DeletePassword)
