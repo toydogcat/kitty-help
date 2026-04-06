@@ -190,12 +190,11 @@ func IndexStorehouseItem(c *fiber.Ctx) error {
 	// 2. Download file to memory/temp via Bot Manager
 	var localPath string
 	var data []byte
-	var contentType string
 	if source == "telegram" {
 		tgBotIf, _ := bots.BotManager.Get("telegram")
 		tgBot := tgBotIf.(*bots.TelegramBot)
 		var err error
-		data, contentType, err = tgBot.GetFile(c.Context(), fileID)
+		data, _, err = tgBot.GetFile(c.Context(), fileID)
 		if err == nil {
 			localPath = filepath.Join(os.TempDir(), fileID)
 			os.WriteFile(localPath, data, 0644)
