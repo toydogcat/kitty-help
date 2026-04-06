@@ -20,6 +20,12 @@ const dragOverShelfId = ref<string | null | 'desktop'>(null);
 const showAddShelfModal = ref(false);
 const newShelfName = ref('');
 
+// Item Editor Modal
+const showEditModal = ref(false);
+const editingItem = ref<any>(null);
+const editBuffer = ref({ title: '', content: '' });
+const saving = ref(false);
+
 onMounted(() => {
   fetchData();
 });
@@ -115,21 +121,55 @@ const getIcon = (type: string) => {
   }
 };
 
-const getThumbnail = (item: any) => {
+const getThumbnail = (item: any, large = false) => {
   if (item.type === 'media' && item.fileId) {
     const baseUrl = apiService.getStorehouseFileUrl(item.fileId, item.source);
-    return `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}w=256`;
+    return `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}${large ? 'w=1024' : 'w=256'}`;
   }
   return null;
 };
 
 const openOriginal = (item: any) => {
-  // Logic to open original item based on type
   if (item.type === 'bookmark' && item.url) {
     window.open(item.url, '_blank');
-  } else {
-    // In a real app, you might emit an event or route to the specific editor
-    alert(`Opening ${item.type}: ${item.title}. (Integration with editors coming soon!)`);
+    return;
+  }
+  
+  // Open Internal Editor
+  editingItem.value = item;
+  editBuffer.value = { 
+    title: item.title, 
+    content: item.content || '' 
+  };
+  showEditModal.value = true;
+};
+
+const saveItemEdit = async () => {
+  if (!editingItem.value) return;
+  saving.value = true;
+  try {
+    if (editingItem.value.type === 'snippet') {
+      await apiService.updateSnippet(editingItem.value.refId, {
+        name: editBuffer.value.title,
+        content: editBuffer.value.content
+      });
+    } else if (editingItem.value.type === 'media') {
+      await apiService.updateStorehouseItem(editingItem.value.refId, {
+        title: editBuffer.value.title,
+        notes: editBuffer.value.content
+      });
+    } else if (editingItem.value.type === 'bookmark') {
+      await apiService.updateBookmark(editingItem.value.refId, {
+        title: editBuffer.value.title
+      });
+    }
+    
+    showEditModal.value = false;
+    await fetchData(); // Refresh data to show updated title/content
+  } catch (err) {
+    alert("Save failed");
+  } finally {
+    saving.value = false;
   }
 };
 </script>
@@ -239,6 +279,45 @@ const openOriginal = (item: any) => {
         </div>
       </div>
     </div>
+
+    <!-- Universal Item Editor Modal -->
+    <Teleport to="body">
+      <div v-if="showEditModal" class="modal-overlay editor-overlay" @click.self="showEditModal = false">
+        <div class="editor-pane shadow-2xl">
+          <div class="editor-header">
+            <div class="type-badge">{{ editingItem?.type.toUpperCase() }} EDITOR</div>
+            <button @click="showEditModal = false" class="close-x">✕</button>
+          </div>
+
+          <div class="editor-body">
+            <!-- Media Preview -->
+            <div v-if="editingItem?.type === 'media'" class="media-large-preview">
+              <img :src="getThumbnail(editingItem, true) || ''" />
+            </div>
+
+            <!-- Title Input -->
+            <div class="field">
+              <label>Title</label>
+              <input v-model="editBuffer.title" placeholder="Item Name..." />
+            </div>
+
+            <!-- Content Area (for Snippets/Media Notes) -->
+            <div v-if="editingItem?.type !== 'bookmark'" class="field fill">
+              <label>{{ editingItem?.type === 'snippet' ? 'Content' : 'Notes / Description' }}</label>
+              <textarea v-model="editBuffer.content" placeholder="Type something here..."></textarea>
+            </div>
+            
+            <div v-if="editingItem?.type === 'bookmark'" class="bookmark-info">
+              <p>URL: <a :href="editingItem.url" target="_blank">{{ editingItem.url }}</a></p>
+            </div>
+          </div>
+
+          <div class="editor-footer">
+            <button @click="showEditModal = false" class="cancel-btn">Discard</button>
+            <button @click="saveItemEdit" class="save-btn" :disabled="saving">
+              {{ saving ? 'Saving...' : '✅ Save Changes' }}
+            </button>
+    </Teleport>
   </div>
 </template>
 
@@ -472,6 +551,7 @@ const openOriginal = (item: any) => {
   justify-content: center;
   z-index: 2000;
 }
+
 .modal-card.mini {
   background: var(--card-bg);
   padding: 2rem;
@@ -498,5 +578,126 @@ const openOriginal = (item: any) => {
   padding: 0.5rem 1rem;
   border-radius: 8px;
   font-weight: 700;
+}
+
+/* Universal Editor Styles */
+.editor-overlay {
+  backdrop-filter: blur(8px);
+  background: rgba(0,0,0,0.6);
+}
+
+.editor-pane {
+  background: var(--card-bg);
+  width: 800px;
+  max-width: 95vw;
+  max-height: 90vh;
+  border-radius: 24px;
+  border: 1px solid rgba(var(--primary-rgb), 0.3);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modalEnter 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes modalEnter {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.editor-header {
+  padding: 1rem 1.5rem;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.type-badge {
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 2px;
+  color: var(--primary-color);
+}
+
+.close-x {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.5rem;
+  cursor: pointer;
+  opacity: 0.5;
+}
+.close-x:hover { opacity: 1; }
+
+.editor-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.media-large-preview {
+  width: 100%;
+  max-height: 400px;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  background: #000;
+}
+
+.media-large-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.field { display: flex; flex-direction: column; gap: 0.5rem; }
+.field.fill { flex: 1; }
+.field label { font-size: 0.8rem; font-weight: 700; opacity: 0.6; padding-left: 0.5rem; }
+
+.field input, .field textarea {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 1rem;
+  color: white;
+  font-size: 1rem;
+  font-family: inherit;
+}
+
+.field textarea { height: 300px; resize: none; line-height: 1.6; }
+
+.editor-footer {
+  padding: 1.5rem 2rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  background: rgba(255,255,255,0.02);
+}
+
+.save-btn {
+  background: var(--primary-color);
+  color: white;
+  padding: 0.8rem 2rem;
+  border-radius: 12px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(var(--primary-rgb), 0.3);
+}
+
+.save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.cancel-btn {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: white;
+  padding: 0.8rem 1.5rem;
+  border-radius: 12px;
+  cursor: pointer;
 }
 </style>

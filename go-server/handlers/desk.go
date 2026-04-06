@@ -88,10 +88,11 @@ func DeleteShelf(c *fiber.Ctx) error {
 
 type DeskItemResponse struct {
 	models.DeskItem
-	Title  string `json:"title"`
-	URL    string `json:"url,omitempty"`
-	FileID string `json:"fileId,omitempty"` // For media
-	Source string `json:"source,omitempty"` // For media
+	Title   string `json:"title"`
+	Content string `json:"content,omitempty"` // For snippets or media notes
+	URL     string `json:"url,omitempty"`
+	FileID  string `json:"fileId,omitempty"` // For media
+	Source  string `json:"source,omitempty"` // For media
 }
 
 func GetDeskItems(c *fiber.Ctx) error {
@@ -112,6 +113,11 @@ func GetDeskItems(c *fiber.Ctx) error {
 			WHEN di.type = 'media' THEN (SELECT title FROM media_archives WHERE id = di.ref_id)
 			ELSE 'Unknown Item'
 		END as title,
+		CASE 
+			WHEN di.type = 'snippet' THEN (SELECT content FROM snippets WHERE id = di.ref_id)
+			WHEN di.type = 'media' THEN (SELECT notes FROM media_archives WHERE id = di.ref_id)
+			ELSE ''
+		END as content,
 		CASE 
 			WHEN di.type = 'bookmark' THEN (SELECT url FROM bookmarks WHERE id = di.ref_id)
 			ELSE ''
@@ -149,7 +155,7 @@ func GetDeskItems(c *fiber.Ctx) error {
 	items := []DeskItemResponse{}
 	for rows.Next() {
 		var it DeskItemResponse
-		err := rows.Scan(&it.ID, &it.UserID, &it.ShelfID, &it.Type, &it.RefID, &it.SortOrder, &it.CreatedAt, &it.Title, &it.URL, &it.FileID, &it.Source)
+		err := rows.Scan(&it.ID, &it.UserID, &it.ShelfID, &it.Type, &it.RefID, &it.SortOrder, &it.CreatedAt, &it.Title, &it.Content, &it.URL, &it.FileID, &it.Source)
 		if err != nil {
 			log.Printf("Scan DeskItem error: %v", err)
 			continue
