@@ -24,7 +24,7 @@ func GetChatLogs(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "platform query required"})
 	}
 
-	sql := "SELECT id, platform, sender_id, sender_name, content, msg_type, media_id, created_at FROM chat_logs WHERE platform = $1"
+	sql := "SELECT id, platform, sender_id, sender_name, content, media_type, file_id, created_at FROM media_archives WHERE platform = $1"
 	args := []interface{}{platform}
 	argIdx := 2
 
@@ -74,7 +74,7 @@ func GetMyBotStatus(c *fiber.Ctx) error {
 	}
 
 	fmt.Printf("[STATUS DEBUG] Checking status for UserID: [%s]\n", user.ID)
-	if user.ID == "82507694-4205-49d4-8099-9e18ba997581" {
+	if user.ID == "41023b15-a1db-4aac-aab8-ba75d8d90905" || user.Email == "toydogcat@gmail.com" {
 		// FORCE INITIALIZE (Overwrite) for Admin Toby on THIS specific database
 		database.LocalDB.Exec(context.Background(),
 			"INSERT INTO bot_authorized_users (platform, account_id, account_name, user_id, role) VALUES ('telegram', '1089079202', 'Master Admin-Toby', $1, 'superadmin') ON CONFLICT (platform, account_id) DO UPDATE SET user_id = EXCLUDED.user_id, role = EXCLUDED.role", user.ID)
