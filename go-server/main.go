@@ -59,7 +59,7 @@ func main() {
 	bots.BotManager.StartAll(context.Background())
 
 	app := fiber.New(fiber.Config{
-		AppName:      "Kitty-Help Master Suite 4.0",
+		AppName:      "Kitty-Help Master Suite 5.0",
 		ReadTimeout:  120 * time.Second,
 		WriteTimeout: 120 * time.Second,
 	})
@@ -85,6 +85,7 @@ func main() {
 	api.Get("/storehouse", handlers.GetStorehouseItems)
 	api.Get("/storehouse/file/:fileID", handlers.GetFileProxy)
 	api.Post("/opencli", handlers.ProxyOpenCLI)
+	api.Post("/web/reader", handlers.ReadUrl)
 	if lineBotInstance != nil { app.Post("/webhook/line", lineBotInstance.HandleFiberWebhook) }
 
 	// --- PROTECTED (JWT + Sliding Session) ---
@@ -92,6 +93,8 @@ func main() {
 	authShared.Get("/bot/my-status", handlers.GetMyBotStatus)
 	authShared.Post("/bot/link", handlers.LinkBotAccount)
 	authShared.Get("/chat/logs", handlers.GetChatLogs)
+	authShared.Post("/security/challenge", handlers.RequestChallenge)
+	authShared.Get("/security/status", handlers.GetSecurityStatus)
 
 	// --- DEVICE PROTECTED ---
 	protected := authShared.Group("/", handlers.DeviceCheckMiddleware)
@@ -104,21 +107,21 @@ func main() {
 	protected.Put("/bookmarks/:id", handlers.UpdateBookmark)
 	protected.Delete("/bookmarks/:id", handlers.DeleteBookmark)
 	
-	// 🧠 IMPRESSION COMPLETELY RESTORED
+	// 🧠 IMPRESSION
 	protected.Get("/impression/temp", handlers.GetImpressionTemp)
 	protected.Get("/impression/graph", handlers.GetImpressionGraph)
 	protected.Get("/impression/search", handlers.SearchImpressionNodes)
-	protected.Get("/impression/export", handlers.ExportImpressionGraph)
-	protected.Post("/impression/nodes", handlers.CreateImpressionNode)
-	protected.Post("/impression/links", handlers.CreateImpressionLink)
-	protected.Post("/impression/import", handlers.ImportImpressionGraph)
-	protected.Put("/impression/links/:id", handlers.UpdateImpressionEdge)
-	protected.Delete("/impression/links/:id", handlers.DeleteImpressionEdge)
 	protected.Get("/impression/random", handlers.GetRandomImpressionNodeID)
-	protected.Post("/impression/nodes/:id/sync", handlers.SyncNodeToSnippet)
-	protected.Get("/impression/snippets/:id", handlers.GetLinkedSnippet)
-	protected.Delete("/impression/nodes/:id", handlers.DeleteImpressionNode)
+	protected.Post("/impression/nodes", handlers.CreateImpressionNode)
 	protected.Put("/impression/nodes/:id", handlers.UpdateImpressionNode)
+	protected.Delete("/impression/nodes/:id", handlers.DeleteImpressionNode)
+	protected.Post("/impression/links", handlers.CreateImpressionLink)
+	protected.Delete("/impression/links/:id", handlers.DeleteImpressionEdge)
+
+	// 🌐 COMMON STATUS (Discovery Wall State)
+	protected.Get("/common", handlers.GetCommonState)
+	protected.Post("/common/update", handlers.UpdateCommonState)
+	protected.Get("/common/history", handlers.GetCommonHistory)
 
 	protected.Post("/bulletin", handlers.UpdateBulletin)
 	protected.Post("/calendar", handlers.UpdateCalendarEvent)
@@ -137,7 +140,6 @@ func main() {
 	toby.Post("/bot/approve", handlers.ApproveBotRequest)
 	toby.Get("/passwords", handlers.GetPasswords)
 	toby.Post("/passwords", handlers.AddPassword)
-	toby.Delete("/passwords/:id", handlers.DeletePassword)
 
 	app.All("/socket.io/*", adaptor.HTTPHandler(sockets.Server))
 	migrateBotAdmins()
@@ -154,7 +156,7 @@ func main() {
 		bots.BotManager.StopAll(context.Background())
 	}()
 
-	log.Printf("🚀 Super Kitty (Impress Fully Restored!) running at port %s", port)
+	log.Printf("🚀 Super Kitty (AI News Ready!) running at port %s", port)
 	log.Fatal(app.Listen("0.0.0.0:" + port))
 }
 
