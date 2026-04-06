@@ -282,17 +282,12 @@ func main() {
 		bots.BotManager.StopAll(context.Background())
 	}()
 
-	// 6. Serve Frontend Static Files (NUC Deployment)
-	app.Static("/", "./dist")
-	
-	// SPA Fallback: Any route that doesn't match API or static files gets index.html
-	app.Get("/*", func(c *fiber.Ctx) error {
-		path := c.Path()
-		// If it's an API or socket request, don't serve index.html, let it 404 or pass
-		if strings.HasPrefix(path, "/api") || strings.HasPrefix(path, "/socket.io") {
-			return c.Next()
-		}
-		return c.SendFile("./dist/index.html")
+	// 6. API Only: No local frontend hosting needed (Using Firebase)
+	app.Get("/", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"status": "online",
+			"message": "Kitty-Help API Gateway",
+		})
 	})
 
 	port := os.Getenv("PORT")
