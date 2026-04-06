@@ -250,6 +250,7 @@ func EnsureTables() {
 			title TEXT NOT NULL,
 			content TEXT,
 			node_type TEXT DEFAULT 'general', -- person, place, event, etc.
+			desk_shelf_id UUID REFERENCES desk_shelves(id) ON DELETE SET NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS impression_edges (
@@ -314,6 +315,7 @@ func EnsureTables() {
 			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS is_folder BOOLEAN DEFAULT FALSE`,
 			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS sort_order INT DEFAULT 0`,
 			`ALTER TABLE bookmarks ALTER COLUMN url DROP NOT NULL`,
+			`ALTER TABLE impression_nodes ADD COLUMN IF NOT EXISTS desk_shelf_id UUID REFERENCES desk_shelves(id) ON DELETE SET NULL`,
 		}
 		for _, m := range migrations {
 			LocalDB.Exec(ctx, m)

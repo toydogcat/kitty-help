@@ -111,7 +111,8 @@ func JWTMiddleware(c *fiber.Ctx) error {
 	}
 
 	// ROBUST ROLE LOCK: Force Superadmin/Toby for whitelisted emails
-	userEmail := strings.ToLower(strings.TrimSpace(claims.Email))
+	claims.Email = strings.ToLower(strings.TrimSpace(claims.Email))
+	userEmail := claims.Email
 	isAdmin := userEmail == "toydogcat@gmail.com" || userEmail == "chickenmilktea@gmail.com" || userEmail == "tobywang2021@gmail.com"
 	
 	if isAdmin {

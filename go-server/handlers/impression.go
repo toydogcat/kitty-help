@@ -237,11 +237,11 @@ func GetImpressionGraph(c *fiber.Ctx) error {
 		an.linked_snippet_id::TEXT,
 		an.desk_shelf_id::TEXT,
 		an.title, 
-		an.content, 
+		COALESCE(an.content, '') as content, 
 		an.node_type, 
 		an.created_at, 
-		m.file_id, 
-		m.source_platform
+		COALESCE(m.file_id, '') as file_id, 
+		COALESCE(m.source_platform, 'telegram') as source_platform
 	FROM all_nodes an
 	LEFT JOIN media_archives m ON an.media_id = m.id
 	`

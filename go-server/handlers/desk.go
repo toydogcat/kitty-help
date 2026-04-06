@@ -153,26 +153,26 @@ func GetDeskItems(c *fiber.Ctx) error {
 	query := `
 		SELECT di.id, di.user_id, di.shelf_id, di.type, di.ref_id, di.sort_order, di.created_at,
 		CASE 
-			WHEN di.type = 'bookmark' THEN (SELECT title FROM bookmarks WHERE id = di.ref_id)
-			WHEN di.type = 'snippet' THEN (SELECT name FROM snippets WHERE id = di.ref_id)
-			WHEN di.type = 'media' THEN (SELECT title FROM media_archives WHERE id = di.ref_id)
+			WHEN di.type = 'bookmark' THEN (SELECT COALESCE(title, '') FROM bookmarks WHERE id = di.ref_id)
+			WHEN di.type = 'snippet' THEN (SELECT COALESCE(name, '') FROM snippets WHERE id = di.ref_id)
+			WHEN di.type = 'media' THEN (SELECT COALESCE(title, 'Untitled Resource') FROM media_archives WHERE id = di.ref_id)
 			ELSE 'Unknown Item'
 		END as title,
 		CASE 
-			WHEN di.type = 'snippet' THEN (SELECT content FROM snippets WHERE id = di.ref_id)
-			WHEN di.type = 'media' THEN (SELECT notes FROM media_archives WHERE id = di.ref_id)
+			WHEN di.type = 'snippet' THEN (SELECT COALESCE(content, '') FROM snippets WHERE id = di.ref_id)
+			WHEN di.type = 'media' THEN (SELECT COALESCE(notes, '') FROM media_archives WHERE id = di.ref_id)
 			ELSE ''
 		END as content,
 		CASE 
-			WHEN di.type = 'bookmark' THEN (SELECT url FROM bookmarks WHERE id = di.ref_id)
+			WHEN di.type = 'bookmark' THEN (SELECT COALESCE(url, '') FROM bookmarks WHERE id = di.ref_id)
 			ELSE ''
 		END as url,
 		CASE 
-			WHEN di.type = 'media' THEN (SELECT file_id FROM media_archives WHERE id = di.ref_id)
+			WHEN di.type = 'media' THEN (SELECT COALESCE(file_id, '') FROM media_archives WHERE id = di.ref_id)
 			ELSE ''
 		END as file_id,
 		CASE 
-			WHEN di.type = 'media' THEN (SELECT source_platform FROM media_archives WHERE id = di.ref_id)
+			WHEN di.type = 'media' THEN (SELECT COALESCE(source_platform, 'telegram') FROM media_archives WHERE id = di.ref_id)
 			ELSE ''
 		END as source
 		FROM desk_items di
