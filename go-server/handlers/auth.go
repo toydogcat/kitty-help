@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -58,14 +59,14 @@ func VerifyFirebaseToken(c *fiber.Ctx) error {
 		return c.Status(401).JSON(fiber.Map{"error": "Email not found in token"})
 	}
 
-	// 1. Check user classification
-	isAdmin := email == "toydogcat@gmail.com"
-	isToby := isAdmin || email == "chickenmilktea@gmail.com" || email == "tobywang2021@gmail.com"
-
-	fmt.Printf("\n[AUTH DEBUG] Verifying Email: [%s] (isAdmin: %v, isToby: %v)\n", email, isAdmin, isToby)
-
 	// Resolve actual identity Email for grouping
-	resolvedEmail := email
+	resolvedEmail := strings.ToLower(strings.TrimSpace(email))
+
+	// 1. Check user classification
+	isAdmin := resolvedEmail == "toydogcat@gmail.com" 
+	isToby := isAdmin || resolvedEmail == "chickenmilktea@gmail.com" || resolvedEmail == "tobywang2021@gmail.com"
+
+	fmt.Printf("\n[AUTH DEBUG] Verifying Email: [%s] (isAdmin: %v, isToby: %v)\n", resolvedEmail, isAdmin, isToby)
 
 	var role, name, dbID string
 	
