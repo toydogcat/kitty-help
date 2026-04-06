@@ -66,7 +66,7 @@ func InitDB() {
 		log.Printf("⚠️ Warning: Unable to connect to Local DB: %v", err)
 	} else {
 		// Database connected successfully
-		fmt.Println("✅ Connected to Local PostgreSQL")
+		fmt.Printf("✅ Connected to Local PostgreSQL at %s\n", configLocal.ConnConfig.Host)
 	}
 }
 
