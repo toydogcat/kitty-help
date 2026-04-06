@@ -270,12 +270,15 @@ func GetFileProxy(c *fiber.Ctx) error {
 			lnBot := lnBotIf.(*bots.LineBot)
 			content, err := lnBot.Bot.GetMessageContent(fileID).Do()
 			if err != nil {
-				log.Printf("❌ LINE content fetch failed for %s: %v", fileID, err)
-				return c.Status(404).JSON(fiber.Map{"error": "Failed to fetch LINE content"})
+				log.Printf("❌ LINE content fetch failed for %s (Likely Expired): %v", fileID, err)
+				return c.Status(404).JSON(fiber.Map{"error": "Content expired or not found on LINE"})
 			}
 			defer content.Content.Close()
 			
-			bodyBytes, _ := io.ReadAll(content.Content)
+			bodyBytes, err := io.ReadAll(content.Content)
+			if err != nil {
+				return c.Status(500).JSON(fiber.Map{"error": "Failed to read content stream"})
+			}
 			c.Set("Content-Type", content.ContentType)
 			c.Set("Content-Length", fmt.Sprintf("%d", len(bodyBytes)))
 			return c.Send(bodyBytes)
