@@ -41,7 +41,15 @@ const linkedNoteData = ref({ id: '', name: '', content: '' });
 // Physics and Export
 const isPhysicsEnabled = ref(true);
 const exportBgColor = ref('#0f172a'); 
+const exportBgImage = ref<string | null>(null);
 const showExportPanel = ref(false);
+
+const defaultBackgrounds = [
+    { name: 'Cosmic', url: 'https://images.unsplash.com/photo-1464802686167-b939a6910659?auto=format&fit=crop&w=1920&q=80' },
+    { name: 'Quantum', url: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&w=1920&q=80' },
+    { name: 'Aurora', url: 'https://images.unsplash.com/photo-1531306728370-e2eba9bd7bb1?auto=format&fit=crop&w=1920&q=80' },
+    { name: 'Vortex', url: 'https://images.unsplash.com/photo-1502134249126-9f3755a50d78?auto=format&fit=crop&w=1920&q=80' }
+];
 
 const nodes = new DataSet<any>([]);
 const edges = new DataSet<any>([]);
@@ -252,22 +260,44 @@ const deleteNode = async (id: string) => {
 const exportAsImage = () => {
     if (!network.value || !canvas.value) return;
     network.value.fit({ animation: false });
-    setTimeout(() => {
+    
+    setTimeout(async () => {
         const originalCanvas = canvas.value!.getElementsByTagName('canvas')[0];
         if (!originalCanvas) return;
+        
         const exportCanvas = document.createElement('canvas');
-        exportCanvas.width = originalCanvas.width; exportCanvas.height = originalCanvas.height;
+        exportCanvas.width = originalCanvas.width;
+        exportCanvas.height = originalCanvas.height;
         const ctx = exportCanvas.getContext('2d');
-        if (ctx) {
-            ctx.fillStyle = exportBgColor.value; ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-            ctx.drawImage(originalCanvas, 0, 0);
-            const link = document.createElement('a');
-            link.download = `impression_art_${Date.now()}.png`;
-            link.href = exportCanvas.toDataURL('image/png');
-            link.click();
-            showExportPanel.value = false;
+        if (!ctx) return;
+
+        // 1. Draw Background
+        if (exportBgImage.value) {
+            const bgImg = new Image();
+            bgImg.crossOrigin = "anonymous";
+            bgImg.src = exportBgImage.value;
+            await new Promise((resolve) => { bgImg.onload = resolve; });
+            
+            // Cover keeping aspect ratio
+            const scale = Math.max(exportCanvas.width / bgImg.width, exportCanvas.height / bgImg.height);
+            const x = (exportCanvas.width / 2) - (bgImg.width / 2) * scale;
+            const y = (exportCanvas.height / 2) - (bgImg.height / 2) * scale;
+            ctx.drawImage(bgImg, x, y, bgImg.width * scale, bgImg.height * scale);
+        } else {
+            ctx.fillStyle = exportBgColor.value;
+            ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
         }
-    }, 150);
+
+        // 2. Overlay Graph
+        ctx.drawImage(originalCanvas, 0, 0);
+
+        // 3. Download
+        const link = document.createElement('a');
+        link.download = `impression_art_${Date.now()}.png`;
+        link.href = exportCanvas.toDataURL('image/png');
+        link.click();
+        showExportPanel.value = false;
+    }, 200);
 };
 
 const loadTempItems = async () => {
@@ -454,9 +484,17 @@ onMounted(() => { initGraph(); loadTempItems(); loadGraph(); });
         <div v-if="showExportPanel" class="snapshot-panel glass neon-border">
             <div class="panel-head"><h4>Snapshot Studio</h4><button class="close-p" @click="showExportPanel = false">×</button></div>
             <div class="panel-body">
+                <p class="p-hint">Select Backdrop Style</p>
                 <div class="color-picker-grid">
-                    <div v-for="c in ['#0f172a', '#1e293b', '#000000', '#f43f5e', '#22d3ee']" :key="c" :style="{ background: c }"
-                        @click="exportBgColor = c" :class="{ active: exportBgColor === c }" class="c-dot"></div>
+                    <div v-for="c in ['#0f172a', '#1e293b', '#000000', '#0a0a0a']" :key="c" :style="{ background: c }"
+                        @click="exportBgColor = c; exportBgImage = null" :class="{ active: !exportBgImage && exportBgColor === c }" class="c-dot"></div>
+                </div>
+                <div class="bg-picker-grid">
+                    <div v-for="bg in defaultBackgrounds" :key="bg.name" class="bg-item" 
+                         :class="{ active: exportBgImage === bg.url }" @click="exportBgImage = bg.url">
+                        <img :src="bg.url" />
+                        <span>{{ bg.name }}</span>
+                    </div>
                 </div>
                 <button class="action-submit-btn" @click="exportAsImage">Download Art</button>
             </div>
@@ -515,6 +553,26 @@ onMounted(() => { initGraph(); loadTempItems(); loadGraph(); });
 .gallery-dock {
   position: absolute; top: -235px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 960px; transition: all 0.6s cubic-bezier(0.18, 0.89, 0.32, 1.28); display: flex; flex-direction: column;
 }
+.snapshot-panel { position: absolute; right: 25px; top: 50%; transform: translateY(-50%); width: 340px; padding: 25px; z-index: 2000; }
+.color-picker-grid { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+.c-dot { width: 32px; height: 32px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+.c-dot.active { border-color: #22d3ee; transform: scale(1.1); box-shadow: 0 0 15px rgba(34, 211, 238, 0.4); }
+
+.bg-picker-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 25px; }
+.bg-item { height: 80px; border-radius: 12px; overflow: hidden; position: relative; cursor: pointer; border: 2px solid transparent; transition: 0.3s; }
+.bg-item img { width: 100%; height: 100%; object-fit: cover; opacity: 0.7; }
+.bg-item span { position: absolute; bottom: 5px; left: 8px; font-size: 0.65rem; font-weight: 700; color: white; text-shadow: 0 1px 4px rgba(0,0,0,0.8); }
+.bg-item:hover img { opacity: 1; }
+.bg-item.active { border-color: #22d3ee; transform: scale(1.05); }
+.bg-item.active img { opacity: 1; }
+
+.p-hint { font-size: 0.7rem; color: #94a3b8; margin-bottom: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+.panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.panel-head h4 { color: #22d3ee; margin: 0; font-size: 1.1rem; }
+.close-p { background: none; border: none; color: #94a3b8; font-size: 24px; cursor: pointer; }
+.action-submit-btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #22d3ee, #0ea5e9); border: none; border-radius: 12px; color: #0f172a; font-weight: 800; cursor: pointer; transition: 0.3s; }
+.action-submit-btn:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(34, 211, 238, 0.4); }
+
 .gallery-dock:not(.collapsed) { top: 15px; }
 .dock-header { display: flex; justify-content: space-between; align-items: center; padding: 18px 28px; border-bottom: 1px solid rgba(255,255,255,0.05); }
 .title-meta { display: flex; align-items: center; gap: 14px; }
