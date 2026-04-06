@@ -12,6 +12,8 @@ type ImpressionNode struct {
 	NodeType        string    `json:"nodeType"`
 	CreatedAt       time.Time `json:"createdAt"`
 	ImageURL        string    `json:"imageUrl,omitempty"`
+	FileID          *string   `json:"fileId,omitempty"`
+	SourcePlatform  *string   `json:"sourcePlatform,omitempty"`
 }
 
 type ImpressionEdge struct {

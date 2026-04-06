@@ -246,13 +246,15 @@ func GetImpressionGraph(c *fiber.Ctx) error {
 	nodesList := []models.ImpressionNode{}
 	for rows.Next() {
 		var n models.ImpressionNode
-		var fileID, sourcePlatform *string // Keep for query alignment
-		err := rows.Scan(&n.ID, &n.UserID, &n.MediaID, &n.LinkedSnippetID, &n.Title, &n.Content, &n.NodeType, &n.CreatedAt, &fileID, &sourcePlatform)
+		err := rows.Scan(&n.ID, &n.UserID, &n.MediaID, &n.LinkedSnippetID, &n.Title, &n.Content, &n.NodeType, &n.CreatedAt, &n.FileID, &n.SourcePlatform)
 		if err == nil {
-			if n.MediaID != nil && *n.MediaID != "" {
+			if n.FileID != nil && *n.FileID != "" {
 				baseURL := os.Getenv("VITE_API_URL")
 				if baseURL == "" { baseURL = c.BaseURL() }
-				n.ImageURL = baseURL + "/api/storehouse/file/" + *n.MediaID
+				n.ImageURL = baseURL + "/api/storehouse/file/" + *n.FileID
+				if n.SourcePlatform != nil {
+					n.ImageURL += "?platform=" + *n.SourcePlatform
+				}
 			}
 			nodesList = append(nodesList, n)
 			nodeMap[n.ID] = n
