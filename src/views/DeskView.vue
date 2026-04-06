@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
+import { useRoute } from 'vue-router';
 import { apiService } from '../services/api';
 import { marked } from 'marked';
 
@@ -30,7 +31,11 @@ const editBuffer = ref({ title: '', content: '' });
 const editMode = ref<'edit' | 'preview'>('edit');
 const saving = ref(false);
 
+const route = useRoute();
+
 onMounted(() => {
+  const shelf = route.query.shelfId as string;
+  if (shelf) activeShelfId.value = shelf;
   fetchData();
 });
 

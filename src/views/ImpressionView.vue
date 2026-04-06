@@ -38,6 +38,11 @@ const isLinkingMode = ref(false);
 const isEditingNoteContent = ref(false);
 const linkedNoteData = ref({ id: '', name: '', content: '' });
 
+// Desk Linkage
+const isEditingDeskLink = ref(false);
+const shelves = ref<any[]>([]);
+const selectedShelfItems = ref<any[]>([]);
+
 // Physics and Export
 const isPhysicsEnabled = ref(true);
 const exportBgColor = ref('#0f172a'); 
@@ -107,6 +112,42 @@ const initGraph = () => {
 
   network.value.on('dragEnd', saveViewState);
   network.value.on('zoom', saveViewState);
+  loadShelves();
+};
+
+const loadShelves = async () => {
+    try {
+        shelves.value = await apiService.getShelves();
+    } catch (e) { console.error(e); }
+};
+
+const loadShelfPreview = async (shelfId: string) => {
+    try {
+        selectedShelfItems.value = await apiService.getDeskItems(shelfId);
+    } catch (e) { console.error(e); }
+};
+
+const linkShelf = async (shelfId: string | null) => {
+    if (!selectedNodeDetails.value) return;
+    try {
+        const updated = { ...selectedNodeDetails.value, deskShelfId: shelfId };
+        await apiService.updateImpressionNode(selectedNodeDetails.value.id, updated);
+        selectedNodeDetails.value.deskShelfId = shelfId;
+        // Update nodes in dataset
+        const existingNode = nodes.get(selectedNodeDetails.value.id) as any;
+        if (existingNode && existingNode.raw) {
+            existingNode.raw.deskShelfId = shelfId;
+            nodes.update(existingNode);
+        }
+        if (shelfId) loadShelfPreview(shelfId);
+        else selectedShelfItems.value = [];
+    } catch (e) { console.error(e); }
+};
+
+import { useRouter } from 'vue-router';
+const router = useRouter();
+const jumpToDesk = (shelfId: string) => {
+    router.push({ name: 'Desk', query: { shelfId } });
 };
 
 watch(showTempGallery, (newVal) => {
@@ -122,6 +163,12 @@ const handleNodeClick = (nodeId: string) => {
   if (node) {
       selectedNodeDetails.value = node.raw;
       editForm.value = { ...node.raw };
+      isEditingDeskLink.value = false;
+      if (node.raw.deskShelfId) {
+          loadShelfPreview(node.raw.deskShelfId);
+      } else {
+          selectedShelfItems.value = [];
+      }
   }
 };
 
@@ -475,7 +522,9 @@ onMounted(() => { initGraph(); loadTempItems(); loadGraph(); });
                                 :class="{ linked: selectedNodeDetails.linkedSnippetId, active: isEditingNoteContent }">
                                 {{ selectedNodeDetails.linkedSnippetId ? '📝 Edit Note' : '➕ Note' }}
                             </button>
-                            <button class="g-btn link-b" @click="isLinkingMode = !isLinkingMode" :class="{ active: isLinkingMode }">🔗 Link</button>
+                            <button class="g-btn desk-b" @click="isEditingDeskLink = !isEditingDeskLink" :class="{ active: isEditingDeskLink }">
+                                {{ selectedNodeDetails.deskShelfId ? '💾 Linked' : '💾 Link Desk' }}
+                            </button>
                             <button class="g-btn del-b" @click="deleteNode(selectedNodeDetails.id)">🗑️</button>
                         </div>
                     </div>
@@ -524,6 +573,30 @@ onMounted(() => { initGraph(); loadTempItems(); loadGraph(); });
                         <textarea v-model="linkedNoteData.content" class="premium-textarea note-area"></textarea>
                     </div>
                     <button class="confirm-link-btn sync-save" @click="saveNoteChanges">Update Personal Board</button>
+                </div>
+
+                <!-- Desk Link Column -->
+                <div v-if="isEditingDeskLink" class="card-link-engine desk-link-mode">
+                    <h3>Workspace Link</h3>
+                    <div class="in-field">
+                        <label>Associate Shelf</label>
+                        <select v-model="selectedNodeDetails.deskShelfId" @change="linkShelf(selectedNodeDetails.deskShelfId)" class="premium-select">
+                            <option :value="null">-- No Shelf Linked --</option>
+                            <option v-for="s in shelves" :key="s.id" :value="s.id">{{ s.name }}</option>
+                        </select>
+                    </div>
+                    
+                    <div v-if="selectedNodeDetails.deskShelfId" class="shelf-snapshot glass">
+                        <h4>Shelf Snapshot</h4>
+                        <div class="mini-item-list">
+                            <div v-for="it in selectedShelfItems" :key="it.id" class="mini-shelf-item">
+                                <span class="m-icon">{{ it.type === 'bookmark' ? '🔗' : it.type === 'snippet' ? '📝' : '🖼️' }}</span>
+                                <span class="m-title">{{ it.title }}</span>
+                            </div>
+                            <div v-if="!selectedShelfItems.length" class="empty-snapshot">Empty shelf storage.</div>
+                        </div>
+                        <button class="jump-desk-btn" @click="jumpToDesk(selectedNodeDetails.deskShelfId)">🚀 Teleport to Desk</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -704,4 +777,98 @@ onMounted(() => { initGraph(); loadTempItems(); loadGraph(); });
 .loading-overlay { position: fixed; inset: 0; background: rgba(11, 15, 26, 0.8); display: flex; align-items: center; justify-content: center; z-index: 5000; }
 .spin { width: 40px; height: 40px; border: 3px solid rgba(34, 211, 238, 0.1); border-top-color: #22d3ee; border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.g-btn.desk-b {
+    border-color: #8b5cf6;
+    color: #a78bfa;
+    background: rgba(139, 92, 246, 0.05);
+}
+.g-btn.desk-b:hover {
+    background: rgba(139, 92, 246, 0.1);
+}
+.g-btn.desk-b.active {
+    background: #8b5cf6 !important;
+    color: white !important;
+}
+
+.shelf-snapshot {
+    margin-top: 15px;
+    padding: 18px;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 16px;
+    border: 1px solid rgba(139, 92, 246, 0.1);
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    max-height: 320px;
+    animation: fadeIn 0.3s ease-out;
+}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+.shelf-snapshot h4 {
+    margin: 0 0 12px;
+    font-size: 0.8rem;
+    color: #a78bfa;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.mini-item-list {
+    overflow-y: auto;
+    margin-bottom: 15px;
+    flex: 1;
+}
+
+.mini-shelf-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    font-size: 0.85rem;
+    border: 1px solid rgba(255,255,255,0.02);
+}
+
+.m-icon { font-size: 1.1rem; }
+.m-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #cbd5e1;
+}
+
+.jump-desk-btn {
+    width: 100%;
+    height: 40px;
+    background: linear-gradient(135deg, #8b5cf6, #6366f1);
+    border: none;
+    border-radius: 10px;
+    color: white;
+    font-weight: 800;
+    cursor: pointer;
+    transition: 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-shadow: 0 4px 15px rgba(139, 92, 246, 0.2);
+}
+
+.jump-desk-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(139, 92, 246, 0.4);
+}
+
+.empty-snapshot {
+    text-align: center;
+    color: #475569;
+    font-size: 0.8rem;
+    padding: 15px;
+}
+
+.in-field select.premium-select option {
+    background: #0f172a;
+    color: white;
+}
 </style>

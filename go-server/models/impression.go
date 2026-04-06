@@ -7,6 +7,7 @@ type ImpressionNode struct {
 	UserID          string    `json:"userId"`
 	MediaID         *string   `json:"mediaId"`
 	LinkedSnippetID *string   `json:"linkedSnippetId"`
+	DeskShelfID     *string   `json:"deskShelfId"`
 	Title           string    `json:"title"`
 	Content         string    `json:"content"`
 	NodeType        string    `json:"nodeType"`

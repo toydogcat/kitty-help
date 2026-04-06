@@ -141,21 +141,21 @@ func CreateImpressionNode(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
 
-	// 1. Check if a node with this mediaId already exists for this user (Upsert/Overwrite)
+	// 1. Check for UPSERT (same media_id)
 	if n.MediaID != nil && *n.MediaID != "" {
 		var existingID string
-		err = db.QueryRow(context.Background(), 
-			"SELECT id::TEXT FROM impression_nodes WHERE user_id = $1 AND media_id = $2", 
-			dbUserID, *n.MediaID).Scan(&existingID)
+		err := db.QueryRow(context.Background(), 
+			"SELECT id FROM impression_nodes WHERE user_id = $1 AND media_id = $2", 
+			dbUserID, n.MediaID).Scan(&existingID)
 		
 		if err == nil {
 			updateQuery := `UPDATE impression_nodes 
-			                SET title = $1, content = $2, node_type = $3 
-			                WHERE id = $4 
-			                RETURNING id, linked_snippet_id, created_at`
+			                SET title = $1, content = $2, node_type = $3, desk_shelf_id = $4
+			                WHERE id = $5 
+			                RETURNING id, linked_snippet_id, desk_shelf_id, created_at`
 			
 			err = db.QueryRow(context.Background(), updateQuery, 
-				n.Title, n.Content, n.NodeType, existingID).Scan(&n.ID, &n.LinkedSnippetID, &n.CreatedAt)
+				n.Title, n.Content, n.NodeType, n.DeskShelfID, existingID).Scan(&n.ID, &n.LinkedSnippetID, &n.DeskShelfID, &n.CreatedAt)
 			
 			if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
 			n.UserID = dbUserID
@@ -164,12 +164,12 @@ func CreateImpressionNode(c *fiber.Ctx) error {
 	}
 
 	// 2. Normal INSERT
-	query := `INSERT INTO impression_nodes (user_id, media_id, title, content, node_type) 
-	          VALUES ($1, $2, $3, $4, $5) 
-	          RETURNING id, linked_snippet_id, created_at`
+	query := `INSERT INTO impression_nodes (user_id, media_id, title, content, node_type, desk_shelf_id) 
+	          VALUES ($1, $2, $3, $4, $5, $6) 
+	          RETURNING id, linked_snippet_id, desk_shelf_id, created_at`
 	
 	err = db.QueryRow(context.Background(), query, 
-		dbUserID, n.MediaID, n.Title, n.Content, n.NodeType).Scan(&n.ID, &n.LinkedSnippetID, &n.CreatedAt)
+		dbUserID, n.MediaID, n.Title, n.Content, n.NodeType, n.DeskShelfID).Scan(&n.ID, &n.LinkedSnippetID, &n.DeskShelfID, &n.CreatedAt)
 	
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -208,18 +208,18 @@ func GetImpressionGraph(c *fiber.Ctx) error {
 	// 2. Fetch Nodes using Recursive CTE (2 Degrees)
 	nodesQuery := `
 	WITH RECURSIVE graph_nodes AS (
-		SELECT id, user_id, media_id, linked_snippet_id, title, content, node_type, created_at, 0 as depth
+		SELECT id, user_id, media_id, linked_snippet_id, desk_shelf_id, title, content, node_type, created_at, 0 as depth
 		FROM impression_nodes
 		WHERE id = $1 AND user_id = $2
 		UNION
-		SELECT n.id, n.user_id, n.media_id, n.linked_snippet_id, n.title, n.content, n.node_type, n.created_at, gn.depth + 1
+		SELECT n.id, n.user_id, n.media_id, n.linked_snippet_id, n.desk_shelf_id, n.title, n.content, n.node_type, n.created_at, gn.depth + 1
 		FROM graph_nodes gn
 		JOIN impression_edges e ON (e.source_id = gn.id OR e.target_id = gn.id)
 		JOIN impression_nodes n ON (n.id = CASE WHEN e.source_id = gn.id THEN e.target_id ELSE e.source_id END)
 		WHERE gn.depth < 2 AND n.user_id = $2
 	),
 	recent_nodes AS (
-		SELECT id, user_id, media_id, linked_snippet_id, title, content, node_type, created_at, 99 as depth
+		SELECT id, user_id, media_id, linked_snippet_id, desk_shelf_id, title, content, node_type, created_at, 99 as depth
 		FROM impression_nodes
 		WHERE user_id = $2 AND NOT $3
 		ORDER BY created_at DESC
@@ -235,6 +235,7 @@ func GetImpressionGraph(c *fiber.Ctx) error {
 		an.user_id::TEXT, 
 		an.media_id::TEXT, 
 		an.linked_snippet_id::TEXT,
+		an.desk_shelf_id::TEXT,
 		an.title, 
 		an.content, 
 		an.node_type, 
@@ -254,17 +255,17 @@ func GetImpressionGraph(c *fiber.Ctx) error {
 	nodeMap := make(map[string]models.ImpressionNode)
 	nodesList := []models.ImpressionNode{}
 	for rows.Next() {
-		var n models.ImpressionNode
-		err := rows.Scan(&n.ID, &n.UserID, &n.MediaID, &n.LinkedSnippetID, &n.Title, &n.Content, &n.NodeType, &n.CreatedAt, &n.FileID, &n.SourcePlatform)
+		var it models.ImpressionNode
+		err := rows.Scan(&it.ID, &it.UserID, &it.MediaID, &it.LinkedSnippetID, &it.DeskShelfID, &it.Title, &it.Content, &it.NodeType, &it.CreatedAt, &it.FileID, &it.SourcePlatform)
 		if err == nil {
-			if n.FileID != nil && *n.FileID != "" {
-				n.ImageURL = "/api/storehouse/file/" + *n.FileID
-				if n.SourcePlatform != nil {
-					n.ImageURL += "?platform=" + *n.SourcePlatform
+			if it.FileID != nil && *it.FileID != "" {
+				it.ImageURL = "/api/storehouse/file/" + *it.FileID
+				if it.SourcePlatform != nil {
+					it.ImageURL += "?platform=" + *it.SourcePlatform
 				}
 			}
-			nodesList = append(nodesList, n)
-			nodeMap[n.ID] = n
+			nodesList = append(nodesList, it)
+			nodeMap[it.ID] = it
 		}
 	}
 
@@ -415,12 +416,12 @@ func UpdateImpressionNode(c *fiber.Ctx) error {
 	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User not found"}) }
 
 	query := `UPDATE impression_nodes 
-	          SET title = $1, content = $2, node_type = $3 
-	          WHERE id = $4 AND user_id = $5 
-	          RETURNING id, linked_snippet_id, created_at`
+	          SET title = $1, content = $2, node_type = $3, desk_shelf_id = $4 
+	          WHERE id = $5 AND user_id = $6 
+	          RETURNING id, linked_snippet_id, desk_shelf_id, created_at`
 	
 	err = db.QueryRow(context.Background(), query, 
-		n.Title, n.Content, n.NodeType, id, dbUserID).Scan(&n.ID, &n.LinkedSnippetID, &n.CreatedAt)
+		n.Title, n.Content, n.NodeType, n.DeskShelfID, id, dbUserID).Scan(&n.ID, &n.LinkedSnippetID, &n.DeskShelfID, &n.CreatedAt)
 	
 	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
 
@@ -481,14 +482,14 @@ func ExportImpressionGraph(c *fiber.Ctx) error {
 	err := db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
 	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User not found"}) }
 
-	rows, err := db.Query(context.Background(), "SELECT id, media_id, title, content, node_type, created_at FROM impression_nodes WHERE user_id = $1", dbUserID)
+	rows, err := db.Query(context.Background(), "SELECT id, media_id, title, content, node_type, desk_shelf_id, created_at FROM impression_nodes WHERE user_id = $1", dbUserID)
 	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
 	defer rows.Close()
 
 	nodes := []models.ImpressionNode{}
 	for rows.Next() {
 		var n models.ImpressionNode
-		if err := rows.Scan(&n.ID, &n.MediaID, &n.Title, &n.Content, &n.NodeType, &n.CreatedAt); err == nil {
+		if err := rows.Scan(&n.ID, &n.MediaID, &n.Title, &n.Content, &n.NodeType, &n.DeskShelfID, &n.CreatedAt); err == nil {
 			nodes = append(nodes, n)
 		}
 	}

@@ -223,9 +223,16 @@ func AddDeskItem(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
 
+	// Fix for empty shelfId
+	var sId interface{} = it.ShelfID
+	if it.ShelfID == nil || *it.ShelfID == "" || *it.ShelfID == "null" {
+		sId = nil
+	}
+
 	query := "INSERT INTO desk_items (user_id, shelf_id, type, ref_id, sort_order) VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at"
-	err = database.LocalDB.QueryRow(context.Background(), query, dbUserID, it.ShelfID, it.Type, it.RefID, it.SortOrder).Scan(&it.ID, &it.CreatedAt)
+	err = database.LocalDB.QueryRow(context.Background(), query, dbUserID, sId, it.Type, it.RefID, it.SortOrder).Scan(&it.ID, &it.CreatedAt)
 	if err != nil {
+		log.Printf("AddDeskItem SQL error: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to add item to desk"})
 	}
 	it.UserID = dbUserID
