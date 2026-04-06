@@ -77,11 +77,22 @@ onMounted(async () => {
 
   // 3. Listen for status updates via Socket.io
   socket.on('connect', () => {
-    console.log("Socket connected, joining kitty-room");
+    console.log("🟢 [Socket] Connected! ID:", socket.id);
     socket.emit('join', 'kitty-room');
+    console.log("📢 [Socket] Joined 'kitty-room'");
+  });
+
+  socket.on('connect_error', (err) => {
+    console.error("🔴 [Socket] Connection Error:", err.message);
+    console.error("🔗 [Socket] Attempting URL:", socket.io.uri);
+  });
+
+  socket.on('disconnect', (reason) => {
+    console.warn("🟠 [Socket] Disconnected:", reason);
   });
 
   socket.on('deviceStatusUpdate', (data) => {
+    console.log("📱 [Socket] Device Update received:", data);
     if (data.id === deviceId.value) {
       deviceStatus.value = data.status;
     }
@@ -111,14 +122,18 @@ onMounted(async () => {
   // 5. Latency Monitoring Heartbeat
   setInterval(() => {
     if (socket.connected) {
-      socket.emit('clientPing', { time: Date.now() });
+      const pingTime = Date.now();
+      socket.emit('clientPing', { time: pingTime });
+      // console.log("📡 [Heartbeat] Ping sent...");
+    } else {
+      // console.warn("❌ [Heartbeat] Skipped: Socket not connected");
     }
   }, 5000);
 
   socket.on('serverPong', (data) => {
     const now = Date.now();
-    // Round-trip latency
     latency.value = now - data.clientTime;
+    console.log(`⏱️ [Latency] Round-trip: ${latency.value}ms`);
   });
 });
 
