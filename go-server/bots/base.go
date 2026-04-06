@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"time"
+	"os"
 	"github.com/toydogcat/kitty-help/go-server/database"
 )
 
@@ -95,19 +96,38 @@ func (c *BaseChannel) NormalizeInput(text string) string {
 func (c *BaseChannel) ParseTriggers(text string) (isGeneral bool, isAdmin bool, content string) {
 	normalized := c.NormalizeInput(text)
 	
-	if strings.HasPrefix(normalized, "!") {
+	if strings.HasPrefix(normalized, "!") || strings.HasPrefix(normalized, "！") {
 		isAdmin = true
 		content = strings.TrimSpace(strings.TrimPrefix(normalized, "!"))
+		content = strings.TrimSpace(strings.TrimPrefix(content, "！"))
 		return
 	}
 	
-	if strings.HasPrefix(normalized, "/cat") {
+	if strings.HasPrefix(normalized, "/cat") || strings.HasPrefix(normalized, "／cat") {
 		isGeneral = true
 		content = strings.TrimSpace(strings.TrimPrefix(normalized, "/cat"))
+		content = strings.TrimSpace(strings.TrimPrefix(content, "／cat"))
 		return
 	}
 	
 	return false, false, normalized
+}
+
+func (c *BaseChannel) GetUnifiedUserID(ctx context.Context, accountID string) (string, error) {
+	if database.LocalDB == nil {
+		return "", fmt.Errorf("local db disconnected")
+	}
+	var userID string
+	err := database.LocalDB.QueryRow(ctx, "SELECT user_id FROM bot_authorized_users WHERE platform = $1 AND account_id = $2", c.Platform, accountID).Scan(&userID)
+	return userID, err
+}
+
+func (c *BaseChannel) GetWebhookURL() string {
+	url := os.Getenv("VITE_API_URL")
+	if url == "" {
+		url = "https://your-tunnel.trycloudflare.com" // Default placeholder
+	}
+	return url
 }
 
 func (c *BaseChannel) LogChat(ctx context.Context, senderID string, senderName string, content string, msgType string, mediaID *string) {

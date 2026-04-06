@@ -173,7 +173,10 @@ func (l *LineBot) handleAdminCommand(replyToken, cmd string) {
 	case "ping":
 		l.Reply(replyToken, "pong! Admin is recognized.")
 	case "help":
-		l.Reply(replyToken, "🐱 **Kitty-Help Admin Commands**\n\n- `!help`: Show this list\n- `!ping`: Test responsiveness\n- `!status`: Check backend status")
+		l.Reply(replyToken, "🐱 **Kitty-Help Admin Commands**\n\n- `!help`: Show this list\n- `!ping`: Test responsiveness\n- `!status`: Check backend status\n- `!webhook`: Get LINE webhook URL")
+	case "webhook":
+		url := l.GetWebhookURL()
+		l.Reply(replyToken, fmt.Sprintf("🔗 **Webhook URL (LINE)**\n\n`%s/webhook/line`", url))
 	default:
 		l.Reply(replyToken, fmt.Sprintf("❓ Unknown admin command: %s", cmd))
 	}
@@ -269,6 +272,19 @@ func (l *LineBot) forwardToStorehouse(event *linebot.Event, mediaType string) st
 	}
 
 	log.Printf("📦 Recorded LINE-to-Telegram media: %s (%s)", telegramFileID, senderName)
+	
+	// NEW: Auto-push to Impression Discovery Queue for authorized users
+	unifiedID, err := l.GetUnifiedUserID(context.Background(), event.Source.UserID)
+	if err == nil && unifiedID != "" {
+		_, err = targetDB.Exec(context.Background(), 
+			"INSERT INTO impression_temp (media_id, user_id, title) VALUES ($1, $2, $3) ON CONFLICT (media_id) DO NOTHING", 
+			mediaID, unifiedID, fmt.Sprintf("Sync from LINE: %s", time.Now().Format("15:04:05")))
+		if err == nil {
+			log.Printf("🌌 Auto-indexed to Impression Discovery for %s", senderName)
+			sockets.Broadcast("discoveryUpdate", map[string]interface{}{ "status": "new_discovery" })
+		}
+	}
+
 	sockets.Broadcast("storehouseUpdate", map[string]interface{}{ "status": "new_item" })
 	return mediaID
 }

@@ -130,8 +130,11 @@ func (d *DiscordBot) handleAdminCommand(s *discordgo.Session, m *discordgo.Messa
 	case "ping":
 		s.ChannelMessageSendReply(m.ChannelID, "pong! Admin is recognized.", m.Reference())
 	case "help":
-		helpText := "🐱 **Kitty-Help Admin Commands (Discord)**\n\n- `!help`: Show this list\n- `!ping`: Test responsiveness\n- `!webhook`: Get current tunnel URL"
+		helpText := "🐱 **Kitty-Help Admin Commands (Discord)**\n\n- `!help`: Show this list\n- `!ping`: Test responsiveness\n- `!webhook`: Get API tunnel URL"
 		s.ChannelMessageSendReply(m.ChannelID, helpText, m.Reference())
+	case "webhook":
+		url := d.GetWebhookURL()
+		s.ChannelMessageSendReply(m.ChannelID, fmt.Sprintf("🔗 **API Gateway URL**\n\n`%s`", url), m.Reference())
 	default:
 		s.ChannelMessageSendReply(m.ChannelID, fmt.Sprintf("❓ Unknown admin command: %s", cmd), m.Reference())
 	}
@@ -223,6 +226,19 @@ func (d *DiscordBot) forwardToStorehouse(s *discordgo.Session, m *discordgo.Mess
 
 		lastMediaID = mediaID
 		log.Printf("📦 Recorded Discord-to-Telegram media: %s", telegramFileID)
+
+		// NEW: Auto-push to Impression Discovery Queue for authorized users
+		unifiedID, err := d.GetUnifiedUserID(context.Background(), m.Author.ID)
+		if err == nil && unifiedID != "" {
+			_, err = targetDB.Exec(context.Background(), 
+				"INSERT INTO impression_temp (media_id, user_id, title) VALUES ($1, $2, $3) ON CONFLICT (media_id) DO NOTHING", 
+				mediaID, unifiedID, fmt.Sprintf("Sync from Discord: %s", time.Now().Format("15:04:05")))
+			if err == nil {
+				log.Printf("🌌 Auto-indexed to Impression Discovery for %s", m.Author.Username)
+				sockets.Broadcast("discoveryUpdate", map[string]interface{}{ "status": "new_discovery" })
+			}
+		}
+
 		sockets.Broadcast("storehouseUpdate", map[string]interface{}{ "status": "new_item" })
 	}
 	return lastMediaID
