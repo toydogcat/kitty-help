@@ -182,6 +182,12 @@ export const apiService = {
     }
     return url;
   },
+  getAbsoluteUrl(path: string) {
+    if (!path) return '';
+    if (path.startsWith('http')) return path;
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    return `${BASE_URL}${cleanPath}`;
+  },
 
   // Calendar
   async getCalendarEvents() {

@@ -123,7 +123,7 @@ const loadGraph = async (nodeId?: string) => {
     const data = await apiService.getImpressionGraph(nodeId || centerNodeId.value || '');
     
     const visNodes = data.nodes.map((n: any) => {
-        let finalUrl = n.imageUrl;
+        let finalUrl = n.imageUrl ? apiService.getAbsoluteUrl(n.imageUrl) : '';
         // 🚨 CRITICAL FIX: Use 'fileId' from the record, NOT the node 'id'
         if (!finalUrl && n.fileId) finalUrl = apiService.getStorehouseFileUrl(n.fileId, n.sourcePlatform);
         
@@ -308,10 +308,9 @@ const createLink = async () => {
 const performGlobalSearch = async () => {
     if (globalSearchQuery.value.length < 1) { globalSearchResults.value = []; return; }
     const results = await apiService.searchImpressionNodes(globalSearchQuery.value);
-    // Ensure absolute URLs for thumbnails
     globalSearchResults.value = results.map((r: any) => ({
         ...r,
-        imageUrl: r.imageUrl?.startsWith('/') ? (import.meta.env.VITE_API_URL || window.location.origin) + r.imageUrl : r.imageUrl
+        imageUrl: r.imageUrl?.startsWith('/') ? apiService.getAbsoluteUrl(r.imageUrl) : r.imageUrl
     }));
 };
 const performSearch2 = async () => {
@@ -319,7 +318,7 @@ const performSearch2 = async () => {
     const results = await apiService.searchImpressionNodes(searchQ2.value);
     searchResults2.value = results.map((r: any) => ({
         ...r,
-        imageUrl: r.imageUrl?.startsWith('/') ? (import.meta.env.VITE_API_URL || window.location.origin) + r.imageUrl : r.imageUrl
+        imageUrl: r.imageUrl?.startsWith('/') ? apiService.getAbsoluteUrl(r.imageUrl) : r.imageUrl
     }));
 };
 const selectTarget = (node: any) => { targetNode.value = node; searchQ2.value = node.title; searchResults2.value = []; };

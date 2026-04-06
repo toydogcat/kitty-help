@@ -249,9 +249,7 @@ func GetImpressionGraph(c *fiber.Ctx) error {
 		err := rows.Scan(&n.ID, &n.UserID, &n.MediaID, &n.LinkedSnippetID, &n.Title, &n.Content, &n.NodeType, &n.CreatedAt, &n.FileID, &n.SourcePlatform)
 		if err == nil {
 			if n.FileID != nil && *n.FileID != "" {
-				baseURL := os.Getenv("VITE_API_URL")
-				if baseURL == "" { baseURL = c.BaseURL() }
-				n.ImageURL = baseURL + "/api/storehouse/file/" + *n.FileID
+				n.ImageURL = "/api/storehouse/file/" + *n.FileID
 				if n.SourcePlatform != nil {
 					n.ImageURL += "?platform=" + *n.SourcePlatform
 				}
