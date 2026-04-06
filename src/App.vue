@@ -84,7 +84,8 @@ onMounted(async () => {
 
   socket.on('connect_error', (err) => {
     console.error("🔴 [Socket] Connection Error:", err.message);
-    console.error("🔗 [Socket] Attempting URL:", socket.io.uri);
+    // @ts-ignore - Bypass private access for debug
+    console.log("🔗 [Socket] Attempting URL:", (socket.io as any).uri || 'Check your .env');
   });
 
   socket.on('disconnect', (reason) => {
