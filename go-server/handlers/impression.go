@@ -205,7 +205,7 @@ func GetImpressionGraph(c *fiber.Ctx) error {
 		}
 	}
 
-	// 2. Fetch Nodes using Recursive CTE (2 Degrees)
+	// 2. Fetch Nodes using Recursive CTE (2 Degrees Bi-directional)
 	nodesQuery := `
 	WITH RECURSIVE graph_nodes AS (
 		SELECT id, user_id, media_id, linked_snippet_id, desk_shelf_id, title, content, node_type, created_at, 0 as depth

@@ -498,7 +498,7 @@ onMounted(() => { initGraph(); loadTempItems(); loadGraph(); });
         </div>
 
         <!-- Node Explorer Bottom Card -->
-        <div v-if="selectedNodeDetails" class="node-explorer-card glass neon-border" :class="{ 'link-expanded': isLinkingMode || isEditingNode || isEditingNoteContent }">
+        <div v-if="selectedNodeDetails" class="node-explorer-card glass neon-border" :class="{ 'link-expanded': isLinkingMode || isEditingNode || isEditingNoteContent || isEditingDeskLink }">
             <button class="card-close" @click="selectedNodeDetails = null">×</button>
             
             <div class="card-flex">
@@ -517,11 +517,7 @@ onMounted(() => { initGraph(); loadTempItems(); loadGraph(); });
                         <div class="btn-group">
                             <button class="g-btn focus-b" @click="setAsCenter(selectedNodeDetails.id)">Focus</button>
                             <button class="g-btn edit-b" @click="isEditingNode = !isEditingNode" :class="{ active: isEditingNode }">✏️ Edit</button>
-                            <button class="g-btn sync-b" 
-                                @click="() => selectedNodeDetails.linkedSnippetId ? openNoteEditor(selectedNodeDetails.linkedSnippetId) : syncToSnippet(selectedNodeDetails.id)" 
-                                :class="{ linked: selectedNodeDetails.linkedSnippetId, active: isEditingNoteContent }">
-                                {{ selectedNodeDetails.linkedSnippetId ? '📝 Edit Note' : '➕ Note' }}
-                            </button>
+                            <button class="g-btn link-b" @click="isLinkingMode = !isLinkingMode" :class="{ active: isLinkingMode }">🔗 Link</button>
                             <button class="g-btn desk-b" @click="isEditingDeskLink = !isEditingDeskLink" :class="{ active: isEditingDeskLink }">
                                 {{ selectedNodeDetails.deskShelfId ? '💾 Linked' : '💾 Link Desk' }}
                             </button>
