@@ -82,17 +82,17 @@ onMounted(async () => {
     console.log("📢 [Socket] Joined 'kitty-room'");
   });
 
-  socket.on('connect_error', (err) => {
+  socket.on('connect_error', (err: any) => {
     console.error("🔴 [Socket] Connection Error:", err.message);
     // @ts-ignore - Bypass private access for debug
     console.log("🔗 [Socket] Attempting URL:", (socket.io as any).uri || 'Check your .env');
   });
 
-  socket.on('disconnect', (reason) => {
+  socket.on('disconnect', (reason: any) => {
     console.warn("🟠 [Socket] Disconnected:", reason);
   });
 
-  socket.on('deviceStatusUpdate', (data) => {
+  socket.on('deviceStatusUpdate', (data: any) => {
     console.log("📱 [Socket] Device Update received:", data);
     if (data.id === deviceId.value) {
       deviceStatus.value = data.status;
@@ -131,7 +131,7 @@ onMounted(async () => {
     }
   }, 5000);
 
-  socket.on('serverPong', (data) => {
+  socket.on('serverPong', (data: any) => {
     const now = Date.now();
     latency.value = now - data.clientTime;
     console.log(`⏱️ [Latency] Round-trip: ${latency.value}ms`);
