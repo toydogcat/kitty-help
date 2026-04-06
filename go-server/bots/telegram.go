@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
+	"os"
 	"time"
 
 	"strconv"
@@ -253,8 +255,39 @@ func (t *TelegramBot) Reply(chatID int64, msgID int, text string) {
 	_, _ = t.bot.SendMessage(context.Background(), params)
 }
 
-func (t *TelegramBot) GetFile(ctx context.Context, fileID string) (*telego.File, error) {
-	return t.bot.GetFile(ctx, &telego.GetFileParams{FileID: fileID})
+func (t *TelegramBot) GetFile(ctx context.Context, fileID string) ([]byte, string, error) {
+	dlCtx, cancel := context.WithTimeout(ctx, 50*time.Second)
+	defer cancel()
+
+	f, err := t.bot.GetFile(dlCtx, &telego.GetFileParams{FileID: fileID})
+	if err != nil {
+		return nil, "", err
+	}
+
+	token := os.Getenv("TELEGRAM_BOT_TOKEN")
+	downloadURL := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", token, f.FilePath)
+	log.Printf("📥 [Telegram] Downloading file from: %s", downloadURL)
+
+	req, _ := http.NewRequestWithContext(dlCtx, "GET", downloadURL, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, "", fmt.Errorf("failed to download: status %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", err
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	log.Printf("✅ [Telegram] Downloaded %d bytes, Content-Type: %s", len(data), contentType)
+
+	return data, contentType, nil
 }
 
 // Custom NamedReader for telego upload

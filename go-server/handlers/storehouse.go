@@ -187,24 +187,18 @@ func IndexStorehouseItem(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "Item not found"})
 	}
 
-	// 2. Download file to temp
+	// 2. Download file to memory/temp via Bot Manager
 	var localPath string
+	var data []byte
+	var contentType string
 	if source == "telegram" {
 		tgBotIf, _ := bots.BotManager.Get("telegram")
 		tgBot := tgBotIf.(*bots.TelegramBot)
-		file, err := tgBot.GetFile(c.Context(), fileID)
+		var err error
+		data, contentType, err = tgBot.GetFile(c.Context(), fileID)
 		if err == nil {
-			token := os.Getenv("TELEGRAM_BOT_TOKEN")
-			url := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", token, file.FilePath)
-			
-			resp, err := http.Get(url)
-			if err == nil {
-				defer resp.Body.Close()
-				localPath = filepath.Join(os.TempDir(), fileID)
-				out, _ := os.Create(localPath)
-				defer out.Close()
-				io.Copy(out, resp.Body)
-			}
+			localPath = filepath.Join(os.TempDir(), fileID)
+			os.WriteFile(localPath, data, 0644)
 		}
 	}
 
@@ -332,24 +326,15 @@ func GetFileProxy(c *fiber.Ctx) error {
 		}
 		
 		tgBot := tgBotIf.(*bots.TelegramBot)
-		file, err := tgBot.GetFile(c.Context(), fileID)
+		data, contentType, err := tgBot.GetFile(c.Context(), fileID)
 		if err != nil {
-			return c.Status(404).JSON(fiber.Map{"error": "File not found"})
+			log.Printf("❌ Telegram fetch failed for %s: %v", fileID, err)
+			return c.Status(404).JSON(fiber.Map{"error": "File not found on Telegram"})
 		}
 
-		token := os.Getenv("TELEGRAM_BOT_TOKEN")
-		downloadURL := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", token, file.FilePath)
-		
-		resp, err := http.Get(downloadURL)
-		if err != nil {
-			return c.Status(502).JSON(fiber.Map{"error": "Telegram upstream error"})
-		}
-		defer resp.Body.Close()
-
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		c.Set("Content-Type", resp.Header.Get("Content-Type"))
-		c.Set("Content-Length", fmt.Sprintf("%d", len(bodyBytes)))
-		return c.Send(bodyBytes)
+		c.Set("Content-Type", contentType)
+		c.Set("Content-Length", fmt.Sprintf("%d", len(data)))
+		return c.Send(data)
 	}
 
 	return c.Status(400).JSON(fiber.Map{"error": "Unsupported platform"})
