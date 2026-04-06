@@ -125,28 +125,49 @@ const handleNodeClick = (nodeId: string) => {
   }
 };
 
+const getBase64Image = async (url: string) => {
+    try {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+        });
+    } catch (e) {
+        return url; // fallback to original
+    }
+}
+
 const loadGraph = async (nodeId?: string) => {
   isLoading.value = true;
   try {
     const data = await apiService.getImpressionGraph(nodeId || centerNodeId.value || '');
     
-    const visNodes = data.nodes.map((n: any) => {
+    // 🔥 ULTIMATE CORS FIX: Convert images to Base64 strings to prevent Canvas Tainting
+    const visNodes = await Promise.all(data.nodes.map(async (n: any) => {
         let finalUrl = n.imageUrl ? apiService.getAbsoluteUrl(n.imageUrl) : '';
-        // 🚨 CRITICAL FIX: Use 'fileId' from the record, NOT the node 'id'
         if (!finalUrl && n.fileId) finalUrl = apiService.getStorehouseFileUrl(n.fileId, n.sourcePlatform);
         
         if (finalUrl && !finalUrl.includes('?t=')) {
            const sep = finalUrl.includes('?') ? '&' : '?';
            finalUrl = `${finalUrl}${sep}t=${Date.now()}`;
         }
-        n.imageUrl = finalUrl; // CRITICAL: Update the raw object so the card gets it!
+        
+        // Convert to Base64 (DataURL)
+        let safeImage: any = undefined;
+        if (finalUrl) {
+            safeImage = await getBase64Image(finalUrl);
+        }
+
+        n.imageUrl = finalUrl; 
         return {
-            id: n.id, label: n.title, shape: n.imageUrl || n.fileId ? 'circularImage' : 'dot',
-            image: finalUrl ? { unselected: finalUrl, selected: finalUrl, crossOrigin: 'anonymous' } : undefined,
+            id: n.id, label: n.title, shape: safeImage ? 'circularImage' : 'dot',
+            image: safeImage,
             color: { border: n.id === (nodeId || centerNodeId.value) ? '#22d3ee' : '#4338ca', background: '#1e293b' },
             raw: n
         };
-    });
+    }));
 
     nodes.clear();
     nodes.add(visNodes);
