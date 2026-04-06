@@ -2,7 +2,7 @@
 import { ref, onMounted, watch } from 'vue';
 import { apiService } from '../services/api';
 
-const activePlatform = ref('telegram');
+const activePlatform = ref('line');
 const platforms = [
   { id: 'telegram', name: 'Telegram', icon: '✈️' },
   { id: 'discord', name: 'Discord', icon: '🎮' },
@@ -67,7 +67,7 @@ watch(searchQuery, () => {
 });
 
 const getStorehouseUrl = (mediaId: string) => {
-  return apiService.getStorehouseFileUrl(mediaId);
+  return apiService.getStorehouseFileUrl(mediaId, activePlatform.value);
 };
 
 const formatDate = (dateStr: string) => {

@@ -28,15 +28,6 @@ func main() {
 	_ = godotenv.Load(".env.production")
 	_ = godotenv.Load("../.env.production")
 
-	// 1. Initialize Databases
-	database.InitDB()
-	defer database.CloseDB()
-	database.EnsureTables()
-	if database.LocalDB != nil {
-		database.LocalDB.Exec(context.Background(), "ALTER TABLE bot_authorized_users ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id)")
-		database.LocalDB.Exec(context.Background(), "ALTER TABLE bot_authorized_users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user'")
-	}
-
 	// 2. Initialize Sockets
 	sockets.InitSocketIO()
 

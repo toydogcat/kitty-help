@@ -248,8 +248,8 @@ const loadTempItems = async () => {
   try {
     const data = await apiService.getImpressionTemp();
     tempItems.value = data.map((item: any) => {
-        // Construct standard image URL using the correct ID
-        item.imageUrl = apiService.getStorehouseFileUrl(item.id);
+        // Construct standard image URL using BOTH ID and Platform
+        item.imageUrl = apiService.getStorehouseFileUrl(item.id, item.platform);
         
         // Cache busting
         const sep = item.imageUrl.includes('?') ? '&' : '?';

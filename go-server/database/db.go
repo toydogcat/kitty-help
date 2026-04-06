@@ -260,6 +260,14 @@ func EnsureTables() {
 			label TEXT,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE IF NOT EXISTS impression_temp (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			media_id UUID REFERENCES media_archives(id) ON DELETE CASCADE,
+			user_id UUID,
+			title TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(media_id)
+		)`,
 	}
 
 	if LocalDB != nil {

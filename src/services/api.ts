@@ -154,8 +154,12 @@ export const apiService = {
     });
     return response.data;
   },
-  getStorehouseFileUrl(fileID: string, ..._args: any[]) {
-    return `${API_BASE}/storehouse/file/${fileID}`;
+  getStorehouseFileUrl(fileID: string, platform?: string) {
+    let url = `${API_BASE}/storehouse/file/${fileID}`;
+    if (platform) {
+      url += `?platform=${platform}`;
+    }
+    return url;
   },
 
   // Calendar
