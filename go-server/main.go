@@ -113,9 +113,13 @@ func main() {
 		if origin == "" {
 			origin = "*"
 		}
+		
+		// [REQUEST DEBUG] Tracking every incoming request for diagnostics
+		fmt.Printf("[REQUEST DEBUG] %s %s (Origin: %s)\n", c.Method(), c.Path(), origin)
+		
 		c.Set("Access-Control-Allow-Origin", origin)
-		c.Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, cf-skip-browser-warning, ngrok-skip-browser-warning")
 		c.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, cf-skip-browser-warning, ngrok-skip-browser-warning")
 		c.Set("Access-Control-Allow-Credentials", "true")
 		c.Set("Access-Control-Expose-Headers", "Content-Length")
 
