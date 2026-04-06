@@ -183,7 +183,6 @@ onMounted(fetchPasswords);
         </div>
       </div>
     </div>
-  </div>
 </template>
 
 <style scoped>
