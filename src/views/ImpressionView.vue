@@ -122,46 +122,69 @@ const loadGraph = async (nodeId?: string) => {
   try {
     const data = await apiService.getImpressionGraph(nodeId || centerNodeId.value || '');
     
-    // Only auto-center IF we don't have a saved spatial view state
-    const hasSavedState = !!localStorage.getItem('impression_view_state');
-    if (!hasSavedState && data.nodes.length > 0) {
-      const foundCenter = nodeId ? data.nodes.find((n: any) => n.id === nodeId) : data.nodes[0];
-      if (foundCenter) {
-        centerNodeId.value = foundCenter.id;
-        localStorage.setItem('impression_last_center', foundCenter.id);
-      }
-    }
-
     const visNodes = data.nodes.map((n: any) => {
-        // Dynamic image URL construction
         let finalUrl = n.imageUrl;
-        if (!finalUrl && n.id) {
-            finalUrl = apiService.getStorehouseFileUrl(n.id);
-        }
-        
+        if (!finalUrl && n.id) finalUrl = apiService.getStorehouseFileUrl(n.id);
         if (finalUrl && !finalUrl.includes('?t=')) {
            const sep = finalUrl.includes('?') ? '&' : '?';
            finalUrl = `${finalUrl}${sep}t=${Date.now()}`;
         }
         return {
-            id: n.id, label: n.title, shape: n.imageUrl ? 'circularImage' : 'dot',
+            id: n.id, label: n.title, shape: n.imageUrl || n.fileId ? 'circularImage' : 'dot',
             image: finalUrl || undefined,
-            color: { border: n.id === centerNodeId.value ? '#22d3ee' : '#4338ca', background: '#1e293b' },
+            color: { border: n.id === (nodeId || centerNodeId.value) ? '#22d3ee' : '#4338ca', background: '#1e293b' },
             raw: n
         };
     });
 
-    nodes.clear(); // Clear to prevent ghosts
+    nodes.clear();
     nodes.add(visNodes);
     edges.clear();
     edges.add(data.edges.map((e: any) => ({ id: e.id, from: e.sourceId, to: e.targetId, label: e.label })));
     
-    // Final check for restored view
-    if (hasSavedState && network.value) {
+    // SMART CENTERING: 
+    // If we specifically requested a nodeId (search/random), JUMP to it.
+    // Otherwise, try to restore view state.
+    if (nodeId && network.value) {
+        setTimeout(() => {
+            network.value?.fit({ nodes: [nodeId], animation: true });
+            centerNodeId.value = nodeId;
+            localStorage.setItem('impression_last_center', nodeId);
+        }, 200);
+    } else if (localStorage.getItem('impression_view_state') && network.value) {
         const { x, y, scale } = JSON.parse(localStorage.getItem('impression_view_state')!);
         network.value.moveTo({ position: { x, y }, scale, animation: false });
+    } else if (data.nodes.length > 0 && network.value) {
+        network.value.fit({ animation: true });
     }
   } catch (e) { console.error(e); } finally { isLoading.value = false; }
+};
+
+const exportGraphData = async () => {
+    try {
+        const data = await apiService.exportImpressionGraph();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `impression_backup_${Date.now()}.json`;
+        link.click();
+    } catch (e) { alert('Export failed'); }
+};
+
+const importGraphData = async (event: any) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const data = JSON.parse(e.target?.result as string);
+            await apiService.importImpressionGraph(data);
+            alert('Universe Restored.');
+            loadGraph();
+        } catch (err) { alert('Import failed: Check file format'); }
+    };
+    reader.readAsText(file);
 };
 
 const goToRandomNode = async () => {
@@ -281,11 +304,20 @@ const createLink = async () => {
 };
 const performGlobalSearch = async () => {
     if (globalSearchQuery.value.length < 1) { globalSearchResults.value = []; return; }
-    globalSearchResults.value = await apiService.searchImpressionNodes(globalSearchQuery.value);
+    const results = await apiService.searchImpressionNodes(globalSearchQuery.value);
+    // Ensure absolute URLs for thumbnails
+    globalSearchResults.value = results.map((r: any) => ({
+        ...r,
+        imageUrl: r.imageUrl?.startsWith('/') ? (import.meta.env.VITE_API_URL || window.location.origin) + r.imageUrl : r.imageUrl
+    }));
 };
 const performSearch2 = async () => {
     if (searchQ2.value.length < 1) { searchResults2.value = []; return; }
-    searchResults2.value = await apiService.searchImpressionNodes(searchQ2.value);
+    const results = await apiService.searchImpressionNodes(searchQ2.value);
+    searchResults2.value = results.map((r: any) => ({
+        ...r,
+        imageUrl: r.imageUrl?.startsWith('/') ? (import.meta.env.VITE_API_URL || window.location.origin) + r.imageUrl : r.imageUrl
+    }));
 };
 const selectTarget = (node: any) => { targetNode.value = node; searchQ2.value = node.title; searchResults2.value = []; };
 
@@ -334,7 +366,7 @@ onMounted(() => { initGraph(); loadTempItems(); loadGraph(); });
                 <div class="t-label">Photo</div>
             </div>
             <div class="t-sep"></div>
-            <div class="tool-btn"><div class="t-icon">📥</div><div class="t-label">Export</div></div>
+            <div class="tool-btn" @click="exportGraphData"><div class="t-icon">📥</div><div class="t-label">Export</div></div>
             <div class="tool-btn" @click="importFileRef?.click()"><div class="t-icon">📤</div><div class="t-label">Load</div></div>
         </div>
 
@@ -460,7 +492,7 @@ onMounted(() => { initGraph(); loadTempItems(); loadGraph(); });
             <button class="modal-submit" @click="saveNode">Authorize Integration</button>
         </div>
     </div>
-    <input type="file" ref="importFileRef" class="hidden" accept=".json" />
+    <input type="file" ref="importFileRef" class="hidden" accept=".json" @change="importGraphData" />
     <div v-if="isLoading" class="loading-overlay"><div class="spin"></div></div>
   </div>
 </template>
