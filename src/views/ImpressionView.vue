@@ -142,7 +142,7 @@ const linkShelf = async (shelfId: string | null) => {
 import { useRouter } from 'vue-router';
 const router = useRouter();
 const jumpToDesk = (shelfId: string) => {
-    router.push({ name: 'Desk', query: { shelfId } });
+    router.push({ name: 'desk', query: { shelfId } });
 };
 
 watch(showTempGallery, (newVal) => {
