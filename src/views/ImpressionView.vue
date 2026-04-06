@@ -281,7 +281,15 @@ const deleteNode = async (id: string) => {
 
 const exportAsImage = () => {
     if (!network.value || !canvas.value) return;
+    
+    // Save state before fit
+    const savedPos = network.value.getViewPosition();
+    const savedScale = network.value.getScale();
+
+    // Tighter fitting for ART
     network.value.fit({ animation: false });
+    const currentScale = network.value.getScale();
+    network.value.moveTo({ scale: currentScale * 1.2, animation: false });
     
     setTimeout(async () => {
         const originalCanvas = canvas.value!.getElementsByTagName('canvas')[0];
@@ -302,7 +310,6 @@ const exportAsImage = () => {
                 await new Promise((resolve, reject) => { 
                     bgImg.onload = resolve; 
                     bgImg.onerror = reject;
-                    // Timeout fallback
                     setTimeout(resolve, 3000); 
                 });
                 
@@ -311,7 +318,6 @@ const exportAsImage = () => {
                 const y = (exportCanvas.height / 2) - (bgImg.height / 2) * scale;
                 ctx.drawImage(bgImg, x, y, bgImg.width * scale, bgImg.height * scale);
             } catch (err) {
-                // Image failed, use fallback color
                 ctx.fillStyle = exportBgColor.value;
                 ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
             }
@@ -328,7 +334,10 @@ const exportAsImage = () => {
         link.download = `impression_art_${Date.now()}.png`;
         link.href = exportCanvas.toDataURL('image/png');
         link.click();
+        
+        // Finalize: Restore View and close panel
         showExportPanel.value = false;
+        network.value?.moveTo({ position: savedPos, scale: savedScale, animation: { duration: 500 } });
     }, 200);
 };
 
