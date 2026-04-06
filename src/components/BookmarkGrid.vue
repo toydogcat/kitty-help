@@ -31,6 +31,7 @@ const allBookmarks = ref<Bookmark[]>([]);
 const vaultPasswords = ref<any[]>([]);
 const showAddModal = ref(false);
 const editingId = ref<string | null>(null);
+const pinnedIds = ref<Set<string>>(new Set());
 const loading = ref(false);
 const currentFolderId = ref<string | 'root'>(savedFolder);
 const breadcrumbs = ref<{id: string, title: string}[]>(savedPath ? JSON.parse(savedPath) : []);
@@ -293,8 +294,10 @@ const addToDesk = async (bookmark: Bookmark) => {
       shelfId: null,
       sortOrder: 0
     });
-    // Trigger a small toast or just a console log
-    console.log("Pinned to desk:", bookmark.title);
+    pinnedIds.value.add(bookmark.id);
+    setTimeout(() => {
+      pinnedIds.value.delete(bookmark.id);
+    }, 2000);
   } catch (err) {
     console.error("Failed to add to desk:", err);
   }
@@ -435,7 +438,9 @@ export default {
             <template v-else>
               <button @click="enterFolder(bm)" class="action-btn launch">📂 Open Folder</button>
             </template>
-            <button @click="addToDesk(bm)" class="action-btn pin" title="Add to Desk">📌</button>
+            <button @click="addToDesk(bm)" class="action-btn pin" title="Add to Desk">
+              {{ pinnedIds.has(bm.id) ? '✅' : '📌' }}
+            </button>
             <button @click="confirmDelete(bm)" class="action-btn delete" title="Delete">🗑️</button>
           </div>
         </div>

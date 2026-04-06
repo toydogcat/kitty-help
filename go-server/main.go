@@ -136,6 +136,7 @@ func main() {
 	protected.Post("/desk/shelves", handlers.CreateShelf)
 	protected.Put("/desk/shelves/:id", handlers.UpdateShelf)
 	protected.Delete("/desk/shelves/:id", handlers.DeleteShelf)
+	protected.Post("/desk/shelves/:id/duplicate", handlers.DuplicateShelf)
 	
 	protected.Get("/desk/items", handlers.GetDeskItems)
 	protected.Post("/desk/items", handlers.AddDeskItem)

@@ -357,6 +357,10 @@ export const apiService = {
     const res = await axios.delete(`${API_BASE}/desk/shelves/${id}`);
     return res.data;
   },
+  async duplicateShelf(id: string) {
+    const res = await axios.post(`${API_BASE}/desk/shelves/${id}/duplicate`);
+    return res.data;
+  },
   async getDeskItems(shelfId?: string | 'null') {
     const res = await axios.get(`${API_BASE}/desk/items`, { params: { shelfId: shelfId || 'null' } });
     return res.data;

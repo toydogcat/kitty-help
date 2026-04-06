@@ -58,17 +58,62 @@ func CreateShelf(c *fiber.Ctx) error {
 
 func UpdateShelf(c *fiber.Ctx) error {
 	id := c.Params("id")
+	userClaims := c.Locals("user").(*Claims)
 	var s models.DeskShelf
 	if err := c.BodyParser(&s); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	query := "UPDATE desk_shelves SET name = $1, color = $2, sort_order = $3 WHERE id = $4"
-	_, err := database.LocalDB.Exec(context.Background(), query, s.Name, s.Color, s.SortOrder, id)
+	var dbUserID string
+	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
+	}
+
+	query := "UPDATE desk_shelves SET name = $1, color = $2, sort_order = $3 WHERE id = $4 AND user_id = $5"
+	_, err = database.LocalDB.Exec(context.Background(), query, s.Name, s.Color, s.SortOrder, id, dbUserID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Update failed"})
 	}
 	return c.JSON(fiber.Map{"success": true})
+}
+
+func DuplicateShelf(c *fiber.Ctx) error {
+	id := c.Params("id")
+	userClaims := c.Locals("user").(*Claims)
+
+	var dbUserID string
+	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
+	}
+
+	// 1. Get original shelf info
+	var name, color string
+	err = database.LocalDB.QueryRow(context.Background(), "SELECT name, color FROM desk_shelves WHERE id = $1 AND user_id = $2", id, dbUserID).Scan(&name, &color)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Original shelf not found"})
+	}
+
+	// 2. Create new shelf
+	var newID string
+	err = database.LocalDB.QueryRow(context.Background(),
+		"INSERT INTO desk_shelves (user_id, name, color, sort_order) VALUES ($1, $2, $3, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM desk_shelves WHERE user_id = $1)) RETURNING id",
+		dbUserID, name+" (Copy)", color).Scan(&newID)
+	if err != nil {
+		log.Printf("Duplicate shelf insert error: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to create duplicate shelf"})
+	}
+
+	// 3. Duplicate items from original to new
+	_, err = database.LocalDB.Exec(context.Background(),
+		"INSERT INTO desk_items (user_id, shelf_id, type, ref_id, sort_order) SELECT user_id, $1, type, ref_id, sort_order FROM desk_items WHERE shelf_id = $2",
+		newID, id)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to duplicate shelf items"})
+	}
+
+	return c.JSON(fiber.Map{"success": true, "newId": newID})
 }
 
 func DeleteShelf(c *fiber.Ctx) error {

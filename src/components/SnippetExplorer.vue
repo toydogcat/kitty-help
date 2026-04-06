@@ -29,6 +29,7 @@ watch([currentFolderId, pathStack], () => {
 const showAddModal = ref(false);
 const isEditing = ref(false);
 const editingId = ref<string | null>(null);
+const pinnedIds = ref<Set<string>>(new Set());
 const newItemName = ref('');
 const newItemContent = ref('');
 const newItemIsFolder = ref(false);
@@ -345,12 +346,14 @@ const addToDesk = async (item: any) => {
     await apiService.addDeskItem({
       type: 'snippet',
       refId: item.id,
-      shelfId: null,
-      sortOrder: 0
+      shelfId: null
     });
-    console.log("Snippet pinned to desk:", item.name);
+    pinnedIds.value.add(item.id);
+    setTimeout(() => {
+      pinnedIds.value.delete(item.id);
+    }, 2000);
   } catch (err) {
-    console.error("Failed to add snippet to desk:", err);
+    console.error("Failed to pin to desk:", err);
   }
 };
 </script>
@@ -427,7 +430,9 @@ const addToDesk = async (item: any) => {
               📁 <strong>{{ item.name }}</strong>
             </div>
             <div class="item-actions">
-              <button @click="addToDesk(item)" class="pin-small" title="Add to Desk">📌</button>
+              <button @click="addToDesk(item)" class="pin-small" title="Add to Desk">
+                {{ pinnedIds.has(item.id) ? '✅' : '📌' }}
+              </button>
               <button @click="openEditModal(item)" class="edit-small">✎</button>
               <button @click="deleteItem(item.id)" class="del-small">✕</button>
             </div>

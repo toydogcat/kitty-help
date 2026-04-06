@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import { apiService } from '../services/api';
+import { marked } from 'marked';
 
 const props = defineProps<{
   userRole: string;
@@ -18,12 +19,15 @@ const dragOverShelfId = ref<string | null | 'desktop'>(null);
 
 // Modals
 const showAddShelfModal = ref(false);
+const showRenameModal = ref(false);
 const newShelfName = ref('');
+const renamingShelfId = ref<string | null>(null);
 
 // Item Editor Modal
 const showEditModal = ref(false);
 const editingItem = ref<any>(null);
 const editBuffer = ref({ title: '', content: '' });
+const editMode = ref<'edit' | 'preview'>('edit');
 const saving = ref(false);
 
 onMounted(() => {
@@ -60,6 +64,32 @@ const handleAddShelf = async () => {
     await fetchData();
   } catch (err) {
     alert("Failed to create shelf");
+  }
+};
+
+const openRenameModal = (shelf: any) => {
+  renamingShelfId.value = shelf.id;
+  newShelfName.value = shelf.name;
+  showRenameModal.value = true;
+};
+
+const handleRenameShelf = async () => {
+  if (!renamingShelfId.value || !newShelfName.value) return;
+  try {
+    await apiService.updateShelf(renamingShelfId.value, { name: newShelfName.value });
+    showRenameModal.value = false;
+    await fetchData();
+  } catch (err) {
+    alert("Rename failed");
+  }
+};
+
+const duplicateShelf = async (id: string) => {
+  try {
+    await apiService.duplicateShelf(id);
+    await fetchData();
+  } catch (err) {
+    alert("Duplicate failed");
   }
 };
 
@@ -261,21 +291,27 @@ const saveItemEdit = async () => {
         >
           <div class="shelf-top">
             <span class="s-icon">{{ dragOverShelfId === s.id ? '📥' : '📁' }}</span>
-            <button @click.stop="deleteShelf(s.id)" class="s-del">×</button>
+            <div class="s-actions">
+              <button @click.stop="duplicateShelf(s.id)" class="s-dup" title="Duplicate Shelf">👯</button>
+              <button @click.stop="openRenameModal(s)" class="s-edit" title="Rename">✎</button>
+              <button @click.stop="deleteShelf(s.id)" class="s-del">×</button>
+            </div>
           </div>
           <span class="s-name">{{ s.name }}</span>
         </div>
       </div>
     </div>
 
-    <!-- Modal for New Shelf -->
-    <div v-if="showAddShelfModal" class="modal-overlay" @click.self="showAddShelfModal = false">
+    <!-- Modal for New/Rename Shelf -->
+    <div v-if="showAddShelfModal || showRenameModal" class="modal-overlay" @click.self="showAddShelfModal = showRenameModal = false">
       <div class="modal-card mini">
-        <h3>Create New Shelf</h3>
-        <input v-model="newShelfName" placeholder="Shelf Name..." @keyup.enter="handleAddShelf" autoFocus />
+        <h3>{{ showRenameModal ? 'Rename Shelf' : 'Create New Shelf' }}</h3>
+        <input v-model="newShelfName" placeholder="Shelf Name..." @keyup.enter="showRenameModal ? handleRenameShelf() : handleAddShelf()" autoFocus />
         <div class="modal-actions">
-          <button @click="showAddShelfModal = false">Cancel</button>
-          <button @click="handleAddShelf" class="confirm-btn">Create</button>
+          <button @click="showAddShelfModal = showRenameModal = false">Cancel</button>
+          <button @click="showRenameModal ? handleRenameShelf() : handleAddShelf()" class="confirm-btn">
+            {{ showRenameModal ? 'Rename' : 'Create' }}
+          </button>
         </div>
       </div>
     </div>
@@ -286,6 +322,10 @@ const saveItemEdit = async () => {
         <div class="editor-pane shadow-2xl">
           <div class="editor-header">
             <div class="type-badge">{{ editingItem?.type.toUpperCase() }} EDITOR</div>
+            <div class="editor-modes" v-if="editingItem?.type === 'snippet'">
+              <button :class="{ active: editMode === 'edit' }" @click="editMode = 'edit'">EDIT</button>
+              <button :class="{ active: editMode === 'preview' }" @click="editMode = 'preview'">PREVIEW</button>
+            </div>
             <button @click="showEditModal = false" class="close-x">✕</button>
           </div>
 
@@ -304,7 +344,9 @@ const saveItemEdit = async () => {
             <!-- Content Area (for Snippets/Media Notes) -->
             <div v-if="editingItem?.type !== 'bookmark'" class="field fill">
               <label>{{ editingItem?.type === 'snippet' ? 'Content' : 'Notes / Description' }}</label>
-              <textarea v-model="editBuffer.content" placeholder="Type something here..."></textarea>
+              
+              <div v-if="editingItem?.type === 'snippet' && editMode === 'preview'" class="markdown-preview-pane" v-html="marked.parse(editBuffer.content || '')"></div>
+              <textarea v-else v-model="editBuffer.content" placeholder="Type something here..."></textarea>
             </div>
             
             <div v-if="editingItem?.type === 'bookmark'" class="bookmark-info">
@@ -532,18 +574,31 @@ const saveItemEdit = async () => {
 .shelf-top { display: flex; justify-content: space-between; width: 100%; align-items: flex-start; }
 .s-icon { font-size: 1.5rem; transition: transform 0.2s; }
 .drag-over .s-icon { transform: translateY(-2px); }
-.s-name { font-weight: 700; font-size: 0.85rem; }
 
-.s-del {
+.s-actions {
+  display: flex;
+  gap: 0.4rem;
+  opacity: 0.2;
+  transition: opacity 0.2s;
+}
+.shelf-card:hover .s-actions { opacity: 1; }
+
+.s-actions button {
   background: none;
   border: none;
-  color: #ff5f5f;
-  font-size: 0.9rem;
   cursor: pointer;
-  padding: 0;
-  opacity: 0.3;
+  font-size: 0.9rem;
+  padding: 2px;
+  border-radius: 4px;
+  transition: background 0.2s;
 }
-.s-del:hover { opacity: 1; }
+.s-actions button:hover { background: rgba(255,255,255,0.1); }
+
+.s-edit { color: var(--primary-color); }
+.s-dup { color: #facc15; }
+.s-del { color: #ff5f5f; }
+
+.s-name { font-weight: 700; font-size: 0.85rem; }
 
 .modal-overlay {
   position: fixed;
@@ -623,6 +678,32 @@ const saveItemEdit = async () => {
   color: var(--primary-color);
 }
 
+.editor-modes {
+  display: flex;
+  background: rgba(255,255,255,0.05);
+  padding: 3px;
+  border-radius: 10px;
+  gap: 2px;
+}
+
+.editor-modes button {
+  background: none;
+  border: none;
+  color: white;
+  padding: 0.4rem 1rem;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s;
+  opacity: 0.5;
+}
+
+.editor-modes button.active {
+  background: var(--primary-color);
+  opacity: 1;
+}
+
 .close-x {
   background: none;
   border: none;
@@ -640,6 +721,33 @@ const saveItemEdit = async () => {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+}
+
+.markdown-preview-pane {
+  background: rgba(0,0,0,0.1);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 12px;
+  padding: 1.5rem;
+  min-height: 300px;
+  color: #ddd;
+  line-height: 1.7;
+}
+.markdown-preview-pane :deep(h1), .markdown-preview-pane :deep(h2) {
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  padding-bottom: 0.5rem;
+  margin-top: 1.5rem;
+}
+.markdown-preview-pane :deep(pre) {
+  background: rgba(0,0,0,0.3);
+  padding: 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.markdown-preview-pane :deep(code) {
+  font-family: monospace;
+  background: rgba(var(--primary-rgb), 0.1);
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
 }
 
 .media-large-preview {

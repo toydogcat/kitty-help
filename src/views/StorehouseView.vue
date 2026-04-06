@@ -28,6 +28,7 @@ const searchMode = ref('keyword'); // keyword | semantic
 // Modal
 const selectedItem = ref<any | null>(null);
 const showModal = ref(false);
+const pinnedIds = ref<Set<string>>(new Set());
 
 const loadItems = async () => {
   loading.value = true;
@@ -101,7 +102,10 @@ const addToDesk = async (item: any) => {
       shelfId: null,
       sortOrder: 0
     });
-    console.log("Media pinned to desk:", item.title);
+    pinnedIds.value.add(item.id);
+    setTimeout(() => {
+      pinnedIds.value.delete(item.id);
+    }, 2000);
   } catch (err) {
     console.error("Failed to add media to desk:", err);
   }
@@ -203,7 +207,7 @@ const addToDesk = async (item: any) => {
               class="pin-badge" 
               @click.stop="addToDesk(item)" 
               title="Add to Desk"
-            >📌</div>
+            >{{ pinnedIds.has(item.id) ? '✅' : '📌' }}</div>
             <div v-if="item.index_status === 'indexed'" class="ai-badge" title="AI Indexed">✨</div>
           </div>
           
