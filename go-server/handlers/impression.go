@@ -91,14 +91,13 @@ func GetImpressionTemp(c *fiber.Ctx) error {
 		}
 		
 		items = append(items, fiber.Map{
-			"id": id,
-			"fileId": fileID,
-			"title": title,
-			"caption": caption,
-			"notes": notes,
-			"createdAt": createdAt,
-			"sourcePlatform": sourcePlatform,
-			"imageUrl": "/api/storehouse/file/" + fileID + "?platform=" + sourcePlatform,
+			"id":         id,
+			"file_id":    fileID,
+			"title":      title,
+			"caption":    caption,
+			"notes":      notes,
+			"created_at": createdAt,
+			"source":     sourcePlatform,
 		})
 	}
 
