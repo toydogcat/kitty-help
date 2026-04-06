@@ -9,9 +9,13 @@ const API_URL = BASE_URL;
 // socket must use the explicit API_URL
 export const socket = io(API_URL, {
   path: '/socket.io',
-  transports: ['websocket', 'polling'], // Force stable connection over tunnels
-  extraHeaders: {
-    "cf-skip-browser-warning": "true"
+  transports: ['websocket', 'polling'],
+  transportOptions: {
+    polling: {
+      extraHeaders: {
+        'cf-skip-browser-warning': 'true'
+      }
+    }
   }
 });
 
