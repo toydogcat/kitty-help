@@ -52,7 +52,14 @@ func GetStorehouseItems(c *fiber.Ctx) error {
 	args := []interface{}{}
 	argIdx := 1
 
-	dbUserID := userClaims.ID
+	dbUserID := ""
+	isAdmin := false
+	if userClaims != nil {
+		dbUserID = userClaims.ID
+		if userClaims.Role == "superadmin" || userClaims.Role == "toby" {
+			isAdmin = true
+		}
+	}
 
 	if mode == "semantic" && query != "" {
 		// 1. Get embedding for query
@@ -64,13 +71,20 @@ func GetStorehouseItems(c *fiber.Ctx) error {
 			mode = "keyword"
 		} else {
 			// 2. Perform user-filtered vector similarity search
-			sql = `
-				SELECT m.id, m.file_id, m.media_type, m.title, m.caption, m.notes, m.source_platform, m.sender_name, m.created_at, m.is_indexable, m.index_status 
-				FROM media_archives m
-				JOIN bot_authorized_users b ON m.sender_id = b.account_id AND m.source_platform = b.platform
-				WHERE b.user_id = $1 AND m.embedding IS NOT NULL`
-			args = append(args, dbUserID)
-			argIdx = 2
+			if dbUserID != "" && !isAdmin {
+				sql = `
+					SELECT m.id, m.file_id, m.media_type, m.title, m.caption, m.notes, m.source_platform, m.sender_name, m.created_at, m.is_indexable, m.index_status 
+					FROM media_archives m
+					JOIN bot_authorized_users b ON m.sender_id = b.account_id AND m.source_platform = b.platform
+					WHERE b.user_id = $1 AND m.embedding IS NOT NULL`
+				args = append(args, dbUserID)
+				argIdx = 2
+			} else {
+				// Admin or unauthenticated sees global (semantic)
+				sql = `SELECT id, file_id, media_type, title, caption, notes, source_platform, sender_name, created_at, is_indexable, index_status 
+				       FROM media_archives WHERE embedding IS NOT NULL`
+				argIdx = 1
+			}
 			
 			if platform != "" {
 				sql += fmt.Sprintf(" AND m.source_platform = $%d", argIdx)
@@ -86,13 +100,20 @@ func GetStorehouseItems(c *fiber.Ctx) error {
 
 	if mode == "keyword" || sql == "" {
 		// 1. Base Query with User Filtering via JOIN
-		sql = `
-			SELECT m.id, m.file_id, m.media_type, m.title, m.caption, m.notes, m.source_platform, m.sender_name, m.created_at, m.is_indexable, m.index_status 
-			FROM media_archives m
-			JOIN bot_authorized_users b ON m.sender_id = b.account_id AND m.source_platform = b.platform
-			WHERE b.user_id = $1`
-		args = append(args, dbUserID)
-		argIdx = 2
+		if dbUserID != "" && !isAdmin {
+			sql = `
+				SELECT m.id, m.file_id, m.media_type, m.title, m.caption, m.notes, m.source_platform, m.sender_name, m.created_at, m.is_indexable, m.index_status 
+				FROM media_archives m
+				JOIN bot_authorized_users b ON m.sender_id = b.account_id AND m.source_platform = b.platform
+				WHERE b.user_id = $1`
+			args = append(args, dbUserID)
+			argIdx = 2
+		} else {
+			// Admin sees all
+			sql = `SELECT id, file_id, media_type, title, caption, notes, source_platform, sender_name, created_at, is_indexable, index_status 
+			       FROM media_archives m WHERE 1=1`
+			argIdx = 1
+		}
 
 		if platform != "" {
 			sql += fmt.Sprintf(" AND m.source_platform = $%d", argIdx)
