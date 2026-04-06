@@ -8,9 +8,11 @@ import (
 	"sync"
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"time"
 	"os"
+	"bufio"
 	"github.com/toydogcat/kitty-help/go-server/database"
 )
 
@@ -125,6 +127,20 @@ func (c *BaseChannel) GetUnifiedUserID(ctx context.Context, accountID string) (s
 }
 
 func (c *BaseChannel) GetWebhookURL() string {
+	// Try to read from .env first to get the freshest URL from catch_url.py
+	file, err := os.Open("../.env")
+	if err == nil {
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "VITE_API_URL=") {
+				return strings.TrimPrefix(line, "VITE_API_URL=")
+			}
+		}
+	}
+
+	// Fallback to environment
 	url := os.Getenv("VITE_API_URL")
 	if url == "" {
 		url = "https://your-tunnel.trycloudflare.com" 
@@ -139,21 +155,31 @@ func (c *BaseChannel) GetNewsFromWorker(args string) (string, error) {
 	client := http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Post(workerURL, "application/json", bytes.NewBuffer(reqBody))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("connect worker failed: %v", err)
 	}
 	defer resp.Body.Close()
 
+	resBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read response failed: %v", err)
+	}
+
+	// Try JSON first
 	var result struct {
 		Output string `json:"output"`
 		Error  string `json:"error"`
+		Reply  string `json:"reply"` // Some versions use 'reply'
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", err
+	if err := json.Unmarshal(resBody, &result); err == nil {
+		if result.Error != "" {
+			return "", fmt.Errorf(result.Error)
+		}
+		if result.Output != "" { return result.Output, nil }
+		if result.Reply != "" { return result.Reply, nil }
 	}
-	if result.Error != "" {
-		return "", fmt.Errorf(result.Error)
-	}
-	return result.Output, nil
+
+	// Fallback to raw string
+	return string(resBody), nil
 }
 
 func (c *BaseChannel) LogChat(ctx context.Context, senderID string, senderName string, content string, msgType string, mediaID *string) {
