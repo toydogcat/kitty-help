@@ -16,28 +16,28 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/joho/godotenv"
 	"github.com/toydogcat/kitty-help/go-server/bots"
+	"github.com/toydogcat/kitty-help/go-server/database"
 	"github.com/toydogcat/kitty-help/go-server/handlers"
 	"github.com/toydogcat/kitty-help/go-server/sockets"
 )
 
 func main() {
 	_ = godotenv.Load(".env")
+	database.InitDB()
 	sockets.InitSocketIO()
 	bots.InitManager()
 	
-	// Define admins from env
 	admins := []string{"toydogcat@gmail.com"}
-	if envAdmins := os.Getenv("ADMIN_EMAILS"); envAdmins != "" {
-		admins = append(admins, strings.Split(envAdmins, ",")...)
+	if env := os.Getenv("ADMIN_EMAILS"); env != "" {
+		admins = append(admins, strings.Split(env, ",")...)
 	}
 
-	// Bot Setup (Minimal snippets for clarity, same logic as before)
+	// Bot Setup
 	tgToken := os.Getenv("TELEGRAM_BOT_TOKEN")
 	if tgToken != "" {
 		tgBot, _ := bots.NewTelegramBot(tgToken, admins, 0)
 		bots.BotManager.Register("telegram", tgBot)
 	}
-
 	dsToken := os.Getenv("DISCORD_BOT_TOKEN")
 	if dsToken != "" {
 		dsBot, _ := bots.NewDiscordBot(dsToken, admins)
@@ -47,12 +47,11 @@ func main() {
 	bots.BotManager.StartAll(context.Background())
 
 	app := fiber.New(fiber.Config{
-		AppName:      "Kitty-Help Go Backend Pro",
+		AppName:      "Kitty-Help Go Backend Full",
 		ReadTimeout:  120 * time.Second,
 		WriteTimeout: 120 * time.Second,
 	})
 
-	// 🛠️ ROBUST CORS: Standardized whitelist with Credentials support
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     "https://kitty-help.web.app, http://localhost:5173, http://localhost:4173",
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
@@ -63,29 +62,44 @@ func main() {
 
 	app.Use(logger.New())
 
+	app.Static("/uploads", "../uploads")
 	api := app.Group("/api")
-	api.Get("/ping", func(c *fiber.Ctx) error { return c.SendString("pong 🐱") })
 
-	// Auth & User
+	// Public API
 	api.Post("/auth/verify", handlers.VerifyFirebaseToken)
 	api.Get("/bulletin", handlers.GetBulletin)
 	api.Get("/calendar", handlers.GetCalendarEvents)
 	api.Post("/devices/register", handlers.RegisterDevice)
+	api.Get("/storehouse", handlers.GetStorehouseItems)
+	api.Get("/storehouse/file/:fileID", handlers.GetFileProxy)
+	api.Post("/opencli", handlers.ProxyOpenCLI)
 
-	// Protected Group with Sliding Session
+	// Protected with Sliding Session
 	authShared := api.Group("/", handlers.JWTMiddleware)
 	authShared.Get("/bot/my-status", handlers.GetMyBotStatus)
 	authShared.Post("/bot/link", handlers.LinkBotAccount)
+	authShared.Get("/chat/logs", handlers.GetChatLogs)
+
+	// Device Protected
+	protected := authShared.Group("/", handlers.DeviceCheckMiddleware)
+	protected.Get("/snippets", handlers.GetSnippets)
+	protected.Post("/snippets", handlers.CreateSnippet)
+	protected.Put("/snippets/:id", handlers.UpdateSnippet)
+	protected.Delete("/snippets/:id", handlers.DeleteSnippet)
+	protected.Get("/bookmarks", handlers.GetBookmarks)
+	protected.Post("/bookmarks", handlers.CreateBookmark)
+	protected.Get("/impression/graph", handlers.GetImpressionGraph)
+	protected.Post("/impression/nodes", handlers.CreateImpressionNode)
 
 	// Admin Only
-	admin := authShared.Group("/", handlers.AdminOnlyMiddleware)
+	admin := protected.Group("/", handlers.AdminOnlyMiddleware)
 	admin.Get("/users", handlers.GetUsers)
 	admin.Post("/users/role", handlers.UpdateUserRole)
+	admin.Get("/devices", handlers.GetDevices)
+	admin.Put("/devices/status", handlers.UpdateDeviceStatus)
 
-	// Sockets
 	app.All("/socket.io/*", adaptor.HTTPHandler(sockets.Server))
 
-	// Listen on all interfaces for Cloudflare Tunneling
 	port := os.Getenv("PORT")
 	if port == "" { port = "3000" }
 	
@@ -93,7 +107,6 @@ func main() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-stop
-		fmt.Println("\n🛑 Gracefully shutting down...")
 		_ = app.Shutdown()
 		bots.BotManager.StopAll(context.Background())
 	}()
