@@ -12,9 +12,9 @@ CONTAINER_NAME = "kitty-tunnel"
 def catch_and_update():
     print(f"🔍 偵測戰訊：正在監控 [{CONTAINER_NAME}] 以捕捉臨時傳送門...")
     
-    # 執行 docker logs -f
+    # 執行 docker logs --tail 50 -f (只抓最新的，避免抓到 11 小時前的舊網址)
     process = subprocess.Popen(
-        ["docker", "logs", "-f", CONTAINER_NAME],
+        ["docker", "logs", "--tail", "50", "-f", CONTAINER_NAME],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True
