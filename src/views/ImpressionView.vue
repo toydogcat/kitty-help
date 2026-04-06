@@ -337,7 +337,11 @@ const exportAsImage = () => {
         
         // Finalize: Restore View and close panel
         showExportPanel.value = false;
-        network.value?.moveTo({ position: savedPos, scale: savedScale, animation: { duration: 500 } });
+        network.value?.moveTo({ 
+            position: savedPos, 
+            scale: savedScale, 
+            animation: { duration: 500, easingFunction: 'easeInOutQuad' } 
+        });
     }, 200);
 };
 
