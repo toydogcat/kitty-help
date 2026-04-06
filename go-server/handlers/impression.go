@@ -8,18 +8,34 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/toydogcat/kitty-help/go-server/database"
 	"github.com/toydogcat/kitty-help/go-server/models"
 )
 
-func GetRandomImpressionNodeID(c *fiber.Ctx) error {
-	userClaims := c.Locals("user").(*Claims)
+func getBestDB(c *fiber.Ctx) (*pgxpool.Pool, *Claims, error) {
+	userClaims, ok := c.Locals("user").(*Claims)
+	if !ok { return nil, nil, fmt.Errorf("user not authenticated") }
+	
 	db := database.LocalDB
-	if db == nil { db = database.CloudDB }
-	if db == nil { return c.Status(503).JSON(fiber.Map{"error": "Database not connected"}) }
+	isAdmin := userClaims.Role == "superadmin" || userClaims.Role == "toby" || userClaims.Email == "toydogcat@gmail.com"
+	
+	if !isAdmin && db == nil {
+		db = database.CloudDB
+	}
+	
+	if db == nil {
+		return nil, nil, fmt.Errorf("Local Database NOT connected (NUC Offline). Please check your Docker volume.")
+	}
+	return db, userClaims, nil
+}
+
+func GetRandomImpressionNodeID(c *fiber.Ctx) error {
+	db, userClaims, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
 
 	var dbUserID string
-	err := db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
 	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User profile not found"}) }
 
 	var nodeID string
@@ -32,13 +48,8 @@ func GetRandomImpressionNodeID(c *fiber.Ctx) error {
 }
 
 func GetImpressionTemp(c *fiber.Ctx) error {
-	userClaims := c.Locals("user").(*Claims)
-	
-	db := database.LocalDB
-	if db == nil { db = database.CloudDB }
-	if db == nil {
-		return c.Status(503).JSON(fiber.Map{"error": "Database not connected"})
-	}
+	db, userClaims, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
 
 	// 0. FORCE INITIALIZE & MIGRATE for Admin Toby on NUC DB
 	if userClaims.Email == "toby@family.local" {
@@ -60,7 +71,7 @@ func GetImpressionTemp(c *fiber.Ctx) error {
 	// 1. Resolve System User ID from email
 	var dbUserID string
 	query := `SELECT id FROM users WHERE email = $1 LIMIT 1`
-	err := db.QueryRow(context.Background(), query, userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), query, userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		log.Printf("⚠️ No UserID found for identity %s (Error: %v)", userClaims.Email, err)
 		return c.JSON([]fiber.Map{}) 
@@ -114,19 +125,17 @@ func GetImpressionTemp(c *fiber.Ctx) error {
 }
 
 func CreateImpressionNode(c *fiber.Ctx) error {
-	userClaims := c.Locals("user").(*Claims)
+	db, userClaims, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
+
 	var n models.ImpressionNode
 	if err := c.BodyParser(&n); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
 	}
 
-	db := database.LocalDB
-	if db == nil { db = database.CloudDB }
-	if db == nil { return c.Status(503).JSON(fiber.Map{"error": "Database not connected"}) }
-
 	// Resolve internal DB User ID from email
 	var dbUserID string
-	err := db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		log.Printf("❌ Identity Fail: email %s not found in users table", userClaims.Email)
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})

@@ -29,13 +29,16 @@ type UpdateStorehouseItemRequest struct {
 }
 
 func GetStorehouseItems(c *fiber.Ctx) error {
+	userClaims, _ := c.Locals("user").(*Claims)
 	db := database.LocalDB
-	if db == nil {
+	
+	// Admin always uses LocalDB
+	if userClaims != nil && (userClaims.Role != "superadmin" && userClaims.Role != "toby") && db == nil {
 		db = database.CloudDB
 	}
 
 	if db == nil {
-		return c.Status(503).JSON(fiber.Map{"error": "Database not connected"})
+		return c.Status(503).JSON(fiber.Map{"error": "Local Database not connected. Please check NUC DB status."})
 	}
 
 	platform := c.Query("platform")

@@ -18,9 +18,8 @@ docker compose down
 docker compose up -d --build
 
 # 2. 捕捉最新的 Tunnel 網址
-echo "🔍 2/4: Catching Tunnel URL..."
-# 這裡一定要跑完 catch_url.py 才會繼續往下
-python3 catch_url.py
+echo "🔍 2/4: Catching Tunnel URL via run.py..."
+./run.py -c
 
 # 3. 強制刷新環境變數並打包
 echo "🏗️ 3/4: Building Frontend with NEW URL..."
