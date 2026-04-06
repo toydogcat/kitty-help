@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -256,7 +257,50 @@ func GetFileProxy(c *fiber.Ctx) error {
 		}
 	}
 
-	if platform == "telegram" || platform == "discord" {
+	if platform == "line" {
+		// SMART DETECT: If the fileID looks like a Telegram ID (long base64 string),
+		// we should treat this as a cloud backup and fetch from Telegram instead.
+		if len(fileID) > 40 {
+			platform = "telegram"
+			log.Printf("☁️ Redirecting LINE quest to Telegram Cloud Backup for ID: %s", fileID)
+		} else {
+			lnBotIf, ok := bots.BotManager.Get("line")
+			if !ok { return c.Status(503).JSON(fiber.Map{"error": "LINE bot not initialized"}) }
+			
+			lnBot := lnBotIf.(*bots.LineBot)
+			content, err := lnBot.Bot.GetMessageContent(fileID).Do()
+			if err != nil {
+				log.Printf("❌ LINE content fetch failed for %s: %v", fileID, err)
+				return c.Status(404).JSON(fiber.Map{"error": "Failed to fetch LINE content"})
+			}
+			defer content.Content.Close()
+			
+			bodyBytes, _ := io.ReadAll(content.Content)
+			c.Set("Content-Type", content.ContentType)
+			c.Set("Content-Length", fmt.Sprintf("%d", len(bodyBytes)))
+			return c.Send(bodyBytes)
+		}
+	}
+
+	if platform == "discord" {
+		// In Discord, fileID IS the URL
+		if !strings.HasPrefix(fileID, "http") {
+			return c.Status(400).JSON(fiber.Map{"error": "Invalid Discord file URL"})
+		}
+		
+		resp, err := http.Get(fileID)
+		if err != nil {
+			return c.Status(502).JSON(fiber.Map{"error": "Discord upstream error"})
+		}
+		defer resp.Body.Close()
+		
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		c.Set("Content-Type", resp.Header.Get("Content-Type"))
+		c.Set("Content-Length", fmt.Sprintf("%d", len(bodyBytes)))
+		return c.Send(bodyBytes)
+	}
+
+	if platform == "telegram" {
 		tgBotIf, ok := bots.BotManager.Get("telegram")
 		if !ok {
 			return c.Status(503).JSON(fiber.Map{"error": "Telegram bot not initialized"})
@@ -265,51 +309,23 @@ func GetFileProxy(c *fiber.Ctx) error {
 		tgBot := tgBotIf.(*bots.TelegramBot)
 		file, err := tgBot.GetFile(c.Context(), fileID)
 		if err != nil {
-			log.Printf("Storehouse resolution failed for %s (%s): %v", fileID, platform, err)
-			return c.Status(404).JSON(fiber.Map{"error": "File not found in central storehouse"})
+			return c.Status(404).JSON(fiber.Map{"error": "File not found"})
 		}
 
 		token := os.Getenv("TELEGRAM_BOT_TOKEN")
-		if token == "" {
-			log.Println("ERROR: TELEGRAM_BOT_TOKEN is not set in environment")
-			return c.Status(500).JSON(fiber.Map{"error": "Server configuration missing (Bot Token)"})
-		}
-		
-		if file.FilePath == "" {
-			return c.Status(404).JSON(fiber.Map{"error": "Telegram file path is empty"})
-		}
-
 		downloadURL := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", token, file.FilePath)
 		
-		// Use a client with timeout
-		client := &http.Client{Timeout: 15 * time.Second}
-		log.Printf("[Proxy] Fetching image for platform %s: %s", platform, file.FileID)
-		
-		resp, err := client.Get(downloadURL)
+		resp, err := http.Get(downloadURL)
 		if err != nil {
-			log.Printf("ERROR: Failed to fetch image from provider: %v", err)
-			return c.Status(502).JSON(fiber.Map{"error": "Upstream timeout or connection failed"})
+			return c.Status(502).JSON(fiber.Map{"error": "Telegram upstream error"})
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusOK {
-			log.Printf("ERROR: Provider returned status %d", resp.StatusCode)
-			return c.Status(resp.StatusCode).JSON(fiber.Map{"error": "Upstream server returned error"})
-		}
-
-		// Read the body entirely to avoid premature closing with defer
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			log.Printf("ERROR: Failed to read image body: %v", err)
-			return c.Status(500).JSON(fiber.Map{"error": "Failed to read image content"})
-		}
-
+		bodyBytes, _ := io.ReadAll(resp.Body)
 		c.Set("Content-Type", resp.Header.Get("Content-Type"))
 		c.Set("Content-Length", fmt.Sprintf("%d", len(bodyBytes)))
-		c.Set("Cache-Control", "public, max-age=3600")
-		
 		return c.Send(bodyBytes)
 	}
 
-	return c.Status(400).JSON(fiber.Map{"error": "Unsupported platform for file proxy or file ID resolution failed"})
+	return c.Status(400).JSON(fiber.Map{"error": "Unsupported platform"})
 }

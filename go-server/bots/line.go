@@ -21,7 +21,7 @@ import (
 
 type LineBot struct {
 	*BaseChannel
-	bot           *linebot.Client
+	Bot           *linebot.Client
 	channelSecret string
 }
 
@@ -33,7 +33,7 @@ func NewLineBot(secret, token string, admins []string) (*LineBot, error) {
 
 	return &LineBot{
 		BaseChannel:   NewBaseChannel("line", admins),
-		bot:           bot,
+		Bot:           bot,
 		channelSecret: secret,
 	}, nil
 }
@@ -88,7 +88,7 @@ func (l *LineBot) HandleFiberWebhook(c *fiber.Ctx) error {
 		log.Printf("🔹 LINE Event Type: %s from User: %s", event.Type, event.Source.UserID)
 		if event.Type == linebot.EventTypeMessage {
 			senderName := "LINE User"
-			profile, err := l.bot.GetProfile(event.Source.UserID).Do()
+			profile, err := l.Bot.GetProfile(event.Source.UserID).Do()
 			if err == nil {
 				senderName = profile.DisplayName
 			}
@@ -273,7 +273,7 @@ func (l *LineBot) forwardToStorehouse(event *linebot.Event, mediaType string) st
 		messageID = msg.ID
 	}
 
-	contentResp, err := l.bot.GetMessageContent(messageID).Do()
+	contentResp, err := l.Bot.GetMessageContent(messageID).Do()
 	if err != nil {
 		log.Printf("❌ Failed to fetch LINE content: %v", err)
 		return ""
@@ -282,22 +282,34 @@ func (l *LineBot) forwardToStorehouse(event *linebot.Event, mediaType string) st
 
 	// 2. Fetch User Profile for metadata
 	senderName := "LINE User"
-	profile, err := l.bot.GetProfile(event.Source.UserID).Do()
+	profile, err := l.Bot.GetProfile(event.Source.UserID).Do()
 	if err == nil {
 		senderName = profile.DisplayName
 	}
 
-	// 3. Upload to Telegram Storehouse
-	backupMsg := fmt.Sprintf("📦 **Media Backup**\n\n**Source Platform**: `line`\n**Sender**: `%s`\n**Timestamp**: `%s`\n**Content**: %s",
-		senderName, time.Now().Format("2006-01-02 15:04:05"), caption)
+	// 3. Cloud Backup to Telegram Storehouse
+	telegramFileID := ""
+	tgBotIf, ok := BotManager.Get("telegram")
+	if ok {
+		tgBot := tgBotIf.(*TelegramBot)
+		backupMessageBody := fmt.Sprintf("📦 **Media Backup**\n\n**Source Platform**: `line`\n**Sender**: `%s`\n**Timestamp**: `%s`\n**Content**: %s",
+			senderName, time.Now().Format("2006-01-02 15:04:05"), caption)
 
-	telegramFileID, err := tgBot.UploadMedia(tgBot.storehouseChatID, contentResp.Content, "line_"+messageID, mediaType, backupMsg)
-	if err != nil {
-		log.Printf("❌ Failed to upload LINE media to Telegram: %v", err)
-		return ""
+		cloudID, err := tgBot.UploadMedia(tgBot.storehouseChatID, contentResp.Content, "line_"+messageID, mediaType, backupMessageBody)
+		if err == nil {
+			telegramFileID = cloudID
+			log.Printf("☁️ Cloud Backup SUCCESS: %s", cloudID)
+		} else {
+			log.Printf("❌ Cloud Backup FAIL: %v", err)
+		}
 	}
 
-	// 4. Insert into DB
+	// 4. Insert into DB (Save Telegram ID if exists, but keep source_platform as LINE)
+	finalFileID := telegramFileID
+	if finalFileID == "" {
+		finalFileID = messageID
+	}
+
 	targetDB := database.LocalDB
 	if targetDB == nil { targetDB = database.CloudDB }
 	if targetDB == nil { return "" }
@@ -305,7 +317,7 @@ func (l *LineBot) forwardToStorehouse(event *linebot.Event, mediaType string) st
 	var mediaID string
 	err = targetDB.QueryRow(context.Background(),
 		"INSERT INTO media_archives (file_id, message_id, media_type, caption, source_platform, sender_name, sender_id, is_indexable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
-		telegramFileID, 0, mediaType, caption, "line", senderName, event.Source.UserID, true).Scan(&mediaID)
+		finalFileID, 0, mediaType, caption, "line", senderName, event.Source.UserID, true).Scan(&mediaID)
 
 	if err != nil {
 		log.Printf("❌ Failed to record LINE media: %v", err)
@@ -331,13 +343,13 @@ func (l *LineBot) forwardToStorehouse(event *linebot.Event, mediaType string) st
 }
 
 func (l *LineBot) Reply(replyToken, text string) {
-	_, err := l.bot.ReplyMessage(replyToken, linebot.NewTextMessage(text)).Do()
+	_, err := l.Bot.ReplyMessage(replyToken, linebot.NewTextMessage(text)).Do()
 	if err != nil {
 		log.Printf("❌ Failed to reply to LINE: %v", err)
 	}
 }
 
 func (l *LineBot) SendMessage(targetID string, text string) error {
-	_, err := l.bot.PushMessage(targetID, linebot.NewTextMessage(text)).Do()
+	_, err := l.Bot.PushMessage(targetID, linebot.NewTextMessage(text)).Do()
 	return err
 }
