@@ -279,9 +279,10 @@ func GetFileProxy(c *fiber.Ctx) error {
 	}
 
 	// SMART DETECT: If the fileID looks like a Telegram ID (long base64 string),
-	// we should treat this as a cloud backup and fetch from Telegram instead, regardless of original platform.
-	if len(fileID) > 40 && platform != "telegram" {
-		log.Printf("☁️ Redirecting %s request to Telegram Cloud Backup for ID: %s", platform, fileID)
+	// or it contains 'AgAC' (common Telegram image prefix),
+	// we should treat this as a cloud backup and fetch from Telegram instead.
+	if (len(fileID) > 40 || strings.Contains(fileID, "AgAC")) && platform != "telegram" {
+		log.Printf("☁️ [Proxy] Redirecting %s request to Telegram Cloud Backup for ID: %s", platform, fileID)
 		platform = "telegram"
 	}
 
