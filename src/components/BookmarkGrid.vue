@@ -30,6 +30,7 @@ const bookmarks = ref<Bookmark[]>([]);
 const allBookmarks = ref<Bookmark[]>([]);
 const vaultPasswords = ref<any[]>([]);
 const showAddModal = ref(false);
+const editingId = ref<string | null>(null);
 const loading = ref(false);
 const currentFolderId = ref<string | 'root'>(savedFolder);
 const breadcrumbs = ref<{id: string, title: string}[]>(savedPath ? JSON.parse(savedPath) : []);
@@ -94,10 +95,22 @@ const enterFolder = (folder: Bookmark) => {
 
 const goBack = (id: string | 'root' | any) => {
   if (typeof id === 'object' && id !== null) {
-    if (id.isFolder) {
-      currentFolderId.value = id.id;
-      fetchBookmarks();
-    }
+      // It's a node from BookmarkTreeNode
+      if (id.isFolder) {
+          currentFolderId.value = id.id;
+          // Rebuild breadcrumbs
+          const path = [];
+          let curr = id;
+          while (curr) {
+              path.unshift({ id: curr.id, title: curr.title });
+              curr = allBookmarks.value.find((b: any) => b.id === curr.parentId);
+          }
+          breadcrumbs.value = path;
+          fetchBookmarks();
+      } else {
+          // Open edit modal for files
+          openEditModal(id);
+      }
     return;
   }
 
@@ -189,21 +202,53 @@ const addBookmark = async () => {
     }
   }
 
+const openAddModal = () => {
+  editingId.value = null;
+  newBookmark.value = {
+    title: '',
+    url: '',
+    category: 'General',
+    passwordId: '',
+    isFolder: false,
+    parentId: currentFolderId.value === 'root' ? null : currentFolderId.value
+  };
+  showAddModal.value = true;
+};
+
+const openEditModal = (bookmark: Bookmark) => {
+  editingId.value = bookmark.id;
+  newBookmark.value = {
+    title: bookmark.title,
+    url: bookmark.url || '',
+    category: bookmark.category || 'General',
+    passwordId: bookmark.passwordId || '',
+    isFolder: bookmark.isFolder || false,
+    parentId: bookmark.parentId
+  };
+  showAddModal.value = true;
+};
+
+const saveBookmark = async () => {
+  if (!newBookmark.value.title.trim()) return;
+
   try {
-    await apiService.addBookmark({
-      title: newBookmark.value.title,
-      url: newBookmark.value.isFolder ? null : url,
-      category: newBookmark.value.category,
-      passwordId: newBookmark.value.password_id || null,
-      isFolder: newBookmark.value.isFolder,
-      parentId: currentFolderId.value === 'root' ? null : currentFolderId.value
-    });
+    if (editingId.value) {
+      await apiService.updateBookmark(editingId.value, {
+        title: newBookmark.value.title,
+        url: newBookmark.value.url,
+        category: newBookmark.value.category,
+        parentId: newBookmark.value.parentId
+      });
+    } else {
+      await apiService.addBookmark({
+        ...newBookmark.value,
+        parentId: currentFolderId.value === 'root' ? null : currentFolderId.value
+      });
+    }
     showAddModal.value = false;
-    newBookmark.value = { title: '', url: '', category: 'General', password_id: '', isFolder: false };
-    await fetchBookmarks();
+    fetchBookmarks();
   } catch (err) {
-    console.error(err);
-    alert("Failed to add bookmark");
+    console.error('Failed to save bookmark:', err);
   }
 };
 

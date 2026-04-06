@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { apiService } from '../services/api';
 
 const props = defineProps<{
@@ -16,8 +16,13 @@ const newPassword = ref({
   category: 'General',
   notes: ''
 });
-
+const currentCategory = ref('All');
 const categories = ['General', 'Work', 'Social', 'Admin', 'Finance', 'Game'];
+
+const filteredPasswords = computed(() => {
+  if (currentCategory.value === 'All') return passwords.value;
+  return passwords.value.filter(p => p.category === currentCategory.value);
+});
 
 const fetchPasswords = async () => {
   isLoading.value = true;
@@ -70,40 +75,68 @@ onMounted(fetchPasswords);
 </script>
 
 <template>
-  <div class="password-vault">
-    <div class="section-header">
-      <div class="title-group">
-        <h3>🔑 Password Vault</h3>
-        <p class="subtitle">Securely manage your accounts and credentials</p>
-      </div>
-      <button class="add-btn" @click="showAddModal = true">
-        <span>+</span> Add Credential
-      </button>
-    </div>
-
-    <div v-if="isLoading" class="loading-state">
-      <div class="spinner"></div>
-      <p>Loading your vault...</p>
-    </div>
-    
-    <div v-else-if="!passwords || passwords.length === 0" class="empty-state">
-      <div class="empty-icon">🔓</div>
-      <p>No credentials saved yet. Start by adding one!</p>
-    </div>
-
-    <div v-else class="password-list">
-      <div v-for="pw in passwords" :key="pw.id" class="password-item card">
-        <div class="pw-info">
-          <div class="pw-main">
-            <span class="pw-site">{{ pw.siteName }}</span>
-            <span class="pw-category">{{ pw.category }}</span>
-          </div>
-          <div class="pw-account">{{ pw.account }}</div>
+    <div class="password-explorer-container">
+      <!-- Sidebar Categories as Folders -->
+      <div class="tree-sidebar">
+        <div 
+          class="sidebar-header-root" 
+          :class="{ active: currentCategory === 'All' }"
+          @click="currentCategory = 'All'"
+        >
+          🔒 All Credentials
         </div>
-        <div class="pw-actions">
-          <button class="icon-btn" title="Copy Account" @click="copyToClipboard(pw.account)">👤</button>
-          <button class="icon-btn" title="Copy Password" @click="copyToClipboard(pw.passwordRaw)">🔑</button>
-          <button class="icon-btn delete" title="Delete" @click="deletePassword(pw.id)">🗑️</button>
+        <div class="tree-body">
+          <div 
+            v-for="cat in categories" 
+            :key="cat" 
+            class="category-node"
+            :class="{ active: currentCategory === cat }"
+            @click="currentCategory = cat"
+          >
+            <span class="type-icon">📁</span>
+            {{ cat }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Workspace -->
+      <div class="main-panel">
+        <div class="section-header">
+          <div class="title-group">
+            <h3>🔑 Password Vault</h3>
+            <p class="subtitle">Securely manage your accounts and credentials</p>
+          </div>
+          <button class="add-btn" @click="showAddModal = true">
+            <span>+</span> Add Credential
+          </button>
+        </div>
+
+        <div v-if="isLoading" class="loading-state">
+          <div class="spinner"></div>
+          <p>Loading your vault...</p>
+        </div>
+        
+        <div v-else-if="filteredPasswords.length === 0" class="empty-state">
+          <div class="empty-icon">🔓</div>
+          <p>No credentials found in this category.</p>
+        </div>
+
+        <div v-else class="password-grid">
+          <div v-for="pw in filteredPasswords" :key="pw.id" class="password-card card">
+            <div class="card-header">
+              <div class="favicon-wrapper">🔑</div>
+              <span class="category-tag">{{ pw.category }}</span>
+            </div>
+            <div class="card-body">
+              <h4 class="pw-title">{{ pw.siteName }}</h4>
+              <p class="pw-account">{{ pw.account }}</p>
+            </div>
+            <div class="card-actions">
+              <button class="action-btn" @click="copyToClipboard(pw.account)">👤 Copy</button>
+              <button class="action-btn" @click="copyToClipboard(pw.passwordRaw)">🔑 Pass</button>
+              <button class="action-btn delete" @click="deletePassword(pw.id)">🗑️</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -154,102 +187,126 @@ onMounted(fetchPasswords);
 </template>
 
 <style scoped>
-.password-vault {
-  animation: fadeIn 0.4s ease-out;
+/* Unified Explorer Layout - Matching Bookmarks and Snippets */
+.password-explorer-container {
+  display: flex;
+  gap: 1.25rem;
+  height: calc(100vh - 280px);
+  min-height: 550px;
+}
+
+.tree-sidebar {
+  width: 250px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  backdrop-filter: blur(10px);
+}
+
+.sidebar-header-root {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 800;
+  transition: all 0.2s;
+  color: var(--secondary-color);
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-header-root.active {
+  background: rgba(var(--primary-rgb), 0.2);
+  color: var(--primary-color);
+}
+
+.category-node {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.95rem;
+  margin-bottom: 0.2rem;
+  color: var(--text-color);
+  text-align: left;
+}
+
+.category-node:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.category-node.active {
+  background: rgba(var(--primary-rgb), 0.15);
+  color: var(--primary-color);
+  font-weight: bold;
+}
+
+.main-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .section-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  margin-bottom: 2rem;
-  border-left: 5px solid #10b981;
+  margin-bottom: 1.5rem;
   padding-left: 1.2rem;
 }
 
-.title-group {
-  text-align: left;
-}
-
-.section-header h3 {
-  color: var(--text-color);
-  margin: 0;
-  font-size: 1.5rem;
-}
-
-.subtitle {
-  font-size: 0.85rem;
-  opacity: 0.5;
-  margin: 0.2rem 0 0 0;
-}
-
-.add-btn {
-  background: #10b981;
-  color: white;
-  border: none;
-  padding: 0.6rem 1.2rem;
-  border-radius: 8px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  transition: all 0.2s;
-  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
-}
-
-.add-btn:hover {
-  transform: translateY(-2px);
-  filter: brightness(1.1);
-  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
-}
-
-.password-list {
+.password-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+  padding: 1.5rem;
+  overflow-y: auto;
 }
 
-.password-item {
+.password-card {
+  height: 140px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  transition: all 0.3s;
+}
+
+.password-card:hover {
+  border-color: #10b981;
+  transform: translateY(-3px);
+}
+
+.card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.2rem;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  transition: all 0.2s;
 }
 
-.password-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: #10b981;
+.favicon-wrapper {
+  font-size: 1.2rem;
 }
 
-.pw-info {
+.card-body {
   text-align: left;
 }
 
-.pw-main {
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-  margin-bottom: 0.3rem;
-}
-
-.pw-site {
-  font-weight: 700;
+.pw-title {
   font-size: 1.1rem;
-}
-
-.pw-category {
-  font-size: 0.65rem;
-  background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
-  padding: 0.2rem 0.6rem;
-  border-radius: 10px;
-  text-transform: uppercase;
-  font-weight: 800;
+  margin: 0;
+  font-weight: 700;
 }
 
 .pw-account {
@@ -258,33 +315,35 @@ onMounted(fetchPasswords);
   font-family: monospace;
 }
 
-.pw-actions {
+.card-actions {
   display: flex;
   gap: 0.5rem;
 }
 
-.icon-btn {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.action-btn {
+  flex: 1;
+  padding: 0.35rem;
+  font-size: 0.8rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.05);
+  color: var(--text-color);
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.icon-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  transform: scale(1.1);
+.action-btn:hover {
+  background: #10b981;
+  border-color: transparent;
+  color: white;
 }
 
-.icon-btn.delete:hover {
-  background: rgba(239, 68, 68, 0.2);
-  color: #ef4444;
-  border-color: #ef4444;
+.action-btn.delete {
+  flex: 0 0 36px;
+}
+
+.action-btn.delete:hover {
+  background: #ef4444;
 }
 
 /* Modal Styles */

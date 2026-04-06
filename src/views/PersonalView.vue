@@ -98,34 +98,38 @@ onMounted(() => {
         >
           🔑 Password Vault
         </button>
+        <button 
+          class="tab-btn" 
+          :class="{ active: activeTab === 'clipboard' }"
+          @click="activeTab = 'clipboard'"
+        >
+          📋 Clipboard
+        </button>
       </div>
 
-      <div class="content-container card glow">
+      <!-- Unified Explorer Area -->
+      <div class="explorer-body">
         <Transition name="fade-slide" mode="out-in">
-          <div v-if="activeTab === 'bookmarks'" key="bookmarks">
+          <div :key="activeTab" class="unified-content">
             <BookmarkGrid 
-              :user-id="currentUser.uid" 
+              v-if="activeTab === 'bookmarks'" 
+              :user-id="currentUser.uid"
               :has-security-trust="hasSecurityTrust"
               :device-id="deviceId"
               @request-verify="showSecurityModal = true"
             />
-          </div>
-          <div v-else key="passwords">
             <PasswordVault 
+              v-else-if="activeTab === 'passwords'" 
               :user-id="currentUser.uid"
+            />
+            <ClipBoard 
+              v-else 
+              :is-toby="isToby || currentUser.email?.includes('toymsi')" 
+              :device-id="deviceId" 
             />
           </div>
         </Transition>
       </div>
-
-      <!-- Personal Clipboard Section -->
-      <div class="section-divider">
-        <div class="line"></div>
-        <span class="label">PERSONAL BOARD</span>
-        <div class="line"></div>
-      </div>
-      
-      <ClipBoard :is-toby="isToby || currentUser.email?.includes('toymsi')" :device-id="deviceId" />
       
       <!-- Security Challenge Modal -->
       <SecurityModal 
@@ -226,33 +230,25 @@ onMounted(() => {
   box-shadow: 0 4px 20px rgba(0,0,0,0.3);
 }
 
-.content-container {
-  padding: 2rem;
-  min-height: 400px;
+.explorer-body {
+  flex: 1;
   background: rgba(255, 255, 255, 0.01);
   border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  margin-top: 1.5rem;
+  overflow: hidden;
+  position: relative;
+  padding: 2rem;
 }
 
-/* Section Divider */
-.section-divider {
-  display: flex;
-  align-items: center;
-  gap: 2rem;
-  margin: 4rem 0 2rem;
+.unified-content {
+  height: 100%;
+  animation: slideIn 0.4s ease-out;
 }
 
-.section-divider .line {
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(to right, transparent, rgba(255,255,255,0.1), transparent);
-}
-
-.section-divider .label {
-  font-size: 0.8rem;
-  font-weight: 900;
-  letter-spacing: 5px;
-  color: var(--primary-color);
-  opacity: 0.6;
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* Loading & Login Prompt */
@@ -309,17 +305,17 @@ onMounted(() => {
 /* Transitions */
 .fade-slide-enter-active,
 .fade-slide-leave-active {
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.3s ease;
 }
 
 .fade-slide-enter-from {
   opacity: 0;
-  transform: translateX(30px);
+  transform: translateX(20px);
 }
 
 .fade-slide-leave-to {
   opacity: 0;
-  transform: translateX(-30px);
+  transform: translateX(-20px);
 }
 
 @keyframes fadeIn {
