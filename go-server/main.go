@@ -24,6 +24,7 @@ import (
 func main() {
 	_ = godotenv.Load(".env")
 	database.InitDB()
+	database.EnsureTables()
 	sockets.InitSocketIO()
 	bots.InitManager()
 	

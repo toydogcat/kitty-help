@@ -313,6 +313,7 @@ func EnsureTables() {
 			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS parent_id UUID REFERENCES bookmarks(id) ON DELETE CASCADE`,
 			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS is_folder BOOLEAN DEFAULT FALSE`,
 			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS sort_order INT DEFAULT 0`,
+			`ALTER TABLE bookmarks ALTER COLUMN url DROP NOT NULL`,
 		}
 		for _, m := range migrations {
 			LocalDB.Exec(ctx, m)
