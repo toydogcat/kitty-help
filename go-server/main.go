@@ -99,29 +99,25 @@ func main() {
 
 	// --- 3. Device Protected ---
 	protected := authShared.Group("/", handlers.DeviceCheckMiddleware)
-	protected.Get("/snippets", handlers.GetSnippets)
-	protected.Post("/snippets", handlers.CreateSnippet)
-	protected.Put("/snippets/:id", handlers.UpdateSnippet)
-	protected.Delete("/snippets/:id", handlers.DeleteSnippet)
-	
-	protected.Get("/bookmarks", handlers.GetBookmarks)
-	protected.Post("/bookmarks", handlers.CreateBookmark)
-	protected.Put("/bookmarks/:id", handlers.UpdateBookmark)
-	protected.Delete("/bookmarks/:id", handlers.DeleteBookmark)
-	
-	// 🧠 IMPRESSION
+	// 🧠 IMPRESSION GRAPH
+	protected.Get("/graph", handlers.GetImpressionGraph)
+	protected.Get("/graph/export", handlers.ExportImpressionGraph)
+	protected.Post("/graph/import", handlers.ImportImpressionGraph)
 	protected.Get("/impression/temp", handlers.GetImpressionTemp)
-	protected.Get("/impression/graph", handlers.GetImpressionGraph)
 	protected.Get("/impression/search", handlers.SearchImpressionNodes)
 	protected.Get("/impression/random", handlers.GetRandomImpressionNodeID)
-	protected.Post("/impression/nodes", handlers.CreateImpressionNode)
-	protected.Put("/impression/nodes/:id", handlers.UpdateImpressionNode)
-	protected.Delete("/impression/nodes/:id", handlers.DeleteImpressionNode)
-	protected.Post("/impression/links", handlers.CreateImpressionLink)
-	protected.Put("/impression/links/:id", handlers.UpdateImpressionEdge)
-	protected.Delete("/impression/links/:id", handlers.DeleteImpressionEdge)
-	protected.Post("/impression/nodes/:id/sync", handlers.SyncNodeToSnippet)
-	protected.Get("/impression/snippets/:id", handlers.GetLinkedSnippet)
+	
+	protected.Post("/nodes", handlers.CreateImpressionNode)
+	protected.Put("/nodes/:id", handlers.UpdateImpressionNode)
+	protected.Delete("/nodes/:id", handlers.DeleteImpressionNode)
+	protected.Post("/nodes/:id/sync", handlers.SyncNodeToSnippet)
+	
+	protected.Post("/edges", handlers.CreateImpressionLink)
+	protected.Put("/edges/:id", handlers.UpdateImpressionEdge)
+	protected.Delete("/edges/:id", handlers.DeleteImpressionEdge)
+	
+	protected.Get("/snippets/linked/:id", handlers.GetLinkedSnippet)
+	protected.Delete("/bookmarks/:id", handlers.DeleteBookmark)
 
 	protected.Post("/bulletin", handlers.UpdateBulletin)
 	protected.Post("/calendar", handlers.UpdateCalendarEvent)
