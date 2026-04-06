@@ -45,10 +45,10 @@ const exportBgImage = ref<string | null>(null);
 const showExportPanel = ref(false);
 
 const defaultBackgrounds = [
-    { name: 'Cosmic', url: 'https://images.unsplash.com/photo-1464802686167-b939a6910659?auto=format&fit=crop&w=1920&q=80' },
-    { name: 'Quantum', url: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&w=1920&q=80' },
-    { name: 'Aurora', url: 'https://images.unsplash.com/photo-1531306728370-e2eba9bd7bb1?auto=format&fit=crop&w=1920&q=80' },
-    { name: 'Vortex', url: 'https://images.unsplash.com/photo-1502134249126-9f3755a50d78?auto=format&fit=crop&w=1920&q=80' }
+    { name: 'Cosmic', url: 'https://images.unsplash.com/photo-1462331940025-496dfbfc7564?auto=format&fit=crop&w=1920&q=80' },
+    { name: 'Quantum', url: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1920&q=80' },
+    { name: 'Aurora', url: 'https://images.unsplash.com/photo-1483366759020-137255160894?auto=format&fit=crop&w=1920&q=80' },
+    { name: 'Vortex', url: 'https://images.unsplash.com/photo-1543722530-d2c3201371e7?auto=format&fit=crop&w=1920&q=80' }
 ];
 
 const nodes = new DataSet<any>([]);
@@ -257,12 +257,6 @@ const deleteNode = async (id: string) => {
     try { await apiService.deleteImpressionNode(id); selectedNodeDetails.value = null; await loadGraph(); } catch (e) { console.error(e); }
 };
 
-const defaultBackgrounds = [
-    { name: 'Cosmic', url: 'https://images.unsplash.com/photo-1462331940025-496dfbfc7564?auto=format&fit=crop&w=1920&q=80' },
-    { name: 'Quantum', url: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1920&q=80' },
-    { name: 'Aurora', url: 'https://images.unsplash.com/photo-1483366759020-137255160894?auto=format&fit=crop&w=1920&q=80' },
-    { name: 'Vortex', url: 'https://images.unsplash.com/photo-1543722530-d2c3201371e7?auto=format&fit=crop&w=1920&q=80' }
-];
 
 const exportAsImage = () => {
     if (!network.value || !canvas.value) return;
