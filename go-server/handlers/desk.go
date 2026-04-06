@@ -14,7 +14,7 @@ import (
 func GetShelves(c *fiber.Ctx) error {
 	userClaims := c.Locals("user").(*Claims)
 	var dbUserID string
-	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = ", userClaims.Email).Scan(&dbUserID)
+	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
@@ -42,7 +42,7 @@ func CreateShelf(c *fiber.Ctx) error {
 	}
 
 	var dbUserID string
-	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = ", userClaims.Email).Scan(&dbUserID)
+	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
@@ -97,7 +97,7 @@ func GetDeskItems(c *fiber.Ctx) error {
 	shelfId := c.Query("shelfId") // Can be empty for desktop items
 
 	var dbUserID string
-	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = ", userClaims.Email).Scan(&dbUserID)
+	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
@@ -157,7 +157,7 @@ func AddDeskItem(c *fiber.Ctx) error {
 	}
 
 	var dbUserID string
-	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = ", userClaims.Email).Scan(&dbUserID)
+	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
