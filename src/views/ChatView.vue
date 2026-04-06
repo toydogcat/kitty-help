@@ -161,14 +161,15 @@ const formatDate = (dateStr: string) => {
             </div>
             <div class="msg-content">
               <template v-if="m.msgType === 'media' && m.mediaId">
-                <div class="media-container" v-if="m.content.includes('[Image]') || m.content.includes('[photo]') ">
+                <!-- Smart Media Rendering: If it is an image/photo type, show preview -->
+                <div class="media-container" v-if="m.mediaType === 'image' || m.mediaType === 'photo' || m.content.includes('[Image]') || m.content.includes('[photo]')">
                   <img :src="getStorehouseUrl(m.mediaId)" loading="lazy" />
                 </div>
                 <div v-else class="file-card">
-                  <span class="file-icon">📎</span>
+                  <span class="file-icon">{{ m.mediaType === 'video' ? '🎬' : '📎' }}</span>
                   <div class="file-info">
-                    <span class="file-name">Media Backup</span>
-                    <a :href="getStorehouseUrl(m.mediaId)" target="_blank" class="download-link">View File</a>
+                    <span class="file-name">{{ m.mediaType === 'video' ? 'Video Memory' : 'Media Backup' }}</span>
+                    <a :href="getStorehouseUrl(m.mediaId)" target="_blank" class="download-link">{{ m.mediaType === 'video' ? 'Watch' : 'View File' }}</a>
                   </div>
                 </div>
               </template>

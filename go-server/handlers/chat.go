@@ -24,30 +24,37 @@ func GetChatLogs(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "platform query required"})
 	}
 
-	// 修正：從 chat_logs 抓取紀錄，並修正 SQL 語法
-	sql := "SELECT id, platform, sender_id, sender_name, content, msg_type, media_id, created_at FROM chat_logs WHERE platform = $1"
+	// 修正：使用 LEFT JOIN 聯手 media_archives 以獲取媒體真實類型
+	sql := `
+		SELECT 
+			c.id, c.platform, c.sender_id, c.sender_name, c.content, c.msg_type, c.media_id, c.created_at,
+			COALESCE(m.media_type, '') as media_type
+		FROM chat_logs c
+		LEFT JOIN media_archives m ON c.media_id::text = m.id::text
+		WHERE c.platform = $1
+	`
 	args := []interface{}{platform}
 	argIdx := 2
 
 	if searchQuery != "" {
-		sql += fmt.Sprintf(" AND content ILIKE $%d", argIdx)
+		sql += fmt.Sprintf(" AND c.content ILIKE $%d", argIdx)
 		args = append(args, "%"+searchQuery+"%")
 		argIdx++
 	}
 
 	if startDate != "" {
-		sql += fmt.Sprintf(" AND created_at >= $%d", argIdx)
+		sql += fmt.Sprintf(" AND c.created_at >= $%d", argIdx)
 		args = append(args, startDate)
 		argIdx++
 	}
 
 	if endDate != "" {
-		sql += fmt.Sprintf(" AND created_at <= $%d", argIdx)
+		sql += fmt.Sprintf(" AND c.created_at <= $%d", argIdx)
 		args = append(args, endDate)
 		argIdx++
 	}
 
-	sql += fmt.Sprintf(" ORDER BY created_at DESC LIMIT %d", limit)
+	sql += fmt.Sprintf(" ORDER BY c.created_at DESC LIMIT %d", limit)
 
 	rows, err := db.Query(context.Background(), sql, args...)
 	if err != nil {
@@ -58,8 +65,7 @@ func GetChatLogs(c *fiber.Ctx) error {
 	logs := []models.ChatLog{}
 	for rows.Next() {
 		var l models.ChatLog
-		// 修正：掃描 (Scan) 順序以匹配 chat_logs 表結構
-		err := rows.Scan(&l.ID, &l.Platform, &l.SenderID, &l.SenderName, &l.Content, &l.MsgType, &l.MediaID, &l.CreatedAt)
+		err := rows.Scan(&l.ID, &l.Platform, &l.SenderID, &l.SenderName, &l.Content, &l.MsgType, &l.MediaID, &l.CreatedAt, &l.MediaType)
 		if err != nil {
 			fmt.Printf("[SCAN ERROR] %v\n", err)
 			continue

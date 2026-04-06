@@ -10,5 +10,6 @@ type ChatLog struct {
 	Content    string    `json:"content"`
 	MsgType    string    `json:"msgType"`
 	MediaID    *string   `json:"mediaId,omitempty"`
+	MediaType  string    `json:"mediaType,omitempty"`
 	CreatedAt  time.Time `json:"createdAt"`
 }
