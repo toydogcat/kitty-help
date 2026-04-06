@@ -66,9 +66,6 @@ func VerifyFirebaseToken(c *fiber.Ctx) error {
 
 	// Resolve actual identity Email for grouping
 	resolvedEmail := email
-	if isToby {
-		resolvedEmail = "toby@family.local"
-	}
 
 	var role, name, dbID string
 	
