@@ -275,14 +275,15 @@ func GetFileProxy(c *fiber.Ctx) error {
 		}
 	}
 
+	// SMART DETECT: If the fileID looks like a Telegram ID (long base64 string),
+	// we should treat this as a cloud backup and fetch from Telegram instead, regardless of original platform.
+	if len(fileID) > 40 && platform != "telegram" {
+		log.Printf("☁️ Redirecting %s request to Telegram Cloud Backup for ID: %s", platform, fileID)
+		platform = "telegram"
+	}
+
 	if platform == "line" {
-		// SMART DETECT: If the fileID looks like a Telegram ID (long base64 string),
-		// we should treat this as a cloud backup and fetch from Telegram instead.
-		if len(fileID) > 40 {
-			platform = "telegram"
-			log.Printf("☁️ Redirecting LINE quest to Telegram Cloud Backup for ID: %s", fileID)
-		} else {
-			lnBotIf, ok := bots.BotManager.Get("line")
+		lnBotIf, ok := bots.BotManager.Get("line")
 			if !ok { return c.Status(503).JSON(fiber.Map{"error": "LINE bot not initialized"}) }
 			
 			lnBot := lnBotIf.(*bots.LineBot)
@@ -300,7 +301,6 @@ func GetFileProxy(c *fiber.Ctx) error {
 			c.Set("Content-Type", content.ContentType)
 			c.Set("Content-Length", fmt.Sprintf("%d", len(bodyBytes)))
 			return c.Send(bodyBytes)
-		}
 	}
 
 	if platform == "discord" {
