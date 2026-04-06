@@ -129,26 +129,22 @@ func main() {
 		return c.Next()
 	})
 
-	// Dedicated Socket.io CORS (Handles Preflight and custom headers like cf-skip-browser-warning)
+	// Dedicated Socket.io CORS
 	app.Use("/socket.io", func(c *fiber.Ctx) error {
-		// 1. Common headers for ALL socket.io requests (Mandatory for custom headers support)
+		origin := c.Get("Origin")
+		if origin == "" {
+			origin = "*"
+		}
+		
+		// Set headers for ALL requests (Preflight AND Handshake)
+		c.Set("Access-Control-Allow-Origin", origin)
+		c.Set("Access-Control-Allow-Credentials", "true")
 		c.Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, cf-skip-browser-warning")
 		c.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		c.Set("Access-Control-Allow-Credentials", "true")
 
 		if c.Method() == "OPTIONS" {
-			// PREFLIGHT: Socket.io library (engineio) doesn't handle Preflight via the Fiber adaptor.
-			// We MUST set the Allow-Origin manually here to pass the browser's 1st check.
-			origin := c.Get("Origin")
-			if origin == "" {
-				origin = "*"
-			}
-			c.Set("Access-Control-Allow-Origin", origin)
 			return c.SendStatus(204)
 		}
-
-		// GET/POST: We DO NOT set Access-Control-Allow-Origin manually here anymore
-		// because go-socket.io (engineio) adds its own during the handshake.
 		return c.Next()
 	})
 
