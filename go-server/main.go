@@ -117,6 +117,16 @@ func main() {
 	protected.Delete("/impression/links/:id", handlers.DeleteImpressionEdge)
 	
 	protected.Get("/impression/snippets/:id", handlers.GetLinkedSnippet)
+	
+	// 📑 SNIPPETS (Clipboard)
+	protected.Get("/snippets", handlers.GetSnippets)
+	protected.Post("/snippets", handlers.CreateSnippet)
+	protected.Put("/snippets/:id", handlers.UpdateSnippet)
+	protected.Delete("/snippets/:id", handlers.DeleteSnippet)
+	
+	// 🔖 BOOKMARKS
+	protected.Get("/bookmarks", handlers.GetBookmarks)
+	protected.Post("/bookmarks", handlers.CreateBookmark)
 	protected.Delete("/bookmarks/:id", handlers.DeleteBookmark)
 
 	protected.Post("/bulletin", handlers.UpdateBulletin)

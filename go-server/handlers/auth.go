@@ -110,9 +110,11 @@ func JWTMiddleware(c *fiber.Ctx) error {
 		c.Set("X-Refresh-Token", tokenString)
 	}
 
-	// ROBUST ROLE LOCK: Force Superadmin for whitelisted email
+	// ROBUST ROLE LOCK: Force Superadmin/Toby for whitelisted emails
 	userEmail := strings.ToLower(strings.TrimSpace(claims.Email))
-	if userEmail == "toydogcat@gmail.com" {
+	isAdmin := userEmail == "toydogcat@gmail.com" || userEmail == "chickenmilktea@gmail.com" || userEmail == "tobywang2021@gmail.com"
+	
+	if isAdmin {
 		claims.Role = "superadmin"
 		log.Printf("👑 [Auth] Whitelisted Superadmin access granted for: %s", userEmail)
 	} else {
