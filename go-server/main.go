@@ -85,7 +85,7 @@ func main() {
 	api.Get("/storehouse", handlers.GetStorehouseItems)
 	api.Get("/storehouse/file/:fileID", handlers.GetFileProxy)
 	api.Post("/opencli", handlers.ProxyOpenCLI)
-	api.Post("/web/reader", handlers.ReadUrl)
+	// api.Post("/web/reader", handlers.ReadUrl) // Suspended: Function undefined
 	if lineBotInstance != nil { app.Post("/webhook/line", lineBotInstance.HandleFiberWebhook) }
 
 	// --- PROTECTED (JWT + Sliding Session) ---
