@@ -12,6 +12,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/joho/godotenv"
 	"github.com/toydogcat/kitty-help/go-server/bots"
@@ -105,46 +106,20 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	})
 
+	// 4. Standard CORS Middleware (Handles Preflight Automatically)
+	app.Use(cors.New(cors.Config{
+		AllowOrigins:     "https://kitty-help.web.app, http://localhost:5173, http://localhost:4173",
+		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
+		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, cf-skip-browser-warning, ngrok-skip-browser-warning",
+		AllowCredentials: true,
+	}))
+
+	// Simple request logger
 	app.Use(logger.New())
-	// 4. Aggressive CORS Strategy
-	// Manually inject headers for ALL requests to ensure reliability over tunnels
+
+	// [DEBUG] Request tracking middleware
 	app.Use(func(c *fiber.Ctx) error {
-		origin := c.Get("Origin")
-		if origin == "" {
-			origin = "*"
-		}
-		
-		// [REQUEST DEBUG] Tracking every incoming request for diagnostics
-		fmt.Printf("[REQUEST DEBUG] %s %s (Origin: %s)\n", c.Method(), c.Path(), origin)
-		
-		c.Set("Access-Control-Allow-Origin", origin)
-		c.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, cf-skip-browser-warning, ngrok-skip-browser-warning")
-		c.Set("Access-Control-Allow-Credentials", "true")
-		c.Set("Access-Control-Expose-Headers", "Content-Length")
-
-		if c.Method() == "OPTIONS" {
-			return c.SendStatus(204)
-		}
-		return c.Next()
-	})
-
-	// Dedicated Socket.io CORS
-	app.Use("/socket.io", func(c *fiber.Ctx) error {
-		origin := c.Get("Origin")
-		if origin == "" {
-			origin = "*"
-		}
-		
-		// Set headers for ALL requests (Preflight AND Handshake)
-		c.Set("Access-Control-Allow-Origin", origin)
-		c.Set("Access-Control-Allow-Credentials", "true")
-		c.Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, cf-skip-browser-warning")
-		c.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-
-		if c.Method() == "OPTIONS" {
-			return c.SendStatus(204)
-		}
+		fmt.Printf("[API] %s %s (Origin: %s)\n", c.Method(), c.Path(), c.Get("Origin"))
 		return c.Next()
 	})
 
