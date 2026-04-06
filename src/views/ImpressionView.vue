@@ -59,7 +59,6 @@ const options = {
     shape: 'dot', size: 30,
     font: { size: 14, color: '#ffffff', strokeWidth: 0, face: 'Inter, system-ui' },
     borderWidth: 3,
-    image: { crossOrigin: 'anonymous' },
     shadow: { enabled: true, color: 'rgba(0,0,0,0.4)', size: 8, x: 0, y: 4 },
   },
   edges: {
@@ -143,7 +142,7 @@ const loadGraph = async (nodeId?: string) => {
         n.imageUrl = finalUrl; // CRITICAL: Update the raw object so the card gets it!
         return {
             id: n.id, label: n.title, shape: n.imageUrl || n.fileId ? 'circularImage' : 'dot',
-            image: finalUrl || undefined,
+            image: finalUrl ? { unselected: finalUrl, selected: finalUrl, crossOrigin: 'anonymous' } : undefined,
             color: { border: n.id === (nodeId || centerNodeId.value) ? '#22d3ee' : '#4338ca', background: '#1e293b' },
             raw: n
         };
