@@ -263,8 +263,8 @@ func main() {
 	if port == "" {
 		port = "3000"
 	}
-	log.Printf("🚀 Super Kitty (Go) running on port %s", port)
-	log.Fatal(app.Listen(":" + port))
+	log.Printf("🚀 Super Kitty (Go) running on all interfaces at port %s", port)
+	log.Fatal(app.Listen("0.0.0.0:" + port))
 }
 
 func migrateBotAdmins() {
