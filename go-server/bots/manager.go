@@ -10,6 +10,7 @@ type BotChannel interface {
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
 	IsRunning() bool
+	SendMessage(targetID string, text string) error
 }
 
 type Manager struct {

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+	"os"
+	"strings"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/toydogcat/kitty-help/go-server/database"
@@ -141,8 +143,45 @@ func (d *DiscordBot) handleAdminCommand(s *discordgo.Session, m *discordgo.Messa
 }
 
 func (d *DiscordBot) handleGeneralCommand(s *discordgo.Session, m *discordgo.MessageCreate, cmd string) {
+	// Case 1: News Command
+	if strings.HasPrefix(cmd, "news") {
+		args := strings.TrimSpace(strings.TrimPrefix(cmd, "news"))
+		openCLIArgs := "news"
+		switch args {
+		case "1": openCLIArgs = "news top"
+		case "2": openCLIArgs = "news ai"
+		case "3": openCLIArgs = "news bbc"
+		}
+		
+		output, err := d.GetNewsFromWorker(openCLIArgs)
+		if err != nil {
+			s.ChannelMessageSendReply(m.ChannelID, "❌ 無法聯絡文書機，請確認 Tailscale 連線。", m.Reference())
+			return
+		}
+		s.ChannelMessageSendReply(m.ChannelID, fmt.Sprintf("📰 **Kitty News (%s)**\n\n%s", openCLIArgs, output), m.Reference())
+		return
+	}
+
+	// Case 2: Cross-platform messaging (D2L)
+	if strings.HasPrefix(cmd, "l ") {
+		msg := strings.TrimSpace(strings.TrimPrefix(cmd, "l "))
+		lnBotIf, ok := BotManager.Get("line")
+		if ok {
+			targetUser := os.Getenv("ADMIN_LINE_ID") 
+			if targetUser != "" {
+				err := lnBotIf.SendMessage(targetUser, fmt.Sprintf("🐱 **Discord Message** from [%s]:\n%s", m.Author.Username, msg))
+				if err == nil {
+					s.ChannelMessageSendReply(m.ChannelID, "✅ 訊息已轉發至 LINE。", m.Reference())
+					return
+				}
+			}
+		}
+		s.ChannelMessageSendReply(m.ChannelID, "❌ 轉發失敗，請檢查 LINE 設定。", m.Reference())
+		return
+	}
+
 	if cmd == "help" {
-		s.ChannelMessageSendReply(m.ChannelID, "🐱 **Kitty-Help General Services**\n\nUsage:\n- `/cat <text>` : Sync text to shared clipboard\n- `/cat status` : Check system status", m.Reference())
+		s.ChannelMessageSendReply(m.ChannelID, "🐱 **Kitty-Help General Services**\n\n- `/cat news [1|2|3]` : Get latest news\n- `/cat l <text>` : Send to LINE\n- `/cat <text>` : Sync to shared clipboard", m.Reference())
 		return
 	}
 
@@ -242,4 +281,9 @@ func (d *DiscordBot) forwardToStorehouse(s *discordgo.Session, m *discordgo.Mess
 		sockets.Broadcast("storehouseUpdate", map[string]interface{}{ "status": "new_item" })
 	}
 	return lastMediaID
+}
+
+func (d *DiscordBot) SendMessage(targetID string, text string) error {
+	_, err := d.session.ChannelMessageSend(targetID, text)
+	return err
 }

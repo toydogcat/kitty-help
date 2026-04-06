@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"strconv"
 	"github.com/mymmrac/telego"
 	tu "github.com/mymmrac/telego/telegoutil"
 	"github.com/toydogcat/kitty-help/go-server/database"
@@ -305,4 +306,13 @@ func (t *TelegramBot) UploadMedia(chatID int64, reader io.Reader, filename strin
 		return m.Audio.FileID, nil
 	}
 	return "", fmt.Errorf("unknown media type in response")
+}
+
+func (t *TelegramBot) SendMessage(targetID string, text string) error {
+	chatID, err := strconv.ParseInt(targetID, 10, 64)
+	if err != nil {
+		return err
+	}
+	_, err = t.bot.SendMessage(context.Background(), tu.Message(tu.ID(chatID), text))
+	return err
 }

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-
+	"bytes"
+	"encoding/json"
+	"net/http"
 	"time"
 	"os"
 	"github.com/toydogcat/kitty-help/go-server/database"
@@ -125,9 +127,33 @@ func (c *BaseChannel) GetUnifiedUserID(ctx context.Context, accountID string) (s
 func (c *BaseChannel) GetWebhookURL() string {
 	url := os.Getenv("VITE_API_URL")
 	if url == "" {
-		url = "https://your-tunnel.trycloudflare.com" // Default placeholder
+		url = "https://your-tunnel.trycloudflare.com" 
 	}
 	return url
+}
+
+func (c *BaseChannel) GetNewsFromWorker(args string) (string, error) {
+	workerURL := "http://100.103.50.4:7080/api/opencli"
+	
+	reqBody, _ := json.Marshal(map[string]string{"args": args})
+	client := http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Post(workerURL, "application/json", bytes.NewBuffer(reqBody))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Output string `json:"output"`
+		Error  string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	if result.Error != "" {
+		return "", fmt.Errorf(result.Error)
+	}
+	return result.Output, nil
 }
 
 func (c *BaseChannel) LogChat(ctx context.Context, senderID string, senderName string, content string, msgType string, mediaID *string) {

@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"log"
 	"time"
+	"os"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/line/line-bot-sdk-go/v7/linebot"
@@ -160,7 +162,7 @@ func (l *LineBot) handleTextMessage(replyToken, userID, senderName string, text 
 	}
 
 	if isGeneral {
-		l.handleGeneralCommand(replyToken, content)
+		l.handleGeneralCommand(replyToken, content, userID)
 		l.LogChat(context.Background(), userID, senderName, text, "text", nil)
 		return
 	}
@@ -182,9 +184,48 @@ func (l *LineBot) handleAdminCommand(replyToken, cmd string) {
 	}
 }
 
-func (l *LineBot) handleGeneralCommand(replyToken, cmd string) {
+func (l *LineBot) handleGeneralCommand(replyToken, cmd string, userID string) {
+	// Case 1: News Command
+	if strings.HasPrefix(cmd, "news") {
+		args := strings.TrimSpace(strings.TrimPrefix(cmd, "news"))
+		openCLIArgs := "news"
+		switch args {
+		case "1": openCLIArgs = "news top"
+		case "2": openCLIArgs = "news ai"
+		case "3": openCLIArgs = "news bbc"
+		}
+		
+		output, err := l.GetNewsFromWorker(openCLIArgs)
+		if err != nil {
+			l.Reply(replyToken, "❌ 無法聯絡文書機，請確認 Tailscale 連線。")
+			return
+		}
+		l.Reply(replyToken, fmt.Sprintf("📰 **Kitty News (%s)**\n\n%s", openCLIArgs, output))
+		return
+	}
+
+	// Case 2: Cross-platform messaging (L2D)
+	if strings.HasPrefix(cmd, "d ") {
+		msg := strings.TrimSpace(strings.TrimPrefix(cmd, "d "))
+		dsBotIf, ok := BotManager.Get("discord")
+		if ok {
+			// Find the shared channel from settings/env or use a specific one
+			// For now, we'll try to find an admin chat ID or a fixed one
+			targetChannel := os.Getenv("DISCORD_ADMIN_CHANNEL_ID") 
+			if targetChannel != "" {
+				err := dsBotIf.SendMessage(targetChannel, fmt.Sprintf("🐱 **LINE Message** from [%s]:\n%s", userID, msg))
+				if err == nil {
+					l.Reply(replyToken, "✅ 訊息已轉發至 Discord。")
+					return
+				}
+			}
+		}
+		l.Reply(replyToken, "❌ 轉發失敗，請檢查 Discord 設定。")
+		return
+	}
+
 	if cmd == "help" {
-		l.Reply(replyToken, "🐱 **Kitty-Help General Services**\n\nUsage:\n- `/cat <text>` : Sync text to shared clipboard\n- `/cat status` : Check system status")
+		l.Reply(replyToken, "🐱 **Kitty-Help General Services**\n\n- `/cat news [1|2|3]` : Get latest news\n- `/cat d <text>` : Send to Discord\n- `/cat <text>` : Sync to shared clipboard")
 		return
 	}
 
@@ -294,4 +335,9 @@ func (l *LineBot) Reply(replyToken, text string) {
 	if err != nil {
 		log.Printf("❌ Failed to reply to LINE: %v", err)
 	}
+}
+
+func (l *LineBot) SendMessage(targetID string, text string) error {
+	_, err := l.bot.PushMessage(targetID, linebot.NewTextMessage(text)).Do()
+	return err
 }
