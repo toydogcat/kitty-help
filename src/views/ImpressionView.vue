@@ -48,7 +48,7 @@ const showExportPanel = ref(false);
 const defaultBackgrounds = [
     { name: 'Cosmic', url: 'https://images.unsplash.com/photo-1462331940025-496dfbfc7564?auto=format&fit=crop&w=1920&q=80' },
     { name: 'Quantum', url: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1920&q=80' },
-    { name: 'Aurora', url: 'https://images.unsplash.com/photo-1483366759020-137255160894?auto=format&fit=crop&w=1920&q=80' },
+    { name: 'Aurora', url: 'https://images.unsplash.com/photo-1537819191377-d3305ffddce4?auto=format&fit=crop&w=1920&q=80' },
     { name: 'Vortex', url: 'https://images.unsplash.com/photo-1543722530-d2c3201371e7?auto=format&fit=crop&w=1920&q=80' }
 ];
 
@@ -391,7 +391,15 @@ const createLink = async () => {
     } catch (e) { console.error(e); }
 };
 const performGlobalSearch = async () => {
-    if (globalSearchQuery.value.length < 1) { globalSearchResults.value = []; return; }
+    if (globalSearchQuery.value.length < 1) { 
+        // Show recent/top nodes if query is empty
+        const results = await apiService.searchImpressionNodes('');
+        globalSearchResults.value = results.slice(0, 10).map((r: any) => ({
+            ...r,
+            imageUrl: r.imageUrl?.startsWith('/') ? apiService.getAbsoluteUrl(r.imageUrl) : r.imageUrl
+        }));
+        return; 
+    }
     const results = await apiService.searchImpressionNodes(globalSearchQuery.value);
     globalSearchResults.value = results.map((r: any) => ({
         ...r,
@@ -550,7 +558,7 @@ onMounted(() => { initGraph(); loadTempItems(); loadGraph(); });
             <div class="panel-body">
                 <p class="p-hint">Select Backdrop Style</p>
                 <div class="color-picker-grid">
-                    <div v-for="c in ['#0f172a', '#1e293b', '#000000', '#0a0a0a']" :key="c" :style="{ background: c }"
+                    <div v-for="c in ['#0f172a', '#1e293b', '#000000', '#ffffff', '#f5f5dc']" :key="c" :style="{ background: c }"
                         @click="exportBgColor = c; exportBgImage = null" :class="{ active: !exportBgImage && exportBgColor === c }" class="c-dot"></div>
                 </div>
                 <div class="bg-picker-grid">
@@ -566,10 +574,14 @@ onMounted(() => { initGraph(); loadTempItems(); loadGraph(); });
 
         <div class="corner-search glass">
             <span class="s-icon">🔍</span>
-            <input v-model="globalSearchQuery" placeholder="Search universe..." @input="performGlobalSearch" />
+            <input v-model="globalSearchQuery" placeholder="Search universe..." @input="performGlobalSearch" @focus="performGlobalSearch" />
             <div v-if="globalSearchResults.length" class="search-drop glass">
-                <div v-for="r in globalSearchResults" :key="r.id" class="drop-item" @click="loadGraph(r.id)">
-                    <img v-if="r.imageUrl" :src="r.imageUrl" /><span>{{ r.title }}</span>
+                <div v-for="r in globalSearchResults" :key="r.id" class="drop-item" @click="loadGraph(r.id); globalSearchResults = []">
+                    <img v-if="r.imageUrl" :src="r.imageUrl" />
+                    <div class="drop-info">
+                        <span class="drop-t">{{ r.title }}</span>
+                        <span class="drop-m">{{ r.nodeType }}</span>
+                    </div>
                 </div>
             </div>
         </div>
