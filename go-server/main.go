@@ -16,7 +16,6 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/joho/godotenv"
 	"github.com/toydogcat/kitty-help/go-server/bots"
-	"github.com/toydogcat/kitty-help/go-server/database"
 	"github.com/toydogcat/kitty-help/go-server/handlers"
 	"github.com/toydogcat/kitty-help/go-server/sockets"
 )
