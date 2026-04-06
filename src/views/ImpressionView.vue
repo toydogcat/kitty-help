@@ -34,10 +34,6 @@ const globalSearchQuery = ref('');
 const globalSearchResults = ref<any[]>([]);
 const isLinkingMode = ref(false);
 
-// Note Editing
-const isEditingNoteContent = ref(false);
-const linkedNoteData = ref({ id: '', name: '', content: '' });
-
 // Desk Linkage
 const isEditingDeskLink = ref(false);
 const shelves = ref<any[]>([]);
@@ -102,7 +98,6 @@ const initGraph = () => {
   network.value.on('click', (params) => {
     isLinkingMode.value = false;
     isEditingNode.value = false;
-    isEditingNoteContent.value = false;
     if (params.nodes.length > 0) {
       handleNodeClick(params.nodes[0]);
     } else {
@@ -276,42 +271,7 @@ const goToRandomNode = async () => {
     } catch (e) { console.error(e); }
 };
 
-const syncToSnippet = async (id: string) => {
-    try {
-        const res = await apiService.syncImpressionToSnippet(id);
-        if (res.status === 'linked') alert('Linked Successfully! Check your Personal board.');
-        else if (res.status === 'existing') {
-             // Already linked, now fetch the content to edit
-             const snippet = await apiService.getLinkedSnippet(res.snippetId);
-             linkedNoteData.value = { id: snippet.id, name: snippet.name, content: snippet.content || '' };
-             isEditingNoteContent.value = true;
-             isEditingNode.value = false;
-             isLinkingMode.value = false;
-        }
-        loadGraph(id); 
-    } catch (e) { console.error(e); }
-};
-
-const openNoteEditor = async (snippetId: string) => {
-    try {
-        const snippet = await apiService.getLinkedSnippet(snippetId);
-        linkedNoteData.value = { id: snippet.id, name: snippet.name, content: snippet.content || '' };
-        isEditingNoteContent.value = true;
-        isEditingNode.value = false;
-        isLinkingMode.value = false;
-    } catch (e) { console.error(e); }
-};
-
-const saveNoteChanges = async () => {
-    try {
-        await apiService.updateSnippet(linkedNoteData.value.id, { 
-            name: linkedNoteData.value.name, 
-            content: linkedNoteData.value.content 
-        });
-        isEditingNoteContent.value = false;
-        alert('Note Manifest Refined.');
-    } catch (e) { console.error(e); }
-};
+// Note editing functions removed per user request
 
 const saveNodeEdits = async () => {
     if (!selectedNodeDetails.value) return;
@@ -498,7 +458,7 @@ onMounted(() => { initGraph(); loadTempItems(); loadGraph(); });
         </div>
 
         <!-- Node Explorer Bottom Card -->
-        <div v-if="selectedNodeDetails" class="node-explorer-card glass neon-border" :class="{ 'link-expanded': isLinkingMode || isEditingNode || isEditingNoteContent || isEditingDeskLink }">
+        <div v-if="selectedNodeDetails" class="node-explorer-card glass neon-border" :class="{ 'link-expanded': isLinkingMode || isEditingNode || isEditingDeskLink }">
             <button class="card-close" @click="selectedNodeDetails = null">×</button>
             
             <div class="card-flex">
@@ -557,19 +517,6 @@ onMounted(() => { initGraph(); loadTempItems(); loadGraph(); });
                     <button class="confirm-link-btn" @click="saveNodeEdits">Save Refinement</button>
                 </div>
 
-                <!-- Note Editing Column -->
-                <div v-if="isEditingNoteContent" class="card-link-engine note-edit-mode">
-                    <h3>Edit Linked Note</h3>
-                    <div class="in-field">
-                        <label>Note Name</label>
-                        <input v-model="linkedNoteData.name" />
-                    </div>
-                    <div class="in-field">
-                        <label>Knowledge Body</label>
-                        <textarea v-model="linkedNoteData.content" class="premium-textarea note-area"></textarea>
-                    </div>
-                    <button class="confirm-link-btn sync-save" @click="saveNoteChanges">Update Personal Board</button>
-                </div>
 
                 <!-- Desk Link Column -->
                 <div v-if="isEditingDeskLink" class="card-link-engine desk-link-mode">
