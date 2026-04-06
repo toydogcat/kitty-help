@@ -1,55 +1,58 @@
-# 🐱 Kitty-Help: Cross-Device Auxiliary Communication (PG Edition)
+# 🌌 Kitty-Help Desk & Knowledge Galaxy
 
-[![Frontend - Vue 3](https://img.shields.io/badge/Frontend-Vue%203-42b883?style=for-the-badge&logo=vue.js)](https://vuejs.org/)
-[![Backend - Fiber](https://img.shields.io/badge/Backend-Go%20Fiber-00ADD8?style=for-the-badge&logo=go)](https://gofiber.io/)
-[![Database - PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-336791?style=for-the-badge&logo=postgresql)](https://www.postgresql.org/)
-[![Security - Firebase](https://img.shields.io/badge/Security-Firebase-FFCA28?style=for-the-badge&logo=firebase)](https://firebase.google.com/)
+> **"Capturing memories from the void, weaving them into a constellation of thought."**
 
-> **"A Professional Creative Suite for Family Knowledge Management."**
-
-Kitty-Help is a high-fidelity, private knowledge management and communication infrastructure designed for seamless cross-device synchronization and high-security data custody. It bridges the gap between fragmented platform bots (Discord/Telegram/LINE) and a centralized, professional-grade web workstation.
-
-## ✨ Highlights
-
-### 🌌 Impression Knowledge Canvas
-- **Bi-directional Synchronization**: Linked nodes are automatically mirrored in the Personal Snippets system.
-- **Visual Discovery**: A high-density graph visualization (powered by Vis-network) for navigating complex knowledge relations.
-- **Memory Recall (🎲 Random)**: A dedicated feature to stimulate cognitive recall by randomizing the graph focus.
-- **Gallery Dock**: An intuitive "pull-tab" interface for managing the discovery queue.
-
-### 🔐 Multi-Platform Security Custody
-- **Dual-Bot Verification**: Access sensitive bookmarks and passwords requires real-time identity verification via Telegram/Discord bots.
-- **Firebase Auth + JWT**: Industry-standard identity resolution paired with custom backend role management.
-- **Grace Period Security**: Automated 2fa-unlocked windows for frictionless productivity after initial identity verification.
-
-### 📋 Workstation Persistence
-- **Seamless Resumption (無痛接續)**: The system remembers your exact navigation depth in file explorers, active tabs, and even your spatial coordinates on the knowledge graph.
-- **Unified Snippet Explorer**: A hierarchical folder system that supports full Import/Export of knowledge structures.
-
-## 🛠️ Tech Stack
-
-### Frontend
-- **Framework**: Vue 3 (Composition API) + Vite
-- **Graphing**: Vis-network for massive node-edge visualization
-- **State**: Reactive `localStorage` persistence patterns
-- **Styling**: Vanilla high-end CSS with glassmorphism and adaptive dark mode
-
-### Backend
-- **Core**: Golang Fiber (High Performance)
-- **Real-time**: Socket.io (Go implementation) with tunnel-optimized heartbeating
-- **ORM**: pgx (Native PostgreSQL performance)
-- **Bots**: Multi-threaded Bot Manager for Telegram, Discord, and LINE
-
-## 🚀 Getting Started
-
-1. **Clone the repository**
-2. **Setup your `.env`**:
-   - `DATABASE_URL` (PostgreSQL)
-   - `FIREBASE_AUTH_JSON`
-   - `TELEGRAM_BOT_TOKEN`, `DISCORD_BOT_TOKEN`, etc.
-3. **Run Services**:
-   - Backend: `cd go-server && go run main.go` (or `air` for dev)
-   - Frontend: `npm install && npm run dev`
+Kitty-Help is an advanced AI-powered knowledge management system designed for the modern high-density information workflow. It seamlessly bridges communication platforms with a unified personal workspace.
 
 ---
-*Created with ❤️ by **Toby** & **Antigravity AI**.*
+
+## 🚀 Core Constellations
+
+### 1. 🌌 Impression Graph (Knowledge Galaxy)
+A dynamic, bi-directional knowledge visualization system built with `vis-network`.
+- **Bi-directional Navigation**: View paths forward (what this concept leads to) and backward (who references this concept).
+- **Snapshot Studio**: High-fidelity data visualization export with curated cosmic backdrops.
+- **Search Universe**: Global instant-access node discovery with predictive dropdown suggestions.
+- **Smart Weaving**: Intuitively link disparate concepts with named bonds to build a dense information network.
+
+### 2. 🗄️ Storehouse & Bot Integration
+The multi-channel ingestion engine for your digital life.
+- **Cross-Platform Capture**: Native listeners for LINE, Discord, and Telegram.
+- **Media Archiving**: Unified cloud storage mapping for historical and transient media.
+- **Discovery Queue**: Intercepted information waits in the "Impression Queue" for authorized integration.
+
+### 3. 🖥️ Desk Workspace
+The focus-oriented productivity hub.
+- **Shelf Association**: Directly link any knowledge node to a physical workspace (Shelf).
+- **Teleportation**: Instant spatial jumping between the high-level Graph and the low-level Task environment.
+- **Content Persistence**: Hardened SQL backend with `COALESCE` fault-tolerance for partial metadata.
+
+---
+
+## 🛠️ Technical Stack
+
+- **Frontend**: Vue 3 + Vite + TypeScript + Vis-network
+- **Backend**: Go (Gin) + PostgreSQL
+- **Architecture**: Dockerized suite with Cloudflare Tunnel orchestration.
+- **Identity**: Distributed JWT-based authentication with case-insensitive identity resolution.
+
+---
+
+## ⚡ Deployment & Maintenance
+
+To evolve the system or update the environment:
+```bash
+./run.py -d -c -b -p
+```
+*Flags: Delete containers, Clean cache, Build assets, Prune network.*
+
+---
+
+## 🧬 Evolution Milestone: `v1.0.0-galaxy`
+This release marks the successful stabilization of:
+- [x] Case-insensitive Auth Pipeline.
+- [x] Bi-directional Graph Recursive Queries.
+- [x] Impression-to-Desk Spatial Teleportation.
+- [x] Secure Media Backend Proxying.
+
+**"The galaxy is born. Standing by for next-level evolution."** 🐱✨
