@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue';
-import axios from 'axios';
+import { apiService } from '../services/api';
 
 const activePlatform = ref('telegram');
 const platforms = [
@@ -24,8 +24,8 @@ const endDate = ref('');
 
 const fetchMyStatus = async () => {
   try {
-    const res = await axios.get('/api/bot/my-status');
-    myStatus.value = res.data;
+    const data = await apiService.getMyBotStatus();
+    myStatus.value = data;
   } catch (err) {
     console.error('Failed to fetch bot status:', err);
   }
@@ -34,14 +34,13 @@ const fetchMyStatus = async () => {
 const fetchMessages = async () => {
   loading.value = true;
   try {
-    const params = new URLSearchParams({
-      platform: activePlatform.value,
-      q: searchQuery.value,
-      startDate: startDate.value,
-      endDate: endDate.value
-    });
-    const res = await axios.get(`/api/chat/logs?${params.toString()}`);
-    messages.value = res.data;
+    const data = await apiService.getChatLogs(
+      activePlatform.value,
+      searchQuery.value,
+      startDate.value,
+      endDate.value
+    );
+    messages.value = data;
   } catch (err) {
     console.error('Failed to fetch messages:', err);
   } finally {
@@ -68,7 +67,7 @@ watch(searchQuery, () => {
 });
 
 const getStorehouseUrl = (mediaId: string) => {
-  return `/api/storehouse/file/${mediaId}`;
+  return apiService.getStorehouseFileUrl(mediaId);
 };
 
 const formatDate = (dateStr: string) => {

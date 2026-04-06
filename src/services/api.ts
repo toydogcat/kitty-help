@@ -298,6 +298,15 @@ export const apiService = {
   async readUrl(url: string) {
     const response = await axios.post(`${API_BASE}/web/reader`, { url });
     return response.data;
+  },
+  async getMyBotStatus() {
+    const response = await axios.get(`${API_BASE}/bot/my-status`);
+    return response.data;
+  },
+  async getChatLogs(platform: string, query: string = '', startDate: string = '', endDate: string = '') {
+    const params = new URLSearchParams({ platform, q: query, startDate, endDate });
+    const response = await axios.get(`${API_BASE}/chat/logs?${params.toString()}`);
+    return response.data;
   }
 };
 
