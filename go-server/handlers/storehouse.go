@@ -236,6 +236,7 @@ func GetFileProxy(c *fiber.Ctx) error {
 	log.Printf("🖼️ [ProxyRequest] Entering GetFileProxy for ID: %s", fileID)
 	
 	platform := c.Query("platform", "telegram")
+	c.Set("Access-Control-Allow-Origin", "*")
 	if c.Query("download") == "1" {
 		c.Set("Content-Disposition", "attachment")
 	}

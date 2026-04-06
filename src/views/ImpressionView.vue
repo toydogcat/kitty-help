@@ -59,6 +59,7 @@ const options = {
     shape: 'dot', size: 30,
     font: { size: 14, color: '#ffffff', strokeWidth: 0, face: 'Inter, system-ui' },
     borderWidth: 3,
+    image: { crossOrigin: 'anonymous' },
     shadow: { enabled: true, color: 'rgba(0,0,0,0.4)', size: 8, x: 0, y: 4 },
   },
   edges: {
