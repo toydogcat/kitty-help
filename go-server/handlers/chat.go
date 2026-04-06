@@ -24,7 +24,8 @@ func GetChatLogs(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "platform query required"})
 	}
 
-	sql := "SELECT id, platform, sender_id, sender_name, content, media_type, file_id, created_at FROM media_archives WHERE platform = $1"
+	// 修正：從 chat_logs 抓取紀錄，並修正 SQL 語法
+	sql := "SELECT id, platform, sender_id, sender_name, content, msg_type, media_id, created_at FROM chat_logs WHERE platform = $1"
 	args := []interface{}{platform}
 	argIdx := 2
 
@@ -57,8 +58,10 @@ func GetChatLogs(c *fiber.Ctx) error {
 	logs := []models.ChatLog{}
 	for rows.Next() {
 		var l models.ChatLog
+		// 修正：掃描 (Scan) 順序以匹配 chat_logs 表結構
 		err := rows.Scan(&l.ID, &l.Platform, &l.SenderID, &l.SenderName, &l.Content, &l.MsgType, &l.MediaID, &l.CreatedAt)
 		if err != nil {
+			fmt.Printf("[SCAN ERROR] %v\n", err)
 			continue
 		}
 		logs = append(logs, l)
@@ -66,6 +69,7 @@ func GetChatLogs(c *fiber.Ctx) error {
 
 	return c.JSON(logs)
 }
+
 
 func GetMyBotStatus(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(*Claims)
