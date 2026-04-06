@@ -25,6 +25,8 @@ func main() {
 	// 1. Load .env (try local first, then parent for dev)
 	_ = godotenv.Load(".env")
 	_ = godotenv.Load("../.env")
+	_ = godotenv.Load(".env.production")
+	_ = godotenv.Load("../.env.production")
 
 	// 1. Initialize Databases
 	database.InitDB()

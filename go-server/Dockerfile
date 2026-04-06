@@ -26,6 +26,9 @@ RUN apk add --no-cache ffmpeg
 # Copy the binary
 COPY --from=builder /app/kitty-server .
 
+# Copy environment files (if they exist)
+COPY --from=builder /app/.env* ./
+
 EXPOSE 3000
 
 CMD ["./kitty-server"]

@@ -249,18 +249,29 @@ func GetFileProxy(c *fiber.Ctx) error {
 	// If the fileID looks like a UUID (36 chars), resolve it from the database first
 	if len(fileID) == 36 {
 		var resolvedFileID, resolvedPlatform string
-		err := db.QueryRow(context.Background(),
-			"SELECT file_id, source_platform FROM media_archives WHERE id = $1",
-			fileID).Scan(&resolvedFileID, &resolvedPlatform)
+		var err error
+		
+		// Attempt A: Local DB
+		if database.LocalDB != nil {
+			err = database.LocalDB.QueryRow(context.Background(),
+				"SELECT file_id, source_platform FROM media_archives WHERE id = $1",
+				fileID).Scan(&resolvedFileID, &resolvedPlatform)
+		}
+		
+		// Attempt B: Cloud DB fallback
+		if (err != nil || database.LocalDB == nil) && database.CloudDB != nil {
+			err = database.CloudDB.QueryRow(context.Background(),
+				"SELECT file_id, source_platform FROM media_archives WHERE id = $1",
+				fileID).Scan(&resolvedFileID, &resolvedPlatform)
+		}
 		
 		if err == nil {
 			log.Printf("🔍 RESOLVED UUID %s -> %s (%s)", fileID, resolvedFileID, resolvedPlatform)
 			fileID = resolvedFileID
 			platform = resolvedPlatform
 		} else {
-			log.Printf("⚠️ FAILED to resolve UUID %s: %v", fileID, err)
-			// If resolution fails, we shouldn't attempt to continue with a UUID as a raw ID
-			return c.Status(404).JSON(fiber.Map{"error": "Media record not found or inaccessible"})
+			log.Printf("⚠️ FAILED to resolve UUID %s in any DB: %v", fileID, err)
+			return c.Status(404).JSON(fiber.Map{"error": "Media record not found in local or cloud DB"})
 		}
 	}
 

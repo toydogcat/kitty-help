@@ -133,7 +133,12 @@ const loadGraph = async (nodeId?: string) => {
     }
 
     const visNodes = data.nodes.map((n: any) => {
+        // Dynamic image URL construction
         let finalUrl = n.imageUrl;
+        if (!finalUrl && n.id) {
+            finalUrl = apiService.getStorehouseFileUrl(n.id);
+        }
+        
         if (finalUrl && !finalUrl.includes('?t=')) {
            const sep = finalUrl.includes('?') ? '&' : '?';
            finalUrl = `${finalUrl}${sep}t=${Date.now()}`;
@@ -243,10 +248,12 @@ const loadTempItems = async () => {
   try {
     const data = await apiService.getImpressionTemp();
     tempItems.value = data.map((item: any) => {
-        if (item.imageUrl && !item.imageUrl.includes('?t=')) {
-            const sep = item.imageUrl.includes('?') ? '&' : '?';
-            item.imageUrl = `${item.imageUrl}${sep}t=${Date.now()}`;
-        }
+        // Construct standard image URL using the correct ID
+        item.imageUrl = apiService.getStorehouseFileUrl(item.id);
+        
+        // Cache busting
+        const sep = item.imageUrl.includes('?') ? '&' : '?';
+        item.imageUrl = `${item.imageUrl}${sep}t=${Date.now()}`;
         return item;
     });
   } catch (e) { console.error(e); }
