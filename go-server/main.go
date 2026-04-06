@@ -59,7 +59,7 @@ func main() {
 	bots.BotManager.StartAll(context.Background())
 
 	app := fiber.New(fiber.Config{
-		AppName:      "Kitty-Help Master Suite 5.0",
+		AppName:      "Kitty-Help Master Suite 6.0",
 		ReadTimeout:  120 * time.Second,
 		WriteTimeout: 120 * time.Second,
 	})
@@ -76,19 +76,20 @@ func main() {
 	app.Static("/uploads", "../uploads")
 	api := app.Group("/api")
 
-	// --- PUBLIC ---
+	// --- 1. Public API ---
 	api.Post("/auth/verify", handlers.VerifyFirebaseToken)
 	api.Get("/bulletin", handlers.GetBulletin)
 	api.Get("/calendar", handlers.GetCalendarEvents)
 	api.Get("/settings", handlers.GetSettings)
 	api.Post("/devices/register", handlers.RegisterDevice)
 	api.Get("/storehouse", handlers.GetStorehouseItems)
+	api.Put("/storehouse/:id", handlers.UpdateStorehouseItem) // ← MISSING BEFORE
+	api.Post("/storehouse/:id/index", handlers.IndexStorehouseItem) // ← MISSING BEFORE
 	api.Get("/storehouse/file/:fileID", handlers.GetFileProxy)
 	api.Post("/opencli", handlers.ProxyOpenCLI)
-	// api.Post("/web/reader", handlers.ReadUrl) // Suspended: Function undefined
 	if lineBotInstance != nil { app.Post("/webhook/line", lineBotInstance.HandleFiberWebhook) }
 
-	// --- PROTECTED (JWT + Sliding Session) ---
+	// --- 2. JWT Protected (Sliding Session) ---
 	authShared := api.Group("/", handlers.JWTMiddleware)
 	authShared.Get("/bot/my-status", handlers.GetMyBotStatus)
 	authShared.Post("/bot/link", handlers.LinkBotAccount)
@@ -96,12 +97,13 @@ func main() {
 	authShared.Post("/security/challenge", handlers.RequestChallenge)
 	authShared.Get("/security/status", handlers.GetSecurityStatus)
 
-	// --- DEVICE PROTECTED ---
+	// --- 3. Device Protected ---
 	protected := authShared.Group("/", handlers.DeviceCheckMiddleware)
 	protected.Get("/snippets", handlers.GetSnippets)
 	protected.Post("/snippets", handlers.CreateSnippet)
 	protected.Put("/snippets/:id", handlers.UpdateSnippet)
 	protected.Delete("/snippets/:id", handlers.DeleteSnippet)
+	
 	protected.Get("/bookmarks", handlers.GetBookmarks)
 	protected.Post("/bookmarks", handlers.CreateBookmark)
 	protected.Put("/bookmarks/:id", handlers.UpdateBookmark)
@@ -116,30 +118,30 @@ func main() {
 	protected.Put("/impression/nodes/:id", handlers.UpdateImpressionNode)
 	protected.Delete("/impression/nodes/:id", handlers.DeleteImpressionNode)
 	protected.Post("/impression/links", handlers.CreateImpressionLink)
+	protected.Put("/impression/links/:id", handlers.UpdateImpressionEdge)
 	protected.Delete("/impression/links/:id", handlers.DeleteImpressionEdge)
-
-	// 🌐 COMMON STATUS (Discovery Wall State)
-	protected.Get("/common", handlers.GetCommonState)
-	protected.Post("/common/update", handlers.UpdateCommonState)
-	protected.Get("/common/history", handlers.GetCommonHistory)
+	protected.Post("/impression/nodes/:id/sync", handlers.SyncNodeToSnippet)
+	protected.Get("/impression/snippets/:id", handlers.GetLinkedSnippet)
 
 	protected.Post("/bulletin", handlers.UpdateBulletin)
 	protected.Post("/calendar", handlers.UpdateCalendarEvent)
 
-	// --- ADMIN ONLY ---
+	// --- 4. Admin Only ---
 	admin := protected.Group("/", handlers.AdminOnlyMiddleware)
 	admin.Get("/devices", handlers.GetDevices)
 	admin.Put("/devices/status", handlers.UpdateDeviceStatus)
+	admin.Delete("/devices/:id", handlers.DeleteDevice)
 	admin.Get("/users", handlers.GetUsers)
 	admin.Post("/users/role", handlers.UpdateUserRole)
 	admin.Post("/settings", handlers.UpdateSetting)
 
-	// --- TOBY ONLY ---
+	// --- 5. Toby Only ---
 	toby := protected.Group("/", handlers.TobyOnlyMiddleware)
 	toby.Get("/bot/requests", handlers.GetPendingBotRequests)
 	toby.Post("/bot/approve", handlers.ApproveBotRequest)
 	toby.Get("/passwords", handlers.GetPasswords)
 	toby.Post("/passwords", handlers.AddPassword)
+	toby.Delete("/passwords/:id", handlers.DeletePassword)
 
 	app.All("/socket.io/*", adaptor.HTTPHandler(sockets.Server))
 	migrateBotAdmins()
@@ -156,7 +158,7 @@ func main() {
 		bots.BotManager.StopAll(context.Background())
 	}()
 
-	log.Printf("🚀 Super Kitty (AI News Ready!) running at port %s", port)
+	log.Printf("🚀 Super Kitty (Save & Search Restored!) running at port %s", port)
 	log.Fatal(app.Listen("0.0.0.0:" + port))
 }
 
