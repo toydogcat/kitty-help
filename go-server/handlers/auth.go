@@ -109,6 +109,11 @@ func JWTMiddleware(c *fiber.Ctx) error {
 		c.Set("X-Refresh-Token", tokenString)
 	}
 
+	// ROBUST ROLE LOCK: Even if the token is old, always ensure this specific email is Superadmin
+	if strings.ToLower(claims.Email) == "toydogcat@gmail.com" {
+		claims.Role = "superadmin"
+	}
+
 	c.Locals("user", claims)
 	return c.Next()
 }
