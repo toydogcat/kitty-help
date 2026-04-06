@@ -130,6 +130,17 @@ func main() {
 	protected.Put("/bookmarks/:id", handlers.UpdateBookmark)
 	protected.Delete("/bookmarks/:id", handlers.DeleteBookmark)
 
+	// 🖥️ DESK (Work Desk & Shelves)
+	protected.Get("/desk/shelves", handlers.GetShelves)
+	protected.Post("/desk/shelves", handlers.CreateShelf)
+	protected.Put("/desk/shelves/:id", handlers.UpdateShelf)
+	protected.Delete("/desk/shelves/:id", handlers.DeleteShelf)
+	
+	protected.Get("/desk/items", handlers.GetDeskItems)
+	protected.Post("/desk/items", handlers.AddDeskItem)
+	protected.Put("/desk/items/:id", handlers.UpdateDeskItem)
+	protected.Delete("/desk/items/:id", handlers.DeleteDeskItem)
+
 	protected.Post("/bulletin", handlers.UpdateBulletin)
 	protected.Post("/calendar", handlers.UpdateCalendarEvent)
 

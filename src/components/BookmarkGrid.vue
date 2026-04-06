@@ -285,6 +285,21 @@ const confirmDelete = async (bookmark: Bookmark) => {
   }
 };
 
+const addToDesk = async (bookmark: Bookmark) => {
+  try {
+    await apiService.addDeskItem({
+      type: 'bookmark',
+      refId: bookmark.id,
+      shelfId: null,
+      sortOrder: 0
+    });
+    // Trigger a small toast or just a console log
+    console.log("Pinned to desk:", bookmark.title);
+  } catch (err) {
+    console.error("Failed to add to desk:", err);
+  }
+};
+
 onMounted(() => {
   fetchBookmarks();
   fetchVault();
@@ -420,6 +435,7 @@ export default {
             <template v-else>
               <button @click="enterFolder(bm)" class="action-btn launch">📂 Open Folder</button>
             </template>
+            <button @click="addToDesk(bm)" class="action-btn pin" title="Add to Desk">📌</button>
             <button @click="confirmDelete(bm)" class="action-btn delete" title="Delete">🗑️</button>
           </div>
         </div>

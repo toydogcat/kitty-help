@@ -31,6 +31,7 @@ const navItems = computed(() => {
   if (['vip', 'admin', 'superadmin', 'toby'].includes(role)) {
     items.push({ name: 'impression', label: 'Impress', icon: '🧠', path: '/impression' });
     items.push({ name: 'personal', label: 'Personal', icon: '📋', path: '/personal' });
+    items.push({ name: 'desk', label: 'Desk', icon: '🖥️', path: '/desk' });
   }
 
   // 3. Admin level items (Admin, SuperAdmin)

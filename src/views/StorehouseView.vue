@@ -92,6 +92,20 @@ const getItemThumbnail = (item: any) => {
   }
   return null;
 };
+
+const addToDesk = async (item: any) => {
+  try {
+    await apiService.addDeskItem({
+      type: 'media',
+      refId: item.id,
+      shelfId: null,
+      sortOrder: 0
+    });
+    console.log("Media pinned to desk:", item.title);
+  } catch (err) {
+    console.error("Failed to add media to desk:", err);
+  }
+};
 </script>
 
 <template>
@@ -185,6 +199,11 @@ const getItemThumbnail = (item: any) => {
               {{ getCategoryIcon(item.category) }}
             </div>
             <div class="item-badge" :class="item.source">{{ item.source }}</div>
+            <div 
+              class="pin-badge" 
+              @click.stop="addToDesk(item)" 
+              title="Add to Desk"
+            >📌</div>
             <div v-if="item.index_status === 'indexed'" class="ai-badge" title="AI Indexed">✨</div>
           </div>
           
@@ -326,6 +345,19 @@ const getItemThumbnail = (item: any) => {
   display: flex; align-items: center; justify-content: center;
   font-size: 0.8rem; box-shadow: 0 0 10px var(--primary-color);
 }
+
+.pin-badge {
+  position: absolute; bottom: 0.8rem; left: 0.8rem;
+  background: rgba(0,0,0,0.6); color: white;
+  width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem; cursor: pointer; transition: all 0.2s;
+  backdrop-filter: blur(4px); border: 1px solid rgba(255,255,255,0.1);
+  opacity: 0;
+}
+
+.item-card:hover .pin-badge { opacity: 1; }
+.pin-badge:hover { background: var(--primary-color); transform: scale(1.1); }
 
 .card-content { padding: 1.2rem; flex: 1; display: flex; flex-direction: column; gap: 0.8rem; }
 .item-title { margin: 0; font-size: 1.1rem; line-height: 1.4; overflow: hidden; }

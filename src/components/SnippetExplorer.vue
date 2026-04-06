@@ -339,6 +339,20 @@ const handleDrop = async (targetItem: any | 'root') => {
     await fetchData();
   }
 };
+
+const addToDesk = async (item: any) => {
+  try {
+    await apiService.addDeskItem({
+      type: 'snippet',
+      refId: item.id,
+      shelfId: null,
+      sortOrder: 0
+    });
+    console.log("Snippet pinned to desk:", item.name);
+  } catch (err) {
+    console.error("Failed to add snippet to desk:", err);
+  }
+};
 </script>
 
 <template>
@@ -413,6 +427,7 @@ const handleDrop = async (targetItem: any | 'root') => {
               📁 <strong>{{ item.name }}</strong>
             </div>
             <div class="item-actions">
+              <button @click="addToDesk(item)" class="pin-small" title="Add to Desk">📌</button>
               <button @click="openEditModal(item)" class="edit-small">✎</button>
               <button @click="deleteItem(item.id)" class="del-small">✕</button>
             </div>
@@ -423,6 +438,7 @@ const handleDrop = async (targetItem: any | 'root') => {
               <p v-if="item.content" class="snippet-preview">{{ item.content.substring(0, 50) }}{{ item.content.length > 50 ? '...' : '' }}</p>
             </div>
             <div class="item-actions">
+              <button @click="addToDesk(item)" class="pin-small" title="Add to Desk">📌</button>
               <button @click="copyText(item.content)" class="copy-small">📋 Copy</button>
               <button @click="openEditModal(item)" class="edit-small">✎</button>
               <button @click="deleteItem(item.id)" class="del-small">✕</button>
@@ -732,7 +748,7 @@ const handleDrop = async (targetItem: any | 'root') => {
   max-width: 300px;
 }
 
-.copy-small, .edit-small, .del-small {
+.copy-small, .edit-small, .del-small, .pin-small {
   background: rgba(255,255,255,0.08);
   border: 1px solid rgba(255,255,255,0.1);
   color: var(--text-color);
@@ -744,6 +760,7 @@ const handleDrop = async (targetItem: any | 'root') => {
 }
 
 .copy-small:hover { background: var(--primary-color); border-color: transparent; }
+.pin-small:hover { background: var(--secondary-color); border-color: transparent; }
 .edit-small:hover { background: var(--secondary-color); border-color: transparent; }
 .del-small { color: #ef4444; }
 .del-small:hover { background: #ef4444; color: white; border-color: transparent; }

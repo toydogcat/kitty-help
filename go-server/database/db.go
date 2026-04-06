@@ -268,6 +268,23 @@ func EnsureTables() {
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(media_id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS desk_shelves (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			color TEXT,
+			sort_order INT DEFAULT 0,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS desk_items (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			shelf_id UUID REFERENCES desk_shelves(id) ON DELETE CASCADE, -- NULL means on desktop
+			type TEXT NOT NULL,    -- 'bookmark', 'snippet', 'media'
+			ref_id UUID NOT NULL,   -- Points to actual record ID
+			sort_order INT DEFAULT 0,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
 	}
 
 	if LocalDB != nil {
@@ -293,6 +310,9 @@ func EnsureTables() {
 			`ALTER TABLE bot_auth_requests ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP`,
 			`ALTER TABLE bot_authorized_users ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id)`,
 			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS password_id UUID REFERENCES passwords(id) ON DELETE SET NULL`,
+			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS parent_id UUID REFERENCES bookmarks(id) ON DELETE CASCADE`,
+			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS is_folder BOOLEAN DEFAULT FALSE`,
+			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS sort_order INT DEFAULT 0`,
 		}
 		for _, m := range migrations {
 			LocalDB.Exec(ctx, m)

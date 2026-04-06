@@ -5,6 +5,7 @@ import AdminView from '../views/AdminView.vue';
 import StorehouseView from '../views/StorehouseView.vue';
 import ChatView from '../views/ChatView.vue';
 import ImpressionView from '../views/ImpressionView.vue';
+import DeskView from '../views/DeskView.vue';
 
 const routes = [
   { 
@@ -17,6 +18,10 @@ const routes = [
   },
   { 
     path: '/personal', name: 'personal', component: PersonalView, 
+    meta: { requiredRoles: ['vip', 'admin', 'superadmin'] } 
+  },
+  { 
+    path: '/desk', name: 'desk', component: DeskView, 
     meta: { requiredRoles: ['vip', 'admin', 'superadmin'] } 
   },
   { 

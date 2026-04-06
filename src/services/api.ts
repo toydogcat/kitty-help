@@ -339,6 +339,41 @@ export const apiService = {
     const response = await axios.get(`${API_BASE}/bot/my-status`);
     return response.data;
   },
+
+  // 🖥️ Desk & Shelves
+  async getShelves() {
+    const res = await axios.get(`${API_BASE}/desk/shelves`);
+    return res.data;
+  },
+  async createShelf(data: { name: string, color?: string, sortOrder?: number }) {
+    const res = await axios.post(`${API_BASE}/desk/shelves`, data);
+    return res.data;
+  },
+  async updateShelf(id: string, data: { name?: string, color?: string, sortOrder?: number }) {
+    const res = await axios.put(`${API_BASE}/desk/shelves/${id}`, data);
+    return res.data;
+  },
+  async deleteShelf(id: string) {
+    const res = await axios.delete(`${API_BASE}/desk/shelves/${id}`);
+    return res.data;
+  },
+  async getDeskItems(shelfId?: string | 'null') {
+    const res = await axios.get(`${API_BASE}/desk/items`, { params: { shelfId: shelfId || 'null' } });
+    return res.data;
+  },
+  async addDeskItem(data: { type: string, refId: string, shelfId?: string | null, sortOrder?: number }) {
+    const res = await axios.post(`${API_BASE}/desk/items`, data);
+    return res.data;
+  },
+  async updateDeskItem(id: string, data: { shelfId?: string | null, sortOrder?: number }) {
+    const res = await axios.put(`${API_BASE}/desk/items/${id}`, data);
+    return res.data;
+  },
+  async deleteDeskItem(id: string) {
+    const res = await axios.delete(`${API_BASE}/desk/items/${id}`);
+    return res.data;
+  },
+
   async getChatLogs(platform: string, query: string = '', startDate: string = '', endDate: string = '') {
     const params = new URLSearchParams({ platform, q: query, startDate, endDate });
     const response = await axios.get(`${API_BASE}/chat/logs?${params.toString()}`);
