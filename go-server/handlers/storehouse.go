@@ -194,10 +194,12 @@ func IndexStorehouseItem(c *fiber.Ctx) error {
 		tgBotIf, _ := bots.BotManager.Get("telegram")
 		tgBot := tgBotIf.(*bots.TelegramBot)
 		var err error
-		data, _, err = tgBot.GetFile(c.Context(), fileID)
+		data, _, err = tgBot.GetFile(c.UserContext(), fileID)
 		if err == nil {
 			localPath = filepath.Join(os.TempDir(), fileID)
 			os.WriteFile(localPath, data, 0644)
+		} else {
+			log.Printf("❌ Failed to download file for indexing: %v", err)
 		}
 	}
 
@@ -231,6 +233,8 @@ func IndexStorehouseItem(c *fiber.Ctx) error {
 
 func GetFileProxy(c *fiber.Ctx) error {
 	fileID := c.Params("fileID")
+	log.Printf("🖼️ [ProxyRequest] Entering GetFileProxy for ID: %s", fileID)
+	
 	platform := c.Query("platform", "telegram")
 	if c.Query("download") == "1" {
 		c.Set("Content-Disposition", "attachment")
@@ -325,9 +329,9 @@ func GetFileProxy(c *fiber.Ctx) error {
 		}
 		
 		tgBot := tgBotIf.(*bots.TelegramBot)
-		data, contentType, err := tgBot.GetFile(c.Context(), fileID)
+		data, contentType, err := tgBot.GetFile(c.UserContext(), fileID)
 		if err != nil {
-			log.Printf("❌ Telegram fetch failed for %s: %v", fileID, err)
+			log.Printf("❌ Telegram fetch failed for %s (UUID-Resolved): %v", fileID, err)
 			return c.Status(404).JSON(fiber.Map{"error": "File not found on Telegram"})
 		}
 
