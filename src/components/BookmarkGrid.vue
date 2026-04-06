@@ -89,26 +89,24 @@ const handleDragEnd = () => {
   dropTargetId.value = null;
 };
 
-const handleDragOver = (item: any) => {
-  if (draggedItem.value?.id === item.id) return;
-  if (!item.isFolder) return; // Only drop into folders
-  dropTargetId.value = item.id;
+const handleDragOver = (id: string, isFolder: boolean = true) => {
+  if (draggedItem.value?.id === id) return;
+  if (!isFolder) return;
+  dropTargetId.value = id;
 };
 
-const handleDragLeave = (item: any) => {
-  if (dropTargetId.value === item.id) {
+const handleDragLeave = () => {
     dropTargetId.value = null;
-  }
 };
 
-const handleDrop = async (targetItem: any) => {
-  if (!draggedItem.value || !targetItem.isFolder) return;
-  if (draggedItem.value.id === targetItem.id) return;
+const handleDrop = async (targetId: string | 'root') => {
+  if (!draggedItem.value) return;
+  if (draggedItem.value.id === targetId) return;
 
   try {
     await apiService.updateBookmark(draggedItem.value.id, {
-      ...draggedItem.value, // Keep existing title, url, etc.
-      parentId: targetItem.id
+      ...draggedItem.value,
+      parentId: targetId === 'root' ? null : targetId
     });
     fetchBookmarks();
   } catch (err) {
@@ -257,10 +255,24 @@ const confirmDelete = (bookmark: Bookmark) => {
 
     <!-- Navigation Breadcrumbs -->
     <div class="breadcrumbs-row" v-if="currentFolderId !== 'root' || breadcrumbs.length > 0">
-      <span class="breadcrumb-item" @click="goBack('root')">🏠 Root</span>
+      <span 
+        class="breadcrumb-item" 
+        :class="{ 'drop-target-breadcrumb': dropTargetId === 'root' }"
+        @click="goBack('root')"
+        @dragover.prevent="handleDragOver('root')"
+        @dragleave="handleDragLeave"
+        @drop="handleDrop('root')"
+      >🏠 Root</span>
       <template v-for="crumb in breadcrumbs" :key="crumb.id">
         <span class="breadcrumb-separator">›</span>
-        <span class="breadcrumb-item" @click="goBack(crumb.id)">{{ crumb.title }}</span>
+        <span 
+          class="breadcrumb-item" 
+          :class="{ 'drop-target-breadcrumb': dropTargetId === crumb.id }"
+          @click="goBack(crumb.id)"
+          @dragover.prevent="handleDragOver(crumb.id)"
+          @dragleave="handleDragLeave"
+          @drop="handleDrop(crumb.id)"
+        >{{ crumb.title }}</span>
       </template>
     </div>
 
@@ -276,7 +288,15 @@ const confirmDelete = (bookmark: Bookmark) => {
     <!-- Bookmark Grid -->
     <div v-else class="bookmark-grid">
       <!-- Back Item if in subfolder -->
-      <div v-if="currentFolderId !== 'root'" class="bookmark-card card back-card" @click="goBack('root')">
+      <div 
+        v-if="currentFolderId !== 'root'" 
+        class="bookmark-card card back-card" 
+        :class="{ 'drop-target': dropTargetId === (breadcrumbs.length > 1 ? breadcrumbs[breadcrumbs.length-2].id : 'root') }"
+        @click="goBack(breadcrumbs.length > 1 ? breadcrumbs[breadcrumbs.length-2].id : 'root')"
+        @dragover.prevent="handleDragOver(breadcrumbs.length > 1 ? breadcrumbs[breadcrumbs.length-2].id : 'root')"
+        @dragleave="handleDragLeave"
+        @drop="handleDrop(breadcrumbs.length > 1 ? breadcrumbs[breadcrumbs.length-2].id : 'root')"
+      >
         <div class="card-header">
           <div class="favicon-wrapper">📁</div>
         </div>
@@ -298,9 +318,9 @@ const confirmDelete = (bookmark: Bookmark) => {
         }"
         :draggable="true"
         @dragstart="handleDragStart(bm)"
-        @dragover.prevent="handleDragOver(bm)"
-        @dragleave="handleDragLeave(bm)"
-        @drop="handleDrop(bm)"
+        @dragover.prevent="handleDragOver(bm.id, bm.isFolder)"
+        @dragleave="handleDragLeave"
+        @drop="handleDrop(bm.id)"
         @dragend="handleDragEnd"
       >
         <div class="card-bg-glow"></div>
@@ -763,9 +783,12 @@ input, select {
   transition: opacity 0.2s;
 }
 
-.breadcrumb-item:hover {
+.breadcrumb-item:hover, .drop-target-breadcrumb {
   opacity: 1;
   text-decoration: underline;
+  color: var(--secondary-color);
+  text-shadow: 0 0 10px rgba(var(--secondary-rgb), 0.5);
+  transform: scale(1.05);
 }
 
 .breadcrumb-separator {

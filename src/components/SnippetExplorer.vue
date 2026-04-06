@@ -2,6 +2,7 @@
 import { ref, onMounted, computed, watch } from 'vue';
 import { apiService, socket } from '../services/api';
 import SnippetTreeNode from './SnippetTreeNode.vue';
+import { marked } from 'marked';
 
 const props = defineProps<{
   userId: string;
@@ -34,6 +35,7 @@ const newItemIsFolder = ref(false);
 const isFullScreen = ref(false);
 const draggedItem = ref<any>(null);
 const dropTargetId = ref<string | null>(null);
+const editMode = ref<'txt' | 'md'>('txt');
 
 const fetchData = async () => {
   // If we have a token, the backend will identify us. We don't strictly need props.userId
@@ -90,6 +92,10 @@ const enterFolder = (folder: any) => {
   if (!folder) {
     currentFolderId.value = 'root';
     pathStack.value = [];
+  } else if (!folder.isFolder) {
+    // If it's a snippet, open edit modal!
+    openEditModal(folder);
+    return;
   } else {
     currentFolderId.value = folder.id;
     // Rebuild path stack
@@ -135,6 +141,7 @@ const openEditModal = (item: any) => {
   newItemContent.value = item.content || '';
   newItemIsFolder.value = item.isFolder;
   isFullScreen.value = false; 
+  editMode.value = 'txt'; // Reset to text mode on open
   showAddModal.value = true;
 };
 
@@ -451,8 +458,15 @@ const handleDrop = async (targetItem: any) => {
           </div>
 
           <div v-if="!newItemIsFolder" class="form-group content-group">
-            <label>Content:</label>
-            <div class="input-with-voice">
+            <div class="field-header">
+              <label>Content:</label>
+              <div class="edit-mode-toggle">
+                <button :class="{ active: editMode === 'txt' }" @click="editMode = 'txt'">TXT</button>
+                <button :class="{ active: editMode === 'md' }" @click="editMode = 'md'">MD</button>
+              </div>
+            </div>
+            
+            <div class="input-with-voice" v-if="editMode === 'txt'">
               <textarea v-model="newItemContent" placeholder="Paste your text here..."></textarea>
               <button 
                 @click="toggleVoice('content')" 
@@ -463,6 +477,7 @@ const handleDrop = async (targetItem: any) => {
                 🎙️
               </button>
             </div>
+            <div v-else class="markdown-preview" v-html="marked.parse(newItemContent || '')"></div>
           </div>
 
           <div class="modal-actions">
@@ -791,6 +806,79 @@ const handleDrop = async (targetItem: any) => {
   display: flex;
   gap: 0.5rem;
   align-items: center;
+}
+
+/* NEW: Markdown Styles */
+.field-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+
+.edit-mode-toggle {
+  display: flex;
+  background: rgba(0,0,0,0.3);
+  padding: 2px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.edit-mode-toggle button {
+  background: transparent;
+  border: none;
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 0.2rem 0.5rem;
+  color: var(--text-color);
+  cursor: pointer;
+  opacity: 0.5;
+  border-radius: 4px;
+}
+
+.edit-mode-toggle button.active {
+  background: var(--primary-color);
+  color: white;
+  opacity: 1;
+}
+
+.markdown-preview {
+  flex: 1;
+  background: rgba(0,0,0,0.2);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: left;
+  overflow-y: auto;
+  color: var(--text-color);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.markdown-preview :deep(h1), .markdown-preview :deep(h2), .markdown-preview :deep(h3) {
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  color: var(--secondary-color);
+}
+
+.markdown-preview :deep(code) {
+  background: rgba(255,255,255,0.1);
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+.markdown-preview :deep(pre) {
+  background: rgba(0,0,0,0.3);
+  padding: 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+.markdown-preview :deep(ul), .markdown-preview :deep(ol) {
+  padding-left: 1.5rem;
+  margin: 1rem 0;
 }
 
 .item-row.is-dragging {

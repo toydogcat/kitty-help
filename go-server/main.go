@@ -127,6 +127,7 @@ func main() {
 	// 🔖 BOOKMARKS
 	protected.Get("/bookmarks", handlers.GetBookmarks)
 	protected.Post("/bookmarks", handlers.CreateBookmark)
+	protected.Put("/bookmarks/:id", handlers.UpdateBookmark)
 	protected.Delete("/bookmarks/:id", handlers.DeleteBookmark)
 
 	protected.Post("/bulletin", handlers.UpdateBulletin)
