@@ -36,7 +36,8 @@ const draggedItem = ref<any>(null);
 const dropTargetId = ref<string | null>(null);
 
 const fetchData = async () => {
-  if (!props.userId) return;
+  // If we have a token, the backend will identify us. We don't strictly need props.userId
+  // but we wait for loading to be false initially.
   loading.value = true;
   try {
     // 1. Fetch ALL snippets for the tree view

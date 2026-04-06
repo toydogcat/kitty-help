@@ -15,11 +15,13 @@ onMounted(async () => {
   try {
     const users = await apiService.getUsers();
     
-    if (props.isToby) {
-      // If recognized as Toby via login, find the Toby profile directly
-      currentUser.value = users.find((u: any) => u.email === 'toby@family.local' || u.role === 'toby');
+    // Updated to match the unified Master Admin identity
+    const masterAdminEmail = 'toydogcat@gmail.com';
+    
+    if (props.isToby || (users.length > 0 && users.some((u: any) => u.email === masterAdminEmail))) {
+      currentUser.value = users.find((u: any) => u.email === masterAdminEmail || u.role === 'superadmin' || u.role === 'toby');
     } else {
-      // Legacy device identity mapping
+      // Device-based identity mapping for other family members
       const devices = await apiService.getDevices();
       const currentDevice = devices.find((d: any) => d.id === props.deviceId);
       if (currentDevice && currentDevice.user_id) {
