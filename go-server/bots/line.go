@@ -289,9 +289,9 @@ func (l *LineBot) forwardToStorehouse(event *linebot.Event, mediaType string) st
 
 	// 3. Cloud Backup to Telegram Storehouse
 	telegramFileID := ""
-	tgBotIf, ok := BotManager.Get("telegram")
-	if ok {
-		tgBot := tgBotIf.(*TelegramBot)
+	syncBotIf, isSyncBotFound := BotManager.Get("telegram")
+	if isSyncBotFound {
+		tgBot := syncBotIf.(*TelegramBot)
 		backupMessageBody := fmt.Sprintf("📦 **Media Backup**\n\n**Source Platform**: `line`\n**Sender**: `%s`\n**Timestamp**: `%s`\n**Content**: %s",
 			senderName, time.Now().Format("2006-01-02 15:04:05"), caption)
 
