@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"log"
+	"os"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -90,6 +91,12 @@ func GetImpressionTemp(c *fiber.Ctx) error {
 			continue
 		}
 		
+		// Get Base URL for absolute images
+		baseURL := os.Getenv("VITE_API_URL")
+		if baseURL == "" {
+			baseURL = c.BaseURL()
+		}
+
 		items = append(items, fiber.Map{
 			"id":         id,
 			"file_id":    fileID,
@@ -98,6 +105,7 @@ func GetImpressionTemp(c *fiber.Ctx) error {
 			"notes":      notes,
 			"created_at": createdAt,
 			"source":     sourcePlatform,
+			"imageUrl":   baseURL + "/api/storehouse/file/" + id,
 		})
 	}
 
@@ -237,11 +245,13 @@ func GetImpressionGraph(c *fiber.Ctx) error {
 	nodesList := []models.ImpressionNode{}
 	for rows.Next() {
 		var n models.ImpressionNode
-		var fileID, sourcePlatform *string
+		var fileID, sourcePlatform *string // Keep for query alignment
 		err := rows.Scan(&n.ID, &n.UserID, &n.MediaID, &n.LinkedSnippetID, &n.Title, &n.Content, &n.NodeType, &n.CreatedAt, &fileID, &sourcePlatform)
 		if err == nil {
-			if fileID != nil && sourcePlatform != nil {
-				n.ImageURL = "/api/storehouse/file/" + *fileID + "?platform=" + *sourcePlatform
+			if n.MediaID != nil && *n.MediaID != "" {
+				baseURL := os.Getenv("VITE_API_URL")
+				if baseURL == "" { baseURL = c.BaseURL() }
+				n.ImageURL = baseURL + "/api/storehouse/file/" + *n.MediaID
 			}
 			nodesList = append(nodesList, n)
 			nodeMap[n.ID] = n
