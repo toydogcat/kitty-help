@@ -1,6 +1,6 @@
 import axios from 'axios';
 // @ts-ignore
-import { io } from 'socket.io-client';
+import io from 'socket.io-client';
 
 const BASE_URL = import.meta.env.VITE_API_URL || window.location.origin;
 const API_BASE = BASE_URL + '/api';
