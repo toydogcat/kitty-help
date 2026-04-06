@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -377,7 +378,8 @@ func SearchImpressionNodes(c *fiber.Ctx) error {
 				"nodeType": nodeType,
 			}
 			if fileID != nil && sourcePlatform != nil {
-				nodeMap["imageUrl"] = "/api/storehouse/file/" + *fileID + "?platform=" + *sourcePlatform
+				// Use consistent URL format with the rest of the app
+				nodeMap["imageUrl"] = "/api/storehouse/file/" + *fileID + "?platform=" + *sourcePlatform + "&t=" + fmt.Sprint(time.Now().UnixMilli())
 			}
 			nodes = append(nodes, nodeMap)
 		}
