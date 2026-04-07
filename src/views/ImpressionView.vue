@@ -489,7 +489,7 @@ const searchMediaStore = async () => {
         const res = await apiService.getRecentPhotos(1, 24);
         mediaSearchResults.value = res.map((m: any) => ({
             ...m,
-            thumbUrl: apiService.getStorehouseUrl(m.fileId, m.sourcePlatform) + '&w=200'
+            thumbUrl: apiService.getStorehouseFileUrl(m.fileId, m.sourcePlatform) + '&w=200'
         }));
         if (mediaSearchQuery.value) {
             // Simple client-side title filter for demo since backend search might not be ready
@@ -504,7 +504,7 @@ const selectMediaStoreItem = (item: any) => {
     editForm.value.mediaId = item.id;
     // Immediate preview update
     if (selectedNodeDetails.value) {
-        selectedNodeDetails.value.imageUrl = apiService.getAbsoluteUrl(apiService.getStorehouseUrl(item.fileId, item.sourcePlatform));
+        selectedNodeDetails.value.imageUrl = apiService.getAbsoluteUrl(apiService.getStorehouseFileUrl(item.fileId, item.sourcePlatform));
     }
     showMediaStore.value = false;
 };
