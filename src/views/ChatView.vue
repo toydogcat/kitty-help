@@ -44,6 +44,7 @@ const cardBackgrounds = [
 // --- Integrated Remarks Logic ---
 const remarkContainers = ref<any[]>([]);
 const stagedItems = ref<any[]>([]);
+const deskItems = ref<any[]>([]); // To track which remarks are on desk
 
 const fetchMyStatus = async () => {
   try {
@@ -82,9 +83,13 @@ const fetchMessages = async () => {
 const fetchRemarks = async () => {
   loading.value = true;
   try {
-    const data = await apiService.getRemarks();
-    remarkContainers.value = data.containers || [];
-    stagedItems.value = data.staged || [];
+    const [remarksData, deskData] = await Promise.all([
+      apiService.getRemarks(),
+      apiService.getDeskItems('null') // Fetch desktop top-level items
+    ]);
+    remarkContainers.value = remarksData.containers || [];
+    stagedItems.value = remarksData.staged || [];
+    deskItems.value = deskData || [];
   } catch (err) {
     console.error('Failed to fetch remarks:', err);
   } finally {
@@ -169,6 +174,26 @@ const togglePin = async (container: any) => {
   container.isPinned = !container.isPinned;
   await updateRemarkContent(container);
   await fetchRemarks(); // Re-fetch to sort
+};
+
+// Toggle Citation to Desk
+const isItemOnDesk = (containerId: string) => {
+  return deskItems.value.some(item => item.type === 'remark' && item.refId === containerId);
+};
+
+const toggleDeskPin = async (container: any) => {
+  const existing = deskItems.value.find(item => item.type === 'remark' && item.refId === container.id);
+  if (existing) {
+    await apiService.deleteDeskItem(existing.id);
+  } else {
+    await apiService.addDeskItem({
+      type: 'remark',
+      refId: container.id,
+      shelfId: null,
+      sortOrder: 0
+    });
+  }
+  await fetchRemarks(); // Refresh desk items state
 };
 
 const copyRemark = async (container: any) => {
@@ -273,7 +298,6 @@ const totalPages = computed(() => Math.ceil(unpinnedRemarks.value.length / pageS
     </div>
 
     <div class="chat-container">
-      <!-- 1. Standard Platform Feed -->
       <template v-if="activePlatform !== 'remarks'">
         <div v-if="loading" class="chat-loading"><div class="spinner"></div><p>Scanning archives...</p></div>
         <div v-else-if="messages.length === 0" class="empty-chat"><p>No messages found.</p></div>
@@ -333,7 +357,10 @@ const totalPages = computed(() => Math.ceil(unpinnedRemarks.value.length / pageS
                 <div class="container-header">
                   <input v-model="c.name" @blur="updateRemarkContent(c)" class="title-input" />
                   <div class="container-actions">
-                    <button @click="togglePin(c)" title="Pin/Unpin">{{ c.isPinned ? '✨' : '📌' }}</button>
+                    <!-- Internal Pin uses Star -->
+                    <button @click="togglePin(c)" title="Pin/Unpin internally" class="pin-btn active">⭐</button>
+                    <!-- Desk Pin uses Pushpin -->
+                    <button @click="toggleDeskPin(c)" :title="isItemOnDesk(c.id) ? 'Remove from Desk' : 'Pin to Desk'" class="desk-pin-btn" :class="{ onDesk: isItemOnDesk(c.id) }">📌</button>
                     <button @click="copyRemark(c)" title="Copy Group">📋</button>
                     <button @click="deleteRemark(c.id)" title="Delete">🗑️</button>
                   </div>
@@ -366,7 +393,10 @@ const totalPages = computed(() => Math.ceil(unpinnedRemarks.value.length / pageS
                 <div class="container-header">
                    <input v-model="c.name" @blur="updateRemarkContent(c)" class="title-input" />
                    <div class="container-actions">
-                     <button @click="togglePin(c)" title="Pin/Unpin">{{ c.isPinned ? '✨' : '📌' }}</button>
+                     <!-- Internal Pin uses Star -->
+                     <button @click="togglePin(c)" title="Pin/Unpin internally" class="pin-btn">⭐</button>
+                     <!-- Desk Pin uses Pushpin -->
+                     <button @click="toggleDeskPin(c)" :title="isItemOnDesk(c.id) ? 'Remove from Desk' : 'Pin to Desk'" class="desk-pin-btn" :class="{ onDesk: isItemOnDesk(c.id) }">📌</button>
                      <button @click="copyRemark(c)" title="Copy Group">📋</button>
                      <button @click="deleteRemark(c.id)" title="Delete">🗑️</button>
                    </div>
@@ -435,6 +465,12 @@ const totalPages = computed(() => Math.ceil(unpinnedRemarks.value.length / pageS
 .remark-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 1.5rem; }
 .remark-container { display: flex; flex-direction: column; background: rgba(255,255,255,0.03); padding: 1.5rem; border: 1px solid var(--border-color); border-radius: 16px; min-height: 520px; max-height: 600px; }
 .remark-container.pinned { border-color: rgba(241, 196, 15, 0.5); background: linear-gradient(135deg, rgba(241, 196, 15, 0.08), rgba(241, 196, 15, 0.02)); }
+
+.container-actions { display: flex; gap: 5px; }
+.pin-btn, .desk-pin-btn { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 2px 6px; cursor: pointer; transition: all 0.2s; }
+.pin-btn:hover, .desk-pin-btn:hover { background: rgba(255,255,255,0.15); border-color: var(--primary-color); }
+.pin-btn.active { background: rgba(241, 196, 15, 0.2); border-color: #f1c40f; }
+.desk-pin-btn.onDesk { background: rgba(var(--primary-rgb), 0.2); border-color: var(--primary-color); }
 
 .container-items { flex: 1; overflow-y: auto; background: rgba(0,0,0,0.1); padding: 1rem; border-radius: 12px; margin: 1rem 0; border: 1px solid rgba(255,255,255,0.05); }
 .mini-item-card { background: rgba(255,255,255,0.05); padding: 0.8rem; border-radius: 8px; margin-bottom: 0.8rem; position: relative; }

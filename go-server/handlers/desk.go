@@ -167,11 +167,13 @@ func GetDeskItems(c *fiber.Ctx) error {
 			WHEN di.type = 'bookmark' THEN (SELECT COALESCE(title, '') FROM bookmarks WHERE id = di.ref_id)
 			WHEN di.type = 'snippet' THEN (SELECT COALESCE(name, '') FROM snippets WHERE id = di.ref_id)
 			WHEN di.type = 'media' THEN (SELECT COALESCE(title, 'Untitled Resource') FROM media_archives WHERE id = di.ref_id)
+			WHEN di.type = 'remark' THEN (SELECT COALESCE(name, 'Untitled Remark') FROM remark_containers WHERE id::text = di.ref_id::text)
 			ELSE 'Unknown Item'
 		END as title,
 		CASE 
 			WHEN di.type = 'snippet' THEN (SELECT COALESCE(content, '') FROM snippets WHERE id = di.ref_id)
 			WHEN di.type = 'media' THEN (SELECT COALESCE(notes, '') FROM media_archives WHERE id = di.ref_id)
+			WHEN di.type = 'remark' THEN (SELECT COALESCE(content, '') FROM remark_containers WHERE id::text = di.ref_id::text)
 			ELSE ''
 		END as content,
 		CASE 
