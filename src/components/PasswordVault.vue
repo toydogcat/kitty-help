@@ -254,8 +254,8 @@ onMounted(fetchPasswords);
         
         <div class="qr-placeholder" v-if="setupData">
           <div class="qr-box">
-             <!-- Simplified QR: Use a high-quality Google Charts URL -->
-             <img :src="`https://chart.googleapis.com/chart?chs=200x200&chld=M|0&cht=qr&chl=${encodeURIComponent(setupData.url)}`" alt="QR Code" />
+             <!-- Use a more reliable QR API for cross-region stability -->
+             <img :src="`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(setupData.url)}`" alt="QR Code" />
           </div>
           <p class="secret-text">Secret Key: <code>{{ setupData.secret }}</code></p>
         </div>
