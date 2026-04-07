@@ -193,11 +193,15 @@ func MoveRemarkItem(c *fiber.Ctx) error {
 		cid = nil
 	}
 
-	_, err := database.LocalDB.Exec(context.Background(), 
-		"UPDATE remark_items SET container_id = $1, sort_order = $2 WHERE id = $3 AND user_id = $4", 
+	res, err := database.LocalDB.Exec(context.Background(), 
+		"UPDATE remark_items SET container_id = $1, sort_order = $2 WHERE id::text = $3 AND user_id = $4", 
 		cid, body.SortOrder, body.ItemID, user.ID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	if res.RowsAffected() == 0 {
+		return c.Status(404).JSON(fiber.Map{"error": "Item not found or unauthorized"})
 	}
 	return c.SendStatus(200)
 }

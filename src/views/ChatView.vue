@@ -383,10 +383,10 @@ const totalPages = computed(() => Math.ceil(unpinnedRemarks.value.length / pageS
                   
                   <!-- Thumbnail for staged images -->
                   <div 
-                    v-if="item.log?.media_id && (item.log?.media_type === 'image' || item.log?.msgType === 'image' || item.log?.content.includes('[Image]'))" 
+                    v-if="item.log?.mediaId && (item.log?.media_type === 'image' || item.log?.msgType === 'image' || item.log?.content.includes('[Image]'))" 
                     class="staged-thumb"
                   >
-                    <img :src="getStorehouseUrl(item.log.media_id, item.log.platform)" />
+                    <img :src="getStorehouseUrl(item.log.mediaId, item.log.platform)" />
                   </div>
                   <p v-else>{{ item.log.content.substring(0, 100) }}{{ item.log.content.length > 100 ? '...' : '' }}</p>
                 </div>
@@ -427,8 +427,8 @@ const totalPages = computed(() => Math.ceil(unpinnedRemarks.value.length / pageS
                   >
                     <div class="mini-item-content">
                        <!-- Image Thumb Mapping -->
-                       <div v-if="item.log?.media_id && (item.log?.media_type === 'image' || item.log?.msgType === 'image' || item.log?.content.includes('[Image]'))" class="mini-thumb">
-                          <img :src="getStorehouseUrl(item.log.media_id, item.log.platform)" loading="lazy" />
+                       <div v-if="item.log?.mediaId && (item.log?.media_type === 'image' || item.log?.msgType === 'image' || item.log?.content.includes('[Image]'))" class="mini-thumb">
+                          <img :src="getStorehouseUrl(item.log.mediaId, item.log.platform)" loading="lazy" />
                        </div>
                        <p v-else>{{ item.log?.content ? (item.log.content.substring(0, 80) + (item.log.content.length > 80 ? '...' : '')) : 'No Content' }}</p>
                     </div>
@@ -481,8 +481,8 @@ const totalPages = computed(() => Math.ceil(unpinnedRemarks.value.length / pageS
                   >
                     <div class="mini-item-content">
                        <!-- Image Thumb Mapping -->
-                       <div v-if="item.log?.media_id && (item.log?.media_type === 'image' || item.log?.msgType === 'image' || item.log?.content.includes('[Image]'))" class="mini-thumb">
-                          <img :src="getStorehouseUrl(item.log.media_id, item.log.platform)" loading="lazy" />
+                       <div v-if="item.log?.mediaId && (item.log?.media_type === 'image' || item.log?.msgType === 'image' || item.log?.content.includes('[Image]'))" class="mini-thumb">
+                          <img :src="getStorehouseUrl(item.log.mediaId, item.log.platform)" loading="lazy" />
                        </div>
                        <p v-else>{{ item.log?.content ? (item.log.content.substring(0, 80) + (item.log.content.length > 80 ? '...' : '')) : 'No Content' }}</p>
                     </div>
