@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { apiService } from '../services/api';
 import UnifiedRemarkModal from '../components/UnifiedRemarkModal.vue';
+import { usePin } from '../composables/usePin';
+
+const route = useRoute();
+const router = useRouter();
+
+const { unpinFromDesk, isPinning } = usePin();
 
 const props = defineProps<{
   userRole: string;
@@ -139,7 +145,7 @@ const onDropOnShelf = async (shelfId: string | null) => {
 
 const removeItem = async (id: string) => {
   try {
-    await apiService.deleteDeskItem(id);
+    await unpinFromDesk(id);
     await fetchData();
   } catch (err) {
     alert("Remove failed");
@@ -174,7 +180,11 @@ const getThumbnail = (item: any, large = false) => {
 
 const openOriginal = async (item: any) => {
   if (item.type === 'bookmark' && item.url) {
-    window.open(item.url, '_blank');
+    if (item.url.startsWith('/') && !item.url.startsWith('//')) {
+      router.push(item.url);
+    } else {
+      window.open(item.url, '_blank');
+    }
     return;
   }
   

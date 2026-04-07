@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import { apiService, socket } from '../services/api';
+import { usePin } from '../composables/usePin';
 import UnifiedRemarkModal from '../components/UnifiedRemarkModal.vue';
 import { marked } from 'marked';
 
@@ -26,6 +27,7 @@ const remarkEditBuffer = ref({ title: '', content: '' });
 const remarkModalEditMode = ref<'preview' | 'edit'>('preview');
 const remarkModalFullScreen = ref(false);
 const savingRemark = ref(false);
+const { toggleRemarkSidebarPin, pinToDesk, isPinning } = usePin();
 const remarkModalDetails = ref<any>(null); // For Quoted Items
 const zoomedImageUrl = ref('');
 
@@ -110,7 +112,7 @@ const createNewRemark = async () => {
 
 const togglePin = async (c: any) => {
   try {
-    await apiService.updateRemark(c.id, { isPinned: !c.isPinned });
+    await toggleRemarkSidebarPin(c.id, c.isPinned);
     await fetchRecentMessages();
   } catch (err) {
     alert("Pin toggle failed");
@@ -129,10 +131,10 @@ const deleteRemark = async (id: string) => {
 
 const addToDesk = async (c: any) => {
   try {
-    await apiService.addDeskItem({ type: 'remark', refId: c.id, shelfId: null });
+    await pinToDesk('remark', c.id);
     alert("Pinned to Desk! 📌");
   } catch (err) {
-    console.error("Failed to pin to desk:", err);
+    alert("Failed to pin to desk");
   }
 };
 
@@ -237,8 +239,8 @@ const otherRemarks = computed(() => remarkContainers.value.filter(c => !c.isPinn
 
               <!-- Media Context -->
               <div v-if="m.mediaId" class="msg-media-snippet">
-                <!-- If Image (Inclusive check for 'image' or 'photo') -->
-                <div v-if="['image', 'photo'].includes(m.msgType) || (m.content && m.content.includes('[Image]'))" class="inline-thumb" @click="zoomedImageUrl = getStorehouseUrl(m.mediaId, m.platform)">
+                <!-- If Image (Inclusive check for 'image' or 'photo' in msgType OR mediaType) -->
+                <div v-if="['image', 'photo'].includes((m.msgType || '').toLowerCase()) || ['image', 'photo'].includes((m.mediaType || '').toLowerCase()) || (m.content && m.content.includes('[Image]'))" class="inline-thumb" @click="zoomedImageUrl = getStorehouseUrl(m.mediaId, m.platform)">
                    <img :src="getStorehouseUrl(m.mediaId, m.platform)" loading="lazy" />
                    <div class="zoom-overlay"><span class="icon">🔍</span></div>
                 </div>

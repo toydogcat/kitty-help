@@ -4,7 +4,10 @@ import { Network } from 'vis-network';
 import { DataSet } from 'vis-data';
 import { apiService } from '../services/api';
 import { useAuth } from '../composables/useAuth';
+import { useRoute } from 'vue-router';
+import { usePin } from '../composables/usePin';
 
+const route = useRoute();
 const { } = useAuth();
 const canvas = ref<HTMLElement | null>(null);
 const network = ref<Network | null>(null);
@@ -33,12 +36,21 @@ const isLinkingMode = ref(false);
 const interactionMode = ref<'view' | 'edit'>('view');
 const selectedSourceNodeId = ref<string | null>(null);
 
-// Multi-KG State
-const kgName = ref(localStorage.getItem('impression_kg_name') || 'default');
+// Multi-KG State - READ FROM ROUTE FIRST
+const kgName = ref((route.query.kg as string) || localStorage.getItem('impression_kg_name') || 'default');
 const commandInput = ref('');
 const commandResults = ref<any[]>([]);
 const availableKGsList = ref<string[]>([]);
 const showCommandHelp = ref(false);
+
+watch(() => route.query.kg, (newVal) => {
+    if (newVal && newVal !== kgName.value) {
+        kgName.value = newVal as string;
+        loadGraph();
+    }
+});
+
+const { pinUniverseToDesk, isPinning: pinningUniverse } = usePin();
 
 // Desk Linkage
 const isEditingDeskLink = ref(false);
@@ -335,24 +347,10 @@ const resolveNodeByTitle = async (title: string) => {
 
 const pinToDesk = async () => {
     try {
-        // 1. Create a bookmark first
-        const bookmark = await apiService.addBookmark({
-            title: `Universe: ${kgName.value}`,
-            url: `/impression?kg=${kgName.value}`,
-            category: 'Impression'
-        });
-
-        // 2. Add to Main Desktop (shelfId: null)
-        await apiService.addDeskItem({
-            shelfId: null,
-            refId: bookmark.id,
-            type: 'bookmark'
-        });
-
+        await pinUniverseToDesk(kgName.value);
         alert(`Successfully pinned '${kgName.value}' to Main Desktop!`);
     } catch (e) { 
-        console.error(e);
-        alert('Pinning failed. It might already be pinned or there was a connection error.'); 
+        alert('Pinning failed.'); 
     }
 };
 

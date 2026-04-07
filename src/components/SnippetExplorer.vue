@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue';
 import { apiService, socket } from '../services/api';
+import { usePin } from '../composables/usePin';
 import SnippetTreeNode from './SnippetTreeNode.vue';
+
+const { pinToDesk } = usePin();
 import { marked } from 'marked';
 
 const props = defineProps<{
@@ -284,11 +287,11 @@ const handleDrop = async (targetItem: any | 'root') => {
 
 const addToDesk = async (item: any) => {
   try {
-    await apiService.addDeskItem({ type: 'snippet', refId: item.id, shelfId: null });
+    await pinToDesk('snippet', item.id);
     pinnedIds.value.add(item.id);
     setTimeout(() => pinnedIds.value.delete(item.id), 2000);
   } catch (err) {
-    console.error("Failed to pin:", err);
+    alert("Pinning failed");
   }
 };
 </script>
