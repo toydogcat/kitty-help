@@ -59,7 +59,7 @@ const getFileUrl = (download: boolean = false) => {
   return apiService.getStorehouseFileUrl(props.item.file_id, props.item.source, download);
 };
 
-const isImage = () => props.item?.category === 'photo';
+const isImage = () => props.item?.category === 'photo' || props.item?.category === 'image';
 const isVideo = () => props.item?.category === 'video';
 const isAudio = () => props.item?.category === 'audio';
 

@@ -1,23 +1,14 @@
 package handlers
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"image"
-	"image/jpeg"
-	_ "image/jpeg"
-	_ "image/png"
-	"io"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/nfnt/resize"
 	"github.com/toydogcat/kitty-help/go-server/bots"
 	"github.com/toydogcat/kitty-help/go-server/database"
 	"github.com/toydogcat/kitty-help/go-server/services"
@@ -278,135 +269,25 @@ func IndexStorehouseItem(c *fiber.Ctx) error {
 
 func GetFileProxy(c *fiber.Ctx) error {
 	fileID := c.Params("fileID")
-	log.Printf("🖼️ [ProxyRequest] Entering GetFileProxy for ID: %s", fileID)
-	
 	platform := c.Query("platform", "telegram")
+	width := c.QueryInt("w", 0)
+
 	c.Set("Access-Control-Allow-Origin", "*")
-	
-	// ⚡ [Performance Booster] Robust Caching Headers
-	// Allow browser to cache for 7 days. Even if tunnel URL changes, the ETag (fileID) will stay same.
 	c.Set("Cache-Control", "public, max-age=604800, immutable")
 	c.Set("ETag", fileID)
-	
-	// Check if client has a matching ETag (304 Not Modified)
+
 	if c.Get("If-None-Match") == fileID {
 		return c.SendStatus(304)
 	}
 
+	bodyBytes, contentType, err := services.MediaManager.FetchAndCache(c.UserContext(), fileID, platform, width)
+	if err != nil {
+		log.Printf("❌ [Proxy] Resource error: %v", err)
+		return c.Status(502).JSON(fiber.Map{"error": err.Error()})
+	}
+
 	if c.Query("download") == "1" {
 		c.Set("Content-Disposition", "attachment")
-	}
-
-	db := database.LocalDB
-	if db == nil {
-		db = database.CloudDB
-	}
-
-	// If the fileID looks like a UUID, resolve it to the actual platform file_id
-	// If the fileID looks like a UUID (36 chars), resolve it from the database first
-	if len(fileID) == 36 {
-		var resolvedFileID, resolvedPlatform string
-		var err error
-		
-		// Attempt A: Local DB
-		if database.LocalDB != nil {
-			err = database.LocalDB.QueryRow(context.Background(),
-				"SELECT file_id, source_platform FROM media_archives WHERE id = $1",
-				fileID).Scan(&resolvedFileID, &resolvedPlatform)
-		}
-		
-		// Attempt B: Cloud DB fallback
-		if (err != nil || database.LocalDB == nil) && database.CloudDB != nil {
-			err = database.CloudDB.QueryRow(context.Background(),
-				"SELECT file_id, source_platform FROM media_archives WHERE id = $1",
-				fileID).Scan(&resolvedFileID, &resolvedPlatform)
-		}
-		
-		if err == nil {
-			log.Printf("🔍 RESOLVED UUID %s -> %s (%s)", fileID, resolvedFileID, resolvedPlatform)
-			fileID = resolvedFileID
-			platform = resolvedPlatform
-		} else {
-			log.Printf("⚠️ FAILED to resolve UUID %s in any DB: %v", fileID, err)
-			return c.Status(404).JSON(fiber.Map{"error": "Media record not found in local or cloud DB"})
-		}
-	}
-
-	// SMART DETECT: If the fileID looks like a Telegram ID (long base64 string),
-	// or it contains 'AgAC' (common Telegram image prefix),
-	// we should treat this as a cloud backup and fetch from Telegram instead.
-	// CRITICAL: Must not redirect if it's already an absolute URL (Discord) or platform is specifically not telegram.
-	if platform == "" || platform == "unknown" { platform = "telegram" } // Default
-	
-	if !strings.HasPrefix(fileID, "http") && (len(fileID) > 40 || strings.Contains(fileID, "AgAC")) && platform != "telegram" && platform != "line" {
-		log.Printf("☁️ [Proxy] Redirecting %s request to Telegram Cloud Backup for ID: %s", platform, fileID)
-		platform = "telegram"
-	}
-
-	// 🛠️ Thumbnail Logic: Check Cache first
-	width := c.QueryInt("w", 0)
-	if width > 0 {
-		cachePath := filepath.Join(os.TempDir(), fmt.Sprintf("t_%s_%d.jpg", fileID, width))
-		if cachedData, err := os.ReadFile(cachePath); err == nil {
-			c.Set("Content-Type", "image/jpeg")
-			c.Set("X-Cache", "HIT")
-			return c.Send(cachedData)
-		}
-	}
-
-	var bodyBytes []byte
-	var contentType string
-
-	if platform == "line" {
-		lnBotIf, ok := bots.BotManager.Get("line")
-			if !ok { return c.Status(503).JSON(fiber.Map{"error": "LINE bot not initialized"}) }
-			lnBot := lnBotIf.(*bots.LineBot)
-			content, err := lnBot.Bot.GetMessageContent(fileID).Do()
-			if err != nil { return c.Status(404).JSON(fiber.Map{"error": "Content expired"}) }
-			defer content.Content.Close()
-			bodyBytes, _ = io.ReadAll(content.Content)
-			contentType = content.ContentType
-	} else if platform == "discord" {
-		if !strings.HasPrefix(fileID, "http") { return c.Status(400).JSON(fiber.Map{"error": "Invalid Discord URL"}) }
-		
-		req, _ := http.NewRequest("GET", fileID, nil)
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-		resp, err := http.DefaultClient.Do(req)
-		
-		if err != nil { return c.Status(502).JSON(fiber.Map{"error": "Discord error: " + err.Error()}) }
-		defer resp.Body.Close()
-		bodyBytes, _ = io.ReadAll(resp.Body)
-		contentType = resp.Header.Get("Content-Type")
-	} else if platform == "telegram" {
-		tgBotIf, ok := bots.BotManager.Get("telegram")
-		if !ok { return c.Status(503).JSON(fiber.Map{"error": "TG bot not initialized"}) }
-		tgBot := tgBotIf.(*bots.TelegramBot)
-		data, cType, err := tgBot.GetFile(c.UserContext(), fileID)
-		if err != nil { return c.Status(404).JSON(fiber.Map{"error": "File not found on TG"}) }
-		bodyBytes = data
-		contentType = cType
-	} else {
-		return c.Status(400).JSON(fiber.Map{"error": "Unknown platform"})
-	}
-
-	// 🛠️ Apply Resizing if width is requested
-	if width > 0 && strings.HasPrefix(contentType, "image/") {
-		img, _, err := image.Decode(bytes.NewReader(bodyBytes))
-		if err == nil {
-			// Resize using Lanczos3 (Best quality)
-			newImg := resize.Resize(uint(width), 0, img, resize.Lanczos3)
-			buf := new(bytes.Buffer)
-			if err := jpeg.Encode(buf, newImg, &jpeg.Options{Quality: 80}); err == nil {
-				resizedData := buf.Bytes()
-				// Save to Cache
-				cachePath := filepath.Join(os.TempDir(), fmt.Sprintf("t_%s_%d.jpg", fileID, width))
-				os.WriteFile(cachePath, resizedData, 0644)
-				
-				c.Set("Content-Type", "image/jpeg")
-				c.Set("X-Cache", "MISS")
-				return c.Send(resizedData)
-			}
-		}
 	}
 
 	c.Set("Content-Type", contentType)

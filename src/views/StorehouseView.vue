@@ -86,7 +86,7 @@ const openItem = (item: any) => {
 };
 
 const getItemThumbnail = (item: any) => {
-  if (item.category === 'photo') {
+  if (item.category === 'photo' || item.category === 'image') {
     const baseUrl = apiService.getStorehouseFileUrl(item.file_id, item.source);
     // Use 512px thumbnail for list view
     return `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}w=512`;

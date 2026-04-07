@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import { apiService } from '../services/api';
+import UnifiedRemarkModal from '../components/UnifiedRemarkModal.vue';
 import { marked } from 'marked';
 
 const props = defineProps<{
@@ -204,28 +205,28 @@ const openOriginal = async (item: any) => {
   }
 };
 
-const saveItemEdit = async () => {
+const saveItemEdit = async (updatedData: { title: string, content: string }) => {
   if (!editingItem.value) return;
   saving.value = true;
   try {
     if (editingItem.value.type === 'snippet') {
       await apiService.updateSnippet(editingItem.value.refId, {
-        name: editBuffer.value.title,
-        content: editBuffer.value.content
+        name: updatedData.title,
+        content: updatedData.content
       });
     } else if (editingItem.value.type === 'media') {
       await apiService.updateStorehouseItem(editingItem.value.refId, {
-        title: editBuffer.value.title,
-        notes: editBuffer.value.content
+        title: updatedData.title,
+        notes: updatedData.content
       });
     } else if (editingItem.value.type === 'bookmark') {
       await apiService.updateBookmark(editingItem.value.refId, {
-        title: editBuffer.value.title
+        title: updatedData.title
       });
     } else if (editingItem.value.type === 'remark') {
       await apiService.updateRemark(editingItem.value.refId, {
-        name: editBuffer.value.title,
-        content: editBuffer.value.content,
+        name: updatedData.title,
+        content: updatedData.content,
         isPinned: remarkDetails.value?.isPinned || false
       });
     }
@@ -327,74 +328,18 @@ const saveItemEdit = async () => {
       </div>
     </div>
 
-    <!-- Universal Item Editor Modal -->
+    <!-- UNIFIED ITEM EDITOR MODAL -->
+    <UnifiedRemarkModal 
+      :show="showEditModal"
+      :item="editingItem"
+      :details="remarkDetails"
+      :loading="modalLoading"
+      @close="showEditModal = false"
+      @save="saveItemEdit"
+      @zoom="zoomedImageUrl = $event"
+    />
+
     <Teleport to="body">
-      <div v-if="showEditModal" class="modal-overlay editor-modal-overlay" @click.self="showEditModal = false">
-        <div class="editor-pane shadow-2xl" :class="{ 'is-full': isFullScreen }">
-          <div class="editor-header">
-            <div class="type-badge">{{ editingItem?.type.toUpperCase() }} EDITOR</div>
-            
-            <!-- UNIFIED CONTROL CAPSULE -->
-            <div class="unified-controls">
-               <div class="mode-capsule" v-if="editingItem?.type === 'remark' || editingItem?.type === 'snippet'">
-                  <button @click="editMode = 'preview'" :class="{ active: editMode === 'preview' }">MD PREVIEW</button>
-                  <button @click="editMode = 'edit'" :class="{ active: editMode === 'edit' }">TXT / EDIT</button>
-               </div>
-               <div class="action-set">
-                  <button @click="isFullScreen = !isFullScreen" class="action-item" title="Fullscreen">
-                    {{ isFullScreen ? '❐' : '⛶' }}
-                  </button>
-                  <button @click="showEditModal = false" class="action-item close">✕</button>
-               </div>
-            </div>
-          </div>
-
-          <div class="editor-body custom-scrollbar">
-            <div v-if="editingItem?.type === 'media'" class="media-large-preview">
-              <img :src="getThumbnail(editingItem, true) || ''" />
-            </div>
-
-            <div class="field">
-              <label>Title / Category Name</label>
-              <input v-model="editBuffer.title" placeholder="e.g., Project Workspace" />
-            </div>
-
-            <div class="field fill">
-              <label>Notes & Summary (Markdown Supported)</label>
-              <div v-if="editMode === 'preview'" class="md-preview-area" v-html="marked.parse(editBuffer.content || '')"></div>
-              <textarea v-else v-model="editBuffer.content" placeholder="Paste or type details here..."></textarea>
-            </div>
-
-            <!-- UNIFIED QUOTED ITEMS GRID -->
-            <div v-if="editingItem?.type === 'remark'" class="nested-remark-items">
-              <label class="section-label">📚 Quoted Items (引用項目)</label>
-              <div v-if="modalLoading" class="modal-item-loader"><span class="spinner"></span> Loading items...</div>
-              <div v-else class="quoted-items-grid">
-                <div v-for="item in (remarkDetails?.items || [])" :key="item.id" class="quoted-item-card">
-                  <div class="item-meta-top">
-                    <span class="p-slug">{{ item.log?.platform }}</span>
-                    <span class="p-user">{{ item.log?.senderName }}</span>
-                  </div>
-                  <div v-if="item.log?.mediaId && (item.log?.msgType === 'image' || item.log?.content?.includes('[Image]'))" class="item-img-box" @click="zoomedImageUrl = getStorehouseUrl(item.log.mediaId, item.log.platform)">
-                    <img :src="getStorehouseUrl(item.log.mediaId, item.log.platform)" />
-                  </div>
-                  <div v-else class="item-text-box">
-                    <p>{{ item.log?.content }}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="editor-footer">
-            <button @click="showEditModal = false" class="cancel-btn">Discard</button>
-            <button @click="saveItemEdit" class="save-btn" :disabled="saving">
-              {{ saving ? 'Saving...' : '✅ Save Changes' }}
-            </button>
-          </div>
-        </div>
-      </div>
-
       <div v-if="zoomedImageUrl" class="global-zoom" @click="zoomedImageUrl = ''">
          <img :src="zoomedImageUrl" />
          <span class="close-zoom">✕</span>
@@ -413,6 +358,7 @@ const saveItemEdit = async () => {
 .add-shelf-btn { background: var(--primary-color); color: white; border: none; }
 .back-btn { background: rgba(var(--primary-rgb), 0.1); border: 1px solid var(--primary-color); color: var(--primary-color); }
 
+/* DESK SPECIFIC STYLES */
 .desktop-canvas { flex: 1; background: rgba(var(--primary-rgb), 0.03); border: 2px dashed rgba(var(--primary-rgb), 0.1); border-radius: 20px; overflow-y: auto; padding: 2rem; position: relative; }
 .items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1.5rem; }
 
@@ -434,51 +380,6 @@ const saveItemEdit = async () => {
 .shelf-card:hover .s-actions { opacity: 1; }
 .s-actions button { background: rgba(0,0,0,0.3); border: none; border-radius: 4px; padding: 2px 4px; color: #fff; font-size: 0.75rem; cursor: pointer; }
 .s-name { font-weight: 700; font-size: 0.85rem; }
-
-/* Unified Control Capsule Styling */
-.unified-controls { display: flex; align-items: center; gap: 0.8rem; }
-.mode-capsule { display: flex; background: rgba(0,0,0,0.4); padding: 4px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
-.mode-capsule button { background: none; border: none; color: #fff; padding: 6px 14px; border-radius: 9px; font-size: 0.75rem; font-weight: 800; cursor: pointer; opacity: 0.4; transition: all 0.2s; }
-.mode-capsule button.active { background: var(--primary-color); opacity: 1; box-shadow: 0 2px 8px rgba(var(--primary-rgb), 0.4); }
-
-.action-set { display: flex; background: rgba(255,255,255,0.05); padding: 4px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
-.action-item { background: none; border: none; color: #fff; width: 34px; height: 34px; border-radius: 9px; font-size: 1.1rem; cursor: pointer; opacity: 0.6; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
-.action-item:hover { background: rgba(255,255,255,0.1); opacity: 1; }
-.action-item.close:hover { background: #e74c3c; }
-
-/* Editor Modal Adjustments */
-.editor-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; z-index: 3000; }
-.editor-pane { background: var(--card-bg); width: 950px; max-width: 95vw; max-height: 92vh; border-radius: 28px; border: 1px solid rgba(var(--primary-rgb), 0.3); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 60px rgba(0,0,0,0.6); }
-.editor-pane.is-full { width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; border: none; }
-
-.editor-header { padding: 1.2rem 2.5rem; display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); border-bottom: 1px solid rgba(255,255,255,0.05); }
-.editor-body { flex: 1; overflow-y: auto; padding: 2.5rem; display: flex; flex-direction: column; gap: 2rem; }
-.field { display: flex; flex-direction: column; gap: 0.6rem; }
-.field input, .field textarea { background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); border-radius: 14px; padding: 1.2rem; color: #eee; width: 100%; outline: none; font-size: 1rem; }
-
-.md-preview-area { background: rgba(0,0,0,0.35); padding: 2.5rem; border-radius: 14px; border: 1px solid rgba(255,255,255,0.05); min-height: 350px; color: #eee; line-height: 1.8; font-size: 1.1rem; }
-.md-preview-area :deep(h1) { color: var(--primary-color); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; margin: 1.5rem 0 1rem; }
-
-.editor-footer { padding: 1.5rem 2.5rem; display: flex; justify-content: flex-end; gap: 1.2rem; background: rgba(0,0,0,0.2); border-top: 1px solid rgba(255,255,255,0.05); }
-.save-btn { background: var(--primary-color); color: #fff; padding: 0.8rem 2.8rem; border-radius: 12px; font-weight: 800; cursor: pointer; transition: all 0.2s; }
-
-.global-zoom { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 4000; display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
-.global-zoom img { max-width: 90vw; max-height: 90vh; }
-
-/* UNIFIED QUOTED ITEMS GRID (Shared by Chat/Desk) */
-.nested-remark-items { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.05); }
-.section-label { font-size: 0.75rem; font-weight: 800; color: var(--primary-color); opacity: 0.6; letter-spacing: 1.5px; text-transform: uppercase; display: block; margin-bottom: 1rem; }
-
-.quoted-items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.2rem; margin-top: 1.2rem; padding-bottom: 2rem; }
-.quoted-item-card { background: rgba(255,255,255,0.03); border-radius: 16px; border: 1px solid rgba(255,255,255,0.06); overflow: hidden; display: flex; flex-direction: column; transition: all 0.2s; }
-.quoted-item-card:hover { transform: scale(1.02); border-color: var(--primary-color); background: rgba(var(--primary-rgb), 0.05); }
-.item-meta-top { background: rgba(0,0,0,0.3); padding: 0.7rem 1rem; display: flex; justify-content: space-between; font-size: 0.65rem; font-weight: 800; align-items: center; }
-.p-slug { opacity: 0.5; letter-spacing: 1px; text-transform: uppercase; }
-.p-user { color: var(--primary-color); }
-.item-img-box { height: 180px; cursor: zoom-in; overflow: hidden; background: #000; }
-.item-img-box img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s; }
-.quoted-item-card:hover .item-img-box img { transform: scale(1.1); }
-.item-text-box { padding: 1.2rem; font-size: 0.95rem; color: #ddd; line-height: 1.6; max-height: 180px; overflow-y: auto; }
 
 .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }

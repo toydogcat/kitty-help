@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import { apiService, socket } from '../services/api';
+import UnifiedRemarkModal from '../components/UnifiedRemarkModal.vue';
 import { marked } from 'marked';
 
 // Search & Filters
@@ -160,13 +161,13 @@ const openRemarkModal = async (c: any) => {
   }
 };
 
-const saveRemarkEdit = async () => {
+const saveRemarkEdit = async (updatedData: { title: string, content: string }) => {
   if (!editingRemark.value) return;
   savingRemark.value = true;
   try {
     await apiService.updateRemark(editingRemark.value.id, {
-      name: remarkEditBuffer.value.title,
-      content: remarkEditBuffer.value.content
+      name: updatedData.title,
+      content: updatedData.content
     });
     showRemarkModal.value = false;
     await fetchRecentMessages();
@@ -236,8 +237,8 @@ const otherRemarks = computed(() => remarkContainers.value.filter(c => !c.isPinn
 
               <!-- Media Context -->
               <div v-if="m.mediaId" class="msg-media-snippet">
-                <!-- If Image -->
-                <div v-if="m.msgType === 'image' || m.content.includes('[Image]')" class="inline-thumb" @click="zoomedImageUrl = getStorehouseUrl(m.mediaId, m.platform)">
+                <!-- If Image (Inclusive check for 'image' or 'photo') -->
+                <div v-if="['image', 'photo'].includes(m.msgType) || (m.content && m.content.includes('[Image]'))" class="inline-thumb" @click="zoomedImageUrl = getStorehouseUrl(m.mediaId, m.platform)">
                    <img :src="getStorehouseUrl(m.mediaId, m.platform)" loading="lazy" />
                    <div class="zoom-overlay"><span class="icon">🔍</span></div>
                 </div>
@@ -336,67 +337,18 @@ const otherRemarks = computed(() => remarkContainers.value.filter(c => !c.isPinn
       </div>
     </div>
 
-    <!-- UNIFIED REMARK EDITOR MODAL (Same as Desk) -->
+    <!-- UNIFIED REMARK EDITOR MODAL -->
+    <UnifiedRemarkModal 
+      :show="showRemarkModal"
+      :item="{ ...editingRemark, type: 'remark' }"
+      :details="remarkModalDetails"
+      :loading="savingRemark"
+      @close="showRemarkModal = false"
+      @save="saveRemarkEdit"
+      @zoom="zoomedImageUrl = $event"
+    />
+
     <Teleport to="body">
-      <div v-if="showRemarkModal" class="modal-overlay remark-editor-overlay" @click.self="showRemarkModal = false">
-        <div class="modal-card wide-editor" :class="{ 'is-full': remarkModalFullScreen }">
-          <div class="modal-header">
-            <h3>📖 REMARK EDITOR</h3>
-            <div class="unified-controls">
-               <div class="mode-capsule">
-                  <button :class="{ active: remarkModalEditMode === 'preview' }" @click="remarkModalEditMode = 'preview'">MD PREVIEW</button>
-                  <button :class="{ active: remarkModalEditMode === 'edit' }" @click="remarkModalEditMode = 'edit'">TXT / EDIT</button>
-               </div>
-               <div class="action-set">
-                  <button @click="remarkModalFullScreen = !remarkModalFullScreen" class="action-item">
-                    {{ remarkModalFullScreen ? '❐' : '⛶' }}
-                  </button>
-                  <button @click="showRemarkModal = false" class="action-item close">✕</button>
-               </div>
-            </div>
-          </div>
-          
-          <div class="modal-body custom-scrollbar">
-            <div class="form-group">
-              <label>Title / Category Name</label>
-              <input v-model="remarkEditBuffer.title" placeholder="e.g., My Project Notes" />
-            </div>
-
-            <div class="form-group fill">
-              <label>Notes & Summary (Markdown Supported)</label>
-              <div v-if="remarkModalEditMode === 'preview'" class="md-preview-box" v-html="marked.parse(remarkEditBuffer.content || '')"></div>
-              <textarea v-else v-model="remarkEditBuffer.content" placeholder="Paste or type details here..."></textarea>
-            </div>
-
-            <!-- UNIFIED QUOTED ITEMS GRID -->
-            <div class="quoted-section">
-              <label class="section-label">📚 Quoted Items (引用項目)</label>
-              <div class="quoted-items-grid">
-                <div v-for="item in (remarkModalDetails?.items || [])" :key="item.id" class="quoted-item-card">
-                  <div class="item-meta-top">
-                    <span class="p-slug">{{ item.log?.platform }}</span>
-                    <span class="p-user">{{ item.log?.senderName }}</span>
-                  </div>
-                  <div v-if="item.log?.mediaId && (item.log?.msgType === 'image' || item.log?.content.includes('[Image]'))" class="item-img-box" @click="zoomedImageUrl = getStorehouseUrl(item.log.mediaId, item.log.platform)">
-                    <img :src="getStorehouseUrl(item.log.mediaId, item.log.platform)" />
-                  </div>
-                  <div v-else class="item-text-box">
-                    <p>{{ item.log?.content }}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="modal-footer">
-            <button @click="showRemarkModal = false" class="cancel-btn">Discard</button>
-            <button @click="saveRemarkEdit" class="save-btn" :disabled="savingRemark">
-              {{ savingRemark ? 'Saving...' : '✅ Save Changes' }}
-            </button>
-          </div>
-        </div>
-      </div>
-
       <div v-if="zoomedImageUrl" class="global-zoom" @click="zoomedImageUrl = ''">
          <img :src="zoomedImageUrl" />
          <span class="close-zoom">✕</span>
@@ -521,42 +473,7 @@ const otherRemarks = computed(() => remarkContainers.value.filter(c => !c.isPinn
 .items-count { margin-top: 15px; font-size: 0.75rem; font-weight: 900; color: var(--primary-color); cursor: pointer; opacity: 0.6; transition: 0.2s; text-transform: uppercase; letter-spacing: 0.5px; }
 .items-count:hover { opacity: 1; text-decoration: underline; letter-spacing: 1px; }
 
-/* MODAL & UNIFIED GRID */
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(15px); display: flex; align-items: center; justify-content: center; z-index: 5000; }
-.modal-card.wide-editor { width: 1000px; max-width: 95vw; background: var(--card-bg); border-radius: 32px; border: 1px solid rgba(var(--primary-rgb), 0.3); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,0.8), inset 0 0 100px rgba(var(--primary-rgb), 0.05); }
-.modal-card.is-full { width: 100vw; height: 100vh; border-radius: 0; }
-
-.modal-header { padding: 1.2rem 3rem; display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); border-bottom: 1px solid rgba(255,255,255,0.05); }
-.modal-header h3 { margin: 0; font-size: 1.2rem; letter-spacing: 2px; color: var(--primary-color); opacity: 0.8; }
-
-.unified-controls { display: flex; align-items: center; gap: 0.8rem; }
-.mode-capsule { display: flex; background: rgba(0,0,0,0.4); padding: 4px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
-.mode-capsule button { background: none; border: none; color: #fff; padding: 6px 14px; border-radius: 9px; font-size: 0.75rem; font-weight: 800; cursor: pointer; opacity: 0.4; transition: all 0.2s; }
-.mode-capsule button.active { background: var(--primary-color); opacity: 1; box-shadow: 0 2px 8px rgba(var(--primary-rgb), 0.4); }
-
-.action-set { display: flex; background: rgba(255,255,255,0.05); padding: 4px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
-.action-item { background: none; border: none; color: #fff; width: 34px; height: 34px; border-radius: 9px; font-size: 1.1rem; cursor: pointer; opacity: 0.6; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
-.action-item:hover { background: rgba(255,255,255,0.1); opacity: 1; }
-.action-item.close:hover { background: #e74c3c; }
-
-.modal-body { flex: 1; overflow-y: auto; padding: 3rem; display: flex; flex-direction: column; gap: 2.2rem; }
-.form-group label { font-size: 0.75rem; font-weight: 900; text-transform: uppercase; color: var(--primary-color); opacity: 0.6; margin-bottom: 0.8rem; display: block; letter-spacing: 2px; }
-input, textarea { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 1.4rem; color: #fff; width: 100%; outline: none; transition: border-color 0.2s; font-size: 1.05rem; }
-input:focus, textarea:focus { border-color: var(--primary-color); }
-textarea { height: 400px; resize: none; line-height: 1.6; }
-
-.md-preview-box { background: rgba(0,0,0,0.4); padding: 2.5rem; border-radius: 18px; border: 1px solid rgba(255,255,255,0.06); min-height: 400px; color: #eee; line-height: 1.8; font-size: 1.1rem; }
-.md-preview-box :deep(h1) { color: var(--primary-color); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; }
-
-.quoted-items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem; margin-top: 1.5rem; padding-bottom: 3rem; }
-.quoted-item-card { background: rgba(255,255,255,0.03); border-radius: 20px; border: 1px solid rgba(255,255,255,0.07); overflow: hidden; display: flex; flex-direction: column; transition: all 0.3s; }
-.quoted-item-card:hover { transform: translateY(-5px); border-color: var(--primary-color); background: rgba(255,255,255,0.05); }
-.item-meta-top { background: rgba(0,0,0,0.4); padding: 0.8rem 1.2rem; display: flex; justify-content: space-between; font-size: 0.7rem; font-weight: 800; align-items: center; }
-.p-slug { opacity: 0.4; letter-spacing: 1.5px; text-transform: uppercase; }
-.item-img-box { height: 200px; cursor: zoom-in; overflow: hidden; background: #000; }
-.item-img-box img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s; }
-.quoted-item-card:hover .item-img-box img { transform: scale(1.1); }
-.item-text-box { padding: 1.4rem; font-size: 1rem; color: #ddd; line-height: 1.7; max-height: 200px; overflow-y: auto; }
+/* SIDEBAR SPECIFIC STYLES */
 
 .global-zoom { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.92); z-index: 6000; display: flex; align-items: center; justify-content: center; cursor: zoom-out; backdrop-filter: blur(20px); }
 .global-zoom img { max-width: 92vw; max-height: 92vh; border-radius: 16px; box-shadow: 0 0 100px rgba(0,0,0,0.8); }
