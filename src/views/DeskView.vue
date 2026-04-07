@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import { apiService } from '../services/api';
+import { marked } from 'marked';
 
 const props = defineProps<{
   userRole: string;
@@ -27,6 +28,7 @@ const renamingShelfId = ref<string | null>(null);
 const showEditModal = ref(false);
 const editingItem = ref<any>(null);
 const editBuffer = ref({ title: '', content: '' });
+const editMode = ref<'edit' | 'preview'>('preview'); // DEFAULT TO PREVIEW
 const saving = ref(false);
 const remarkDetails = ref<any>(null); 
 
@@ -111,7 +113,6 @@ const deleteShelf = async (id: string) => {
   }
 };
 
-// Drag and Drop Logic
 const onDragStart = (item: any) => {
   draggingItem.value = item;
 };
@@ -182,7 +183,8 @@ const openOriginal = async (item: any) => {
     title: item.title, 
     content: item.content || '' 
   };
-  
+  editMode.value = 'preview'; // Default to preview when opening
+
   if (item.type === 'remark') {
     try {
       const data = await apiService.getRemarks();
@@ -269,6 +271,7 @@ const saveItemEdit = async () => {
           draggable="true"
           @dragstart="onDragStart(it)"
           @dblclick="openOriginal(it)"
+          @click="openOriginal(it)"
         >
           <div v-if="getThumbnail(it)" class="tile-preview">
             <img :src="getThumbnail(it) || ''" loading="lazy" />
@@ -327,6 +330,10 @@ const saveItemEdit = async () => {
         <div class="editor-pane shadow-2xl">
           <div class="editor-header">
             <div class="type-badge">{{ editingItem?.type.toUpperCase() }} EDITOR</div>
+            <div class="render-toggle" v-if="editingItem?.type === 'remark' || editingItem?.type === 'snippet'">
+               <button @click="editMode = 'preview'" :class="{ active: editMode === 'preview' }">PREVIEW</button>
+               <button @click="editMode = 'edit'" :class="{ active: editMode === 'edit' }">TXT/EDIT</button>
+            </div>
             <button @click="showEditModal = false" class="close-x">✕</button>
           </div>
 
@@ -341,8 +348,10 @@ const saveItemEdit = async () => {
             </div>
 
             <div class="field fill">
-              <label>Notes / Description</label>
-              <textarea v-model="editBuffer.content" placeholder="Summary..."></textarea>
+              <label>Notes / Description (Markdown)</label>
+              <!-- Markdown Rendering Pane -->
+              <div v-if="editMode === 'preview'" class="md-preview-area" v-html="marked.parse(editBuffer.content || '')"></div>
+              <textarea v-else v-model="editBuffer.content" placeholder="Summary..."></textarea>
             </div>
 
             <!-- RENDER REMARK ITEMS AS GRID CARDS -->
@@ -392,42 +401,50 @@ const saveItemEdit = async () => {
 .desktop-canvas { flex: 1; background: rgba(var(--primary-rgb), 0.03); border: 2px dashed rgba(var(--primary-rgb), 0.1); border-radius: 20px; overflow-y: auto; padding: 2rem; }
 .items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1.5rem; }
 
-.desk-tile { background: var(--card-bg); border: 1px solid rgba(var(--primary-rgb), 0.2); border-radius: 16px; padding: 1.2rem; display: flex; flex-direction: column; align-items: center; gap: 0.8rem; cursor: grab; position: relative; transition: all 0.2s; }
+.desk-tile { background: var(--card-bg); border: 1px solid rgba(var(--primary-rgb), 0.2); border-radius: 16px; padding: 1.2rem; display: flex; flex-direction: column; align-items: center; gap: 0.8rem; cursor: pointer; position: relative; transition: all 0.2s; }
+.desk-tile:hover { transform: translateY(-5px); border-color: var(--primary-color); box-shadow: 0 8px 25px rgba(0,0,0,0.2); }
 .tile-preview { width: 100%; height: 100px; border-radius: 12px; overflow: hidden; background: rgba(0,0,0,0.2); }
 .tile-preview img { width: 100%; height: 100%; object-fit: cover; }
-.tile-title { font-weight: 700; font-size: 0.9rem; text-align: center; width: 100%; overflow: hidden; text-overflow: ellipsis; overflow-wrap: anywhere; }
+.tile-title { font-weight: 700; font-size: 0.9rem; text-align: center; width: 100%; overflow: hidden; text-overflow: ellipsis; }
 
-.shelves-rail { background: rgba(var(--primary-rgb), 0.1); backdrop-filter: blur(20px); border-radius: 20px; padding: 1rem; margin-bottom: 2rem; }
+.remove-btn { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.5); border: none; border-radius: 50%; width: 22px; height: 22px; color: #ff5f5f; font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+
+.shelves-rail { background: rgba(var(--primary-rgb), 0.1); backdrop-filter: blur(20px); border-radius: 20px; padding: 1rem; }
 .shelves-container { display: flex; gap: 1rem; overflow-x: auto; padding: 0.5rem; }
 .shelf-card { min-width: 120px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 15px; padding: 0.8rem; display: flex; flex-direction: column; align-items: center; }
 .shelf-card.active { background: var(--primary-color); }
 
 /* Editor Modal Styles */
 .editor-pane { background: var(--card-bg); width: 850px; max-width: 95vw; max-height: 90vh; border-radius: 24px; display: flex; flex-direction: column; overflow: hidden; }
-.editor-header { padding: 1rem 1.5rem; display: flex; justify-content: space-between; background: rgba(255,255,255,0.03); }
+.editor-header { padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); }
+
+.render-toggle { display: flex; background: rgba(255,255,255,0.05); padding: 4px; border-radius: 10px; gap: 4px; }
+.render-toggle button { background: none; border: none; color: #fff; padding: 4px 12px; border-radius: 8px; font-size: 0.7rem; font-weight: 800; cursor: pointer; opacity: 0.5; }
+.render-toggle button.active { background: var(--primary-color); opacity: 1; }
+
 .editor-body { flex: 1; overflow-y: auto; padding: 2rem; display: flex; flex-direction: column; gap: 1.5rem; }
 .field { display: flex; flex-direction: column; gap: 0.4rem; }
 .field input, .field textarea { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 1rem; color: #fff; width: 100%; }
-.field textarea { height: 120px; resize: none; }
+
+.md-preview-area { background: rgba(0,0,0,0.3); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); min-height: 200px; color: #eee; line-height: 1.6; }
+.md-preview-area :deep(h1), .md-preview-area :deep(h2) { border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; margin-top: 1rem; }
+.md-preview-area :deep(code) { background: rgba(var(--primary-rgb), 0.2); padding: 2px 4px; border-radius: 4px; font-family: monospace; }
+.field textarea { height: 200px; resize: none; }
 
 /* Nested Items */
-.nested-remark-items { border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1.5rem; }
-.section-label { font-size: 0.8rem; font-weight: 800; color: var(--primary-color); margin-bottom: 1rem; display: block; }
 .nested-items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; }
-.nested-card { background: rgba(255,255,255,0.03); border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; }
+.nested-card { background: rgba(255,255,255,0.03); border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05); }
 .nested-cap { padding: 0.6rem; display: flex; gap: 5px; font-size: 0.65rem; background: rgba(0,0,0,0.2); }
-.tag-p { color: var(--primary-color); font-weight: 800; text-transform: uppercase; }
-.tag-s { opacity: 0.6; }
 .nested-img { width: 100%; height: 150px; cursor: zoom-in; }
 .nested-img img { width: 100%; height: 100%; object-fit: cover; }
-.nested-txt { padding: 1rem; font-size: 0.9rem; color: #ccc; line-height: 1.4; flex: 1; max-height: 200px; overflow-y: auto; }
+.nested-txt { padding: 1rem; font-size: 0.9rem; color: #ccc; }
 
 .editor-footer { padding: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem; background: rgba(0,0,0,0.2); }
 .save-btn { background: var(--primary-color); color: #fff; padding: 0.8rem 1.5rem; border-radius: 10px; border: none; font-weight: 700; cursor: pointer; }
+.close-x { background: none; border: none; color: #fff; font-size: 1.5rem; cursor: pointer; opacity: 0.5; }
 
 .global-zoom { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 3000; display: flex; align-items: center; justify-content: center; }
 .global-zoom img { max-width: 90vw; max-height: 90vh; }
-.close-zoom { position: absolute; top: 20px; right: 20px; color: #fff; font-size: 2rem; cursor: pointer; }
 
 .custom-scrollbar::-webkit-scrollbar { width: 6px; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
