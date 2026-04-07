@@ -43,6 +43,12 @@ const remarkDetails = ref<any>(null);
 // Zoom Overlay for Remark items inside modal
 const zoomedImageUrl = ref('');
 
+const activeShelfName = computed(() => {
+  if (!activeShelfId.value) return 'Main Desktop';
+  const s = shelves.value.find(s => s.id === activeShelfId.value);
+  return s ? s.name : 'Unknown Shelf';
+});
+
 onMounted(() => {
   const shelf = route.query.shelfId as string;
   if (shelf) activeShelfId.value = shelf;
@@ -289,7 +295,9 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
           
           <div class="tile-content">
             <span class="tile-title">{{ it.title }}</span>
-            <span class="tile-meta">{{ it.type.toUpperCase() }}</span>
+            <div class="tile-badges">
+              <span class="badge" :class="it.type">{{ it.type.toUpperCase() }}</span>
+            </div>
           </div>
           <button @click.stop="removeItem(it.id)" class="remove-btn" title="Unlink from desk">×</button>
         </div>
@@ -355,37 +363,103 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
 
 <style scoped>
 .desk-view { height: calc(100vh - 120px); display: flex; flex-direction: column; gap: 1.5rem; padding: 1rem; position: relative; }
-.desk-header { display: flex; justify-content: space-between; align-items: center; }
-.title-group h1 { margin: 0; font-size: 1.8rem; color: var(--primary-color); }
-.subtitle { margin: 0; opacity: 0.7; font-size: 0.9rem; }
+.desk-header { display: flex; justify-content: space-between; align-items: center; background: rgba(var(--primary-rgb), 0.05); padding: 1.2rem; border-radius: 16px; border: 1px solid rgba(var(--primary-rgb), 0.1); }
+.title-group h1 { margin: 0; font-size: 1.6rem; color: var(--primary-color); text-shadow: 0 0 15px rgba(var(--primary-rgb), 0.3); }
+.subtitle { margin: 4px 0 0 0; opacity: 0.8; font-size: 0.85rem; display: flex; align-items: center; gap: 8px; }
+.count-tag { background: rgba(var(--primary-rgb), 0.2); color: var(--primary-color); padding: 2px 8px; border-radius: 20px; font-weight: 700; font-size: 0.75rem; border: 1px solid rgba(var(--primary-rgb), 0.3); }
+
 .actions { display: flex; gap: 0.8rem; }
-.add-shelf-btn, .back-btn { padding: 0.6rem 1.2rem; border-radius: 10px; font-weight: 700; cursor: pointer; }
-.add-shelf-btn { background: var(--primary-color); color: white; border: none; }
+.add-shelf-btn, .back-btn { padding: 0.6rem 1.2rem; border-radius: 10px; font-weight: 700; cursor: pointer; transition: all 0.2s; }
+.add-shelf-btn { background: var(--primary-color); color: white; border: none; box-shadow: 0 4px 15px rgba(var(--primary-rgb), 0.4); }
+.add-shelf-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(var(--primary-rgb), 0.5); }
 .back-btn { background: rgba(var(--primary-rgb), 0.1); border: 1px solid var(--primary-color); color: var(--primary-color); }
 
-/* DESK SPECIFIC STYLES */
-.desktop-canvas { flex: 1; background: rgba(var(--primary-rgb), 0.03); border: 2px dashed rgba(var(--primary-rgb), 0.1); border-radius: 20px; overflow-y: auto; padding: 2rem; position: relative; }
-.items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1.5rem; }
+.desktop-canvas { flex: 1; background: rgba(0, 0, 0, 0.2); border: 2px solid rgba(var(--primary-rgb), 0.1); border-radius: 24px; overflow-y: auto; padding: 2rem; position: relative; box-shadow: inset 0 0 40px rgba(0,0,0,0.3); }
+.items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1.5rem; }
 
-.desk-tile { background: var(--card-bg); border: 1px solid rgba(var(--primary-rgb), 0.2); border-radius: 16px; padding: 1.2rem; display: flex; flex-direction: column; align-items: center; gap: 0.8rem; cursor: pointer; position: relative; transition: all 0.2s; backdrop-filter: blur(10px); }
-.desk-tile:hover { transform: translateY(-5px); border-color: var(--primary-color); box-shadow: 0 8px 25px rgba(0,0,0,0.2); }
-.tile-preview { width: 100%; height: 100px; border-radius: 12px; overflow: hidden; background: rgba(0,0,0,0.2); }
-.tile-preview img { width: 100%; height: 100%; object-fit: cover; }
-.tile-title { font-weight: 700; font-size: 0.9rem; text-align: center; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.desk-tile { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 20px; padding: 1rem; display: flex; flex-direction: column; gap: 0.8rem; cursor: pointer; position: relative; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); backdrop-filter: blur(12px); }
+.desk-tile:hover { transform: translateY(-8px); border-color: var(--primary-color); background: rgba(var(--primary-rgb), 0.05); box-shadow: 0 15px 35px rgba(0,0,0,0.4); }
 
-.remove-btn { position: absolute; top: -5px; right: -5px; background: #e74c3c; border: none; border-radius: 50%; width: 22px; height: 22px; color: white; font-size: 0.8rem; cursor: pointer; opacity: 0; transition: opacity 0.2s; z-index: 10; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+.tile-preview { width: 100%; height: 110px; border-radius: 14px; overflow: hidden; background: #000; border: 1px solid rgba(255,255,255,0.1); }
+.tile-preview img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s; }
+.desk-tile:hover .tile-preview img { transform: scale(1.1); }
+
+.tile-icon { width: 100%; height: 110px; display: flex; align-items: center; justify-content: center; font-size: 3rem; background: rgba(255,255,255,0.02); border-radius: 14px; border: 1px dashed rgba(255,255,255,0.1); }
+
+.tile-content { flex: 1; padding: 4px; display: flex; flex-direction: column; gap: 4px; }
+.tile-title { font-weight: 700; font-size: 0.95rem; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.tile-badges { display: flex; gap: 6px; }
+.badge { font-size: 0.65rem; font-weight: 800; padding: 2px 8px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+.badge.bookmark { background: #4a90e2; color: #fff; }
+.badge.remark { background: #9013fe; color: #fff; }
+.badge.media { background: #2ecc71; color: #fff; }
+.badge.snippet { background: #f1c40f; color: #000; }
+
+.remove-btn { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 50%; width: 24px; height: 24px; opacity: 0; transition: all 0.2s; display: flex; align-items: center; justify-content: center; z-index: 5; }
 .desk-tile:hover .remove-btn { opacity: 1; }
+.remove-btn:hover { background: #e74c3c; border-color: #e74c3c; transform: scale(1.1); }
 
-.shelves-rail { background: rgba(var(--primary-rgb), 0.05); backdrop-filter: blur(20px); border-radius: 20px; padding: 1.2rem; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; gap: 1rem; }
-.shelves-container { display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 0.5rem; }
-.shelf-card { min-width: 130px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 1rem; display: flex; flex-direction: column; align-items: center; gap: 0.6rem; cursor: pointer; transition: all 0.3s; }
-.shelf-card.active { background: var(--primary-color); }
-.shelf-top { display: flex; justify-content: space-between; width: 100%; align-items: center; }
-.s-actions { opacity: 0; display: flex; gap: 4px; transition: opacity 0.2s; }
+.shelves-rail { background: rgba(13, 17, 23, 0.9); border-radius: 24px; padding: 1.5rem; border: 1px solid rgba(var(--primary-rgb), 0.2); display: flex; flex-direction: column; gap: 1rem; box-shadow: 0 -10px 40px rgba(0,0,0,0.5); }
+.rail-header { display: flex; align-items: center; justify-content: space-between; padding: 0 8px; }
+.rail-title { color: var(--primary-color); font-weight: 800; font-size: 1.2rem; letter-spacing: 1px; }
+.rail-hint { font-size: 0.8rem; opacity: 0.5; font-style: italic; }
+
+.shelves-container { display: flex; gap: 1.2rem; overflow-x: auto; padding: 0.5rem; }
+.shelf-card { 
+  min-width: 160px; 
+  height: 110px; 
+  background: rgba(255, 255, 255, 0.03); 
+  border: 1px solid rgba(255, 255, 255, 0.1); 
+  border-radius: 20px; 
+  padding: 1.2rem; 
+  display: flex; 
+  flex-direction: column; 
+  align-items: center; 
+  justify-content: center; 
+  gap: 8px; 
+  cursor: pointer; 
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  position: relative;
+  overflow: hidden;
+}
+
+.shelf-card.active { border-color: var(--primary-color); background: rgba(var(--primary-rgb), 0.15); box-shadow: 0 0 20px rgba(var(--primary-rgb), 0.2); }
+.shelf-card:hover { transform: translateY(-5px); background: rgba(255,255,255,0.06); }
+
+.shelf-card.drag-over { 
+  transform: scale(1.1); 
+  background: rgba(var(--primary-rgb), 0.25) !important; 
+  border: 2px dashed var(--primary-color); 
+  animation: pulse 1s infinite;
+}
+
+.shelf-card.drag-over::before {
+  content: '📥';
+  font-size: 1.5rem;
+  margin-bottom: 4px;
+}
+
+.shelf-card.drag-over .s-name {
+  color: var(--primary-color);
+  font-weight: 900;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(var(--primary-rgb), 0.4); }
+  70% { box-shadow: 0 0 0 15px rgba(var(--primary-rgb), 0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--primary-rgb), 0); }
+}
+
+.s-icon { font-size: 1.8rem; transition: transform 0.3s; }
+.shelf-card:hover .s-icon { transform: scale(1.2); }
+.s-name { font-weight: 700; font-size: 0.95rem; opacity: 0.9; }
+
+.s-actions { position: absolute; top: 10px; right: 10px; display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s; }
 .shelf-card:hover .s-actions { opacity: 1; }
-.s-actions button { background: rgba(0,0,0,0.3); border: none; border-radius: 4px; padding: 2px 4px; color: #fff; font-size: 0.75rem; cursor: pointer; }
-.s-name { font-weight: 700; font-size: 0.85rem; }
+.s-actions button { background: rgba(0,0,0,0.5); border: none; padding: 4px; border-radius: 6px; cursor: pointer; color: #fff; font-size: 0.7rem; }
 
-.custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(var(--primary-rgb), 0.2); border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--primary-color); }
 </style>
