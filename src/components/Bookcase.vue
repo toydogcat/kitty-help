@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted } from 'vue';
 import { apiService } from '../services/api';
 import { marked } from 'marked';
 import { usePin } from '../composables/usePin';
@@ -92,11 +92,7 @@ const saveNote = async () => {
 
 const pinBookToDesk = async (book: any) => {
   try {
-    await pinToDesk({
-      type: 'book',
-      refId: book.id,
-      title: book.title
-    });
+    await pinToDesk('book', book.id);
     alert(`Pinned ${book.title} notes to Desk!`);
   } catch (err) {
     console.error('Pin failed:', err);
