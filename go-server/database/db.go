@@ -316,7 +316,7 @@ func EnsureTables() {
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
 			container_id UUID REFERENCES remark_containers(id) ON DELETE CASCADE, -- NULL means in staging area
-			log_id INT NOT NULL,
+			log_id TEXT NOT NULL,
 			sort_order INT DEFAULT 0,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -349,6 +349,7 @@ func EnsureTables() {
 			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS is_folder BOOLEAN DEFAULT FALSE`,
 			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS sort_order INT DEFAULT 0`,
 			`ALTER TABLE bookmarks ALTER COLUMN url DROP NOT NULL`,
+			`ALTER TABLE remark_items ALTER COLUMN log_id TYPE TEXT`,
 			`ALTER TABLE impression_nodes ADD COLUMN IF NOT EXISTS desk_shelf_id UUID REFERENCES desk_shelves(id) ON DELETE SET NULL`,
 			// --- Performance Indexes ---
 			`CREATE INDEX IF NOT EXISTS idx_impression_nodes_user ON impression_nodes(user_id)`,

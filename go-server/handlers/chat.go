@@ -38,7 +38,7 @@ func GetChatLogs(c *fiber.Ctx) error {
 			CASE WHEN ri.id IS NOT NULL THEN true ELSE false END as is_integrated
 		FROM chat_logs c
 		LEFT JOIN media_archives m ON c.media_id::text = m.id::text
-		LEFT JOIN remark_items ri ON c.id = ri.log_id AND ri.user_id = $2
+		LEFT JOIN remark_items ri ON c.id::text = ri.log_id::text AND ri.user_id = $2
 		WHERE c.platform = $1
 	`
 	args := []interface{}{platform, userID}

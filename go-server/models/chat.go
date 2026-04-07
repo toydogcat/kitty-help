@@ -29,7 +29,7 @@ type RemarkItem struct {
 	ID          string    `json:"id"`
 	UserID      string    `json:"userId"`
 	ContainerID *string   `json:"containerId,omitempty"`
-	LogID       int       `json:"logId"`
+	LogID       string    `json:"logId"`
 	SortOrder   int       `json:"sortOrder"`
 	CreatedAt   time.Time `json:"createdAt"`
 	Log         *ChatLog  `json:"log,omitempty"` // Details needed for frontend

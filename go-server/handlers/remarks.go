@@ -41,7 +41,7 @@ func GetRemarks(c *fiber.Ctx) error {
 			cl.id, cl.platform, cl.sender_id, cl.sender_name, cl.content, cl.msg_type, cl.media_id, cl.created_at,
 			COALESCE(m.media_type, '') as media_type
 		FROM remark_items ri
-		JOIN chat_logs cl ON ri.log_id = cl.id
+		JOIN chat_logs cl ON ri.log_id::text = cl.id::text
 		LEFT JOIN media_archives m ON cl.media_id::text = m.id::text
 		WHERE ri.user_id = $1
 		ORDER BY ri.sort_order ASC, ri.created_at DESC
@@ -147,7 +147,7 @@ func ToggleIntegration(c *fiber.Ctx) error {
 	user := c.Locals("user").(*Claims)
 	if user.ID == "" { return c.Status(401).JSON(fiber.Map{"error": "Unauthorized"}) }
 	var body struct {
-		LogID int `json:"logId"`
+		LogID string `json:"logId"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid body"})
