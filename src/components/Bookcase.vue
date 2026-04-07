@@ -95,12 +95,12 @@ const initEpubReader = async () => {
     if (!response.ok) throw new Error("Cloud stream retrieval failed");
     const buffer = await response.arrayBuffer();
 
-    // 1. Setup MutationObserver to kill sandbox instantly on iframe creation
+    // 1. Proactive Observer to neutralize iframes
     observer = new MutationObserver((mutations) => {
        mutations.forEach((m) => {
           m.addedNodes.forEach((node: any) => {
              if (node.tagName === 'IFRAME') {
-                node.removeAttribute('sandbox'); // Remove entirely to avoid blocked layout
+                node.removeAttribute('sandbox');
                 node.setAttribute('sandbox', 'allow-same-origin allow-scripts');
              }
           });
@@ -110,40 +110,53 @@ const initEpubReader = async () => {
 
     // @ts-ignore
     epubBook.value = ePub(buffer);
+    
+    // USAGE of method: 'blob' to bypass many sandbox/CORS issues
     epubRendition.value = epubBook.value.renderTo(epubViewerRef.value, { 
-       width: "100%", height: "100%", flow: "paginated", manager: "default" 
+       width: "100%", height: "100%", flow: "paginated", manager: "default", method: "blob"
     });
     
-    // NUCLEAR HOOK: Purge content before it displays
+    // DEEP CLEANSE HOOK
     epubRendition.value.hooks.content.register((contents: any) => {
        const doc = contents.document;
        
-       // a) Kill scripts
-       const scripts = doc.querySelectorAll('script');
-       scripts.forEach((s: any) => s.remove());
-       
-       // b) Purge all local font-faces and broken styles
-       const styles = doc.querySelectorAll('style, link');
-       styles.forEach((s: any) => {
-          if(s.textContent && (s.textContent.includes('res://') || s.textContent.includes('@font-face'))) {
-             // Wipe specifically the font-face blocks causing CORS
-             s.textContent = s.textContent.replace(/@font-face\s*\{[^}]*\}/gi, '');
-             s.textContent = s.textContent.replace(/url\([^)]+\)/g, 'none');
+       // a) Aggressive Script & Event Purge
+       doc.querySelectorAll('script').forEach((s: any) => s.remove());
+       doc.querySelectorAll('*').forEach((el: any) => {
+          for (let i = 0; i < el.attributes.length; i++) {
+             const attr = el.attributes[i];
+             if (attr.name.startsWith('on')) { el.removeAttribute(attr.name); i--; }
           }
        });
+       
+       // b) Brutal CSS Desanitization: Remove all font-faces and res:/// references
+       try {
+          Array.from(doc.styleSheets).forEach((sheet: any) => {
+             try {
+                for (let i = sheet.cssRules.length - 1; i >= 0; i--) {
+                   const rule = sheet.cssRules[i];
+                   if (rule.cssText.includes('res://') || rule.type === 5 /* FONT_FACE_RULE */) {
+                      sheet.deleteRule(i);
+                   }
+                }
+             } catch(e) {}
+          });
+       } catch(e) {}
 
-       // c) Master Style Force
-       contents.addStylesheetRules({
+       // c) Inject Clean Layout Styles
+       return contents.addStylesheetRules({
           "body": { 
              "font-family": "system-ui, -apple-system, sans-serif !important",
              "color": "#cbd5e1 !important",
-             "background": "transparent !important"
+             "background": "transparent !important",
+             "overflow": "hidden"
           },
-          "*": {
-             "font-family": "inherit !important",
-             "backdrop-filter": "none !important"
-          }
+          "img": { "max-width": "100% !important", "height": "auto !important" }
        });
+    });
+
+    epubRendition.value.on("relocated", () => {
+       if(epubRendition.value) epubRendition.value.resize();
     });
 
     await epubRendition.value.display();
