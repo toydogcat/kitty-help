@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch, nextTick } from 'vue';
+import { ref, onMounted, computed, watch, nextTick, onUnmounted } from 'vue';
 import { apiService } from '../services/api';
 import { marked } from 'marked';
 import { usePin } from '../composables/usePin';
@@ -32,6 +32,7 @@ const epubBook = ref<any>(null);
 const epubViewerRef = ref<HTMLElement | null>(null);
 const isEpubLoading = ref(false);
 const epubError = ref<string | null>(null);
+let observer: MutationObserver | null = null;
 
 const fetchBookcase = async () => {
   isLoading.value = true;
@@ -67,6 +68,7 @@ const selectBook = async (book: any) => {
 const cleanupEpub = () => {
   if (epubRendition.value) { try { epubRendition.value.destroy(); } catch(e){} epubRendition.value = null; }
   if (epubBook.value) { try { epubBook.value.destroy(); } catch(e){} epubBook.value = null; }
+  if (observer) { observer.disconnect(); observer = null; }
   isEpubLoading.value = false;
 };
 
@@ -77,7 +79,7 @@ const waitForLibs = () => {
       // @ts-ignore
       if (typeof ePub !== 'undefined' && typeof JSZip !== 'undefined') resolve(true);
       else if (attempts > 50) reject(new Error("Core engines (EPub/JSZip) timeout."));
-      else { attempts++; setTimeout(check, 200); }
+      else { attempts++; setTimeout(check, 250); }
     };
     check();
   });
@@ -93,51 +95,64 @@ const initEpubReader = async () => {
     if (!response.ok) throw new Error("Cloud stream retrieval failed");
     const buffer = await response.arrayBuffer();
 
+    // 1. Setup MutationObserver to kill sandbox instantly on iframe creation
+    observer = new MutationObserver((mutations) => {
+       mutations.forEach((m) => {
+          m.addedNodes.forEach((node: any) => {
+             if (node.tagName === 'IFRAME') {
+                node.removeAttribute('sandbox'); // Remove entirely to avoid blocked layout
+                node.setAttribute('sandbox', 'allow-same-origin allow-scripts');
+             }
+          });
+       });
+    });
+    if (epubViewerRef.value) observer.observe(epubViewerRef.value, { childList: true, subtree: true });
+
     // @ts-ignore
     epubBook.value = ePub(buffer);
     epubRendition.value = epubBook.value.renderTo(epubViewerRef.value, { 
-       width: "100%", height: "100%", flow: "paginated", manager: "continuous"
+       width: "100%", height: "100%", flow: "paginated", manager: "default" 
     });
     
-    // NUCLEAR FIX: Hook into content before it hits the iframe to strip scripts and fix fonts
+    // NUCLEAR HOOK: Purge content before it displays
     epubRendition.value.hooks.content.register((contents: any) => {
-       // 1. Remove all scripts to satisfy the sandbox
        const doc = contents.document;
+       
+       // a) Kill scripts
        const scripts = doc.querySelectorAll('script');
        scripts.forEach((s: any) => s.remove());
        
-       // 2. Clear out bad CSS that references local files (res:///)
-       const styles = doc.querySelectorAll('style, link[rel="stylesheet"]');
-       styles.forEach((style: any) => {
-          if (style.textContent?.includes('res://')) {
-             style.textContent = style.textContent.replace(/url\(["']?res:\/\/[^)]+\)/g, 'none');
+       // b) Purge all local font-faces and broken styles
+       const styles = doc.querySelectorAll('style, link');
+       styles.forEach((s: any) => {
+          if(s.textContent && (s.textContent.includes('res://') || s.textContent.includes('@font-face'))) {
+             // Wipe specifically the font-face blocks causing CORS
+             s.textContent = s.textContent.replace(/@font-face\s*\{[^}]*\}/gi, '');
+             s.textContent = s.textContent.replace(/url\([^)]+\)/g, 'none');
           }
        });
 
-       // 3. Inject clean font styling
-       return contents.addStylesheetRules({
+       // c) Master Style Force
+       contents.addStylesheetRules({
           "body": { 
-             "font-family": "'Outfit', system-ui, -apple-system, sans-serif !important",
+             "font-family": "system-ui, -apple-system, sans-serif !important",
              "color": "#cbd5e1 !important",
              "background": "transparent !important"
+          },
+          "*": {
+             "font-family": "inherit !important",
+             "backdrop-filter": "none !important"
           }
-       });
-    });
-
-    epubRendition.value.on("attached", () => {
-       const frames = epubViewerRef.value?.querySelectorAll('iframe');
-       frames?.forEach(f => {
-          f.removeAttribute("sandbox");
-          f.setAttribute("sandbox", "allow-same-origin"); // No allow-scripts needed since we stripped them
        });
     });
 
     await epubRendition.value.display();
+    epubRendition.value.themes.select("dark");
     isEpubLoading.value = false;
     epubError.value = null;
   } catch (e: any) { 
     console.error('Reader Intel Error:', e);
-    epubError.value = e.message || "Engine synchronization failure."; 
+    epubError.value = e.message || "Engine hardware synchronization failure."; 
     isEpubLoading.value = false; 
   }
 };
@@ -225,13 +240,15 @@ onMounted(() => {
   }
 });
 
+onUnmounted(() => { cleanupEpub(); });
+
 watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSON.stringify(newVal)); }, { deep: true });
 </script>
 
 <template>
   <div class="bookcase-v2">
     <aside class="sidebar">
-      <div class="sidebar-header"><input v-model="searchTerm" placeholder="Filter Research..." /><button @click="showAddModal = true" class="add-btn">+</button></div>
+      <div class="sidebar-header"><input v-model="searchTerm" placeholder="Filter Intel..." /><button @click="showAddModal = true" class="add-btn">+</button></div>
       <div class="folder-list">
         <div v-for="(folderBooks, folderName) in folders" :key="folderName" class="folder-group" 
              :class="{ 'drop-target': dragOverFolder === folderName }" @dragover.prevent="dragOverFolder = String(folderName)" @dragleave="dragOverFolder = null" @drop="onDropIntoFolder($event, String(folderName))">
@@ -273,6 +290,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
                 <button @click="epubRendition.next()" class="nav-btn">➡️</button>
              </div>
           </div>
+          <div v-else class="fallback">UNSUPPORTED Intel Format</div>
         </div>
 
         <div v-if="viewMode !== 'preview'" class="notes-pane">
@@ -291,7 +309,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
               </div>
             </div>
             <div class="ed-body" :class="'v-' + activeNote.noteType">
-              <textarea v-if="activeNote.noteType !== 'md'" v-model="activeNote.content" placeholder="Research logs..." />
+              <textarea v-if="activeNote.noteType !== 'md'" v-model="activeNote.content" placeholder="Data entry..." />
               <div v-if="activeNote.noteType !== 'txt'" class="markdown-body" v-html="marked(activeNote.content || '')" />
             </div>
           </div>
