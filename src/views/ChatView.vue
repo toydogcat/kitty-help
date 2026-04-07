@@ -127,10 +127,6 @@ const cycleBg = (m: any) => {
   m.bgIndex = (m.bgIndex + 1) % cardBackgrounds.length;
 };
 
-const resetBg = (m: any) => {
-  m.bgIndex = 0;
-};
-
 const toggleZoom = (m: any) => {
   m.isZoomed = !m.isZoomed;
 };
@@ -292,7 +288,6 @@ const totalPages = computed(() => Math.ceil(unpinnedRemarks.value.length / pageS
               <span class="time">{{ formatDate(m.createdAt) }}</span>
             </div>
             <div class="msg-content">
-              <!-- Inline images in feed -->
               <template v-if="m.mediaId && (m.msgType === 'image' || m.content.includes('[Image]'))">
                 <div class="media-container" :class="{ zoomed: m.isZoomed }" @click="toggleZoom(m)">
                   <img :src="getStorehouseUrl(m.mediaId)" loading="lazy" />
@@ -308,7 +303,6 @@ const totalPages = computed(() => Math.ceil(unpinnedRemarks.value.length / pageS
       <!-- 2. Integrated Remarks View -->
       <template v-else>
         <div class="remarks-view">
-          <!-- STAGING AREA -->
           <div class="staging-section card" @dragover.prevent @drop="handleDropToContainer($event, null)">
             <div class="section-header">
               <h3>📥 Staging Area (暫存區)</h3>
@@ -339,8 +333,9 @@ const totalPages = computed(() => Math.ceil(unpinnedRemarks.value.length / pageS
                 <div class="container-header">
                   <input v-model="c.name" @blur="updateRemarkContent(c)" class="title-input" />
                   <div class="container-actions">
-                    <button @click="togglePin(c)">{{ c.isPinned ? '✨' : '📌' }}</button>
-                    <button @click="deleteRemark(c.id)">🗑️</button>
+                    <button @click="togglePin(c)" title="Pin/Unpin">{{ c.isPinned ? '✨' : '📌' }}</button>
+                    <button @click="copyRemark(c)" title="Copy Group">📋</button>
+                    <button @click="deleteRemark(c.id)" title="Delete">🗑️</button>
                   </div>
                 </div>
                 <div class="container-items custom-scrollbar">
@@ -371,8 +366,9 @@ const totalPages = computed(() => Math.ceil(unpinnedRemarks.value.length / pageS
                 <div class="container-header">
                    <input v-model="c.name" @blur="updateRemarkContent(c)" class="title-input" />
                    <div class="container-actions">
-                     <button @click="togglePin(c)">{{ c.isPinned ? '✨' : '📌' }}</button>
-                     <button @click="deleteRemark(c.id)">🗑️</button>
+                     <button @click="togglePin(c)" title="Pin/Unpin">{{ c.isPinned ? '✨' : '📌' }}</button>
+                     <button @click="copyRemark(c)" title="Copy Group">📋</button>
+                     <button @click="deleteRemark(c.id)" title="Delete">🗑️</button>
                    </div>
                 </div>
                 <div class="container-items custom-scrollbar">
@@ -403,12 +399,9 @@ const totalPages = computed(() => Math.ceil(unpinnedRemarks.value.length / pageS
       </template>
     </div>
 
-    <!-- Combined Global Zoom Overlay -->
     <Transition name="fade">
       <div v-if="messages.some(m => m.isZoomed) || zoomedMediaUrl" class="zoom-overlay" @click="messages.forEach(m => m.isZoomed = false); closeRemarkZoom()">
-        <template v-if="zoomedMediaUrl">
-          <img :src="zoomedMediaUrl" class="zoomed-image-remark" />
-        </template>
+        <template v-if="zoomedMediaUrl"><img :src="zoomedMediaUrl" class="zoomed-image-remark" /></template>
         <span class="close-overlay">✕</span>
       </div>
     </Transition>
@@ -416,9 +409,7 @@ const totalPages = computed(() => Math.ceil(unpinnedRemarks.value.length / pageS
 </template>
 
 <style scoped>
-.chat-view {
-  display: flex; flex-direction: column; gap: 1.2rem; max-width: 1600px; margin: 0 auto; padding: 1rem;
-}
+.chat-view { display: flex; flex-direction: column; gap: 1.2rem; max-width: 1600px; margin: 0 auto; padding: 1rem; }
 .view-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid rgba(var(--primary-rgb), 0.2); padding-bottom: 1.5rem; }
 .platform-tabs { display: flex; gap: 0.8rem; }
 .platform-btn { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1.2rem; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-color); border-radius: 20px; color: var(--text-color); cursor: pointer; font-weight: 600; }
@@ -434,7 +425,6 @@ const totalPages = computed(() => Math.ceil(unpinnedRemarks.value.length / pageS
 .media-container { cursor: zoom-in; margin-top: 0.5rem; border-radius: 12px; overflow: hidden; max-height: 200px; position: relative; }
 .media-container img { width: 100%; height: 100%; object-fit: cover; }
 
-/* Remarks View Custom Styles */
 .remarks-view { display: flex; flex-direction: column; gap: 2rem; }
 .staging-section { padding: 1.5rem; background: rgba(var(--primary-rgb), 0.05); min-height: 150px; }
 .staged-grid { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 1rem; }
@@ -451,7 +441,6 @@ const totalPages = computed(() => Math.ceil(unpinnedRemarks.value.length / pageS
 .mini-thumb { width: 100%; height: 100px; border-radius: 6px; overflow: hidden; cursor: zoom-in; margin-top: 5px; }
 .mini-thumb img { width: 100%; height: 100%; object-fit: cover; }
 
-/* Custom Scrollbar Styles */
 .custom-scrollbar::-webkit-scrollbar { width: 6px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(var(--primary-rgb), 0.3); border-radius: 10px; }
