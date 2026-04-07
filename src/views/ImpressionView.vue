@@ -486,17 +486,16 @@ const debouncedSearch2 = () => {
 const searchMediaStore = async () => {
     isMediaSearching.value = true;
     try {
-        const res = await apiService.getRecentPhotos(1, 24);
+        // Switch to getStorehouseItems for direct media archive access (not just logs)
+        const res = await apiService.getStorehouseItems({ q: mediaSearchQuery.value, limit: 30 });
+        // res is a direct array from GetStorehouseItems
         mediaSearchResults.value = res.map((m: any) => ({
             ...m,
-            thumbUrl: apiService.getStorehouseFileUrl(m.fileId, m.sourcePlatform) + '&w=200'
+            // Backend uses snake_case: file_id, source
+            fileId: m.file_id || m.fileID,
+            sourcePlatform: m.source || m.source_platform,
+            thumbUrl: apiService.getStorehouseFileUrl(m.file_id || m.fileID, m.source || m.source_platform) + '&w=200'
         }));
-        if (mediaSearchQuery.value) {
-            // Simple client-side title filter for demo since backend search might not be ready
-            mediaSearchResults.value = mediaSearchResults.value.filter((m: any) => 
-                (m.originalName || '').toLowerCase().includes(mediaSearchQuery.value.toLowerCase())
-            );
-        }
     } catch (e) { console.error(e); } finally { isMediaSearching.value = false; }
 };
 
