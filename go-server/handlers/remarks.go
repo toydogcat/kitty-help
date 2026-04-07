@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"github.com/gofiber/fiber/v2"
 	"github.com/toydogcat/kitty-help/go-server/database"
 	"github.com/toydogcat/kitty-help/go-server/models"
@@ -10,6 +11,12 @@ import (
 // GetRemarks returns all containers and staged items for the user
 func GetRemarks(c *fiber.Ctx) error {
 	user := c.Locals("user").(*Claims)
+	if user.ID == "" {
+		return c.JSON(fiber.Map{
+			"containers": []models.RemarkContainer{},
+			"staged":     []models.RemarkItem{},
+		})
+	}
 	db := database.LocalDB
 
 	// 1. Fetch Containers
@@ -41,7 +48,8 @@ func GetRemarks(c *fiber.Ctx) error {
 	`
 	rows, err = db.Query(context.Background(), sql, user.ID)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		fmt.Printf("[DB ERROR] Remarks: %v\n", err)
+		return c.Status(500).JSON(fiber.Map{"error": err.Error(), "sql": "remarks_query"})
 	}
 	defer rows.Close()
 
@@ -82,6 +90,7 @@ func GetRemarks(c *fiber.Ctx) error {
 
 func CreateRemark(c *fiber.Ctx) error {
 	user := c.Locals("user").(*Claims)
+	if user.ID == "" { return c.Status(401).JSON(fiber.Map{"error": "Unauthorized"}) }
 	var body struct {
 		Name    string `json:"name"`
 		Content string `json:"content"`
@@ -103,6 +112,7 @@ func CreateRemark(c *fiber.Ctx) error {
 
 func UpdateRemark(c *fiber.Ctx) error {
 	user := c.Locals("user").(*Claims)
+	if user.ID == "" { return c.Status(401).JSON(fiber.Map{"error": "Unauthorized"}) }
 	id := c.Params("id")
 	var body struct {
 		Name    string `json:"name"`
@@ -123,6 +133,7 @@ func UpdateRemark(c *fiber.Ctx) error {
 
 func DeleteRemark(c *fiber.Ctx) error {
 	user := c.Locals("user").(*Claims)
+	if user.ID == "" { return c.Status(401).JSON(fiber.Map{"error": "Unauthorized"}) }
 	id := c.Params("id")
 	_, err := database.LocalDB.Exec(context.Background(), "DELETE FROM remark_containers WHERE id = $1 AND user_id = $2", id, user.ID)
 	if err != nil {
@@ -134,6 +145,7 @@ func DeleteRemark(c *fiber.Ctx) error {
 // ToggleIntegration adds or removes a log from the items list
 func ToggleIntegration(c *fiber.Ctx) error {
 	user := c.Locals("user").(*Claims)
+	if user.ID == "" { return c.Status(401).JSON(fiber.Map{"error": "Unauthorized"}) }
 	var body struct {
 		LogID int `json:"logId"`
 	}
@@ -164,6 +176,7 @@ func ToggleIntegration(c *fiber.Ctx) error {
 // MoveRemarkItem moves an item between container and staging
 func MoveRemarkItem(c *fiber.Ctx) error {
 	user := c.Locals("user").(*Claims)
+	if user.ID == "" { return c.Status(401).JSON(fiber.Map{"error": "Unauthorized"}) }
 	var body struct {
 		ItemID      string  `json:"itemId"`
 		ContainerID *string `json:"containerId"` // nil or ID
@@ -184,6 +197,7 @@ func MoveRemarkItem(c *fiber.Ctx) error {
 
 func RemoveRemarkItem(c *fiber.Ctx) error {
 	user := c.Locals("user").(*Claims)
+	if user.ID == "" { return c.Status(401).JSON(fiber.Map{"error": "Unauthorized"}) }
 	id := c.Params("id")
 	_, err := database.LocalDB.Exec(context.Background(), "DELETE FROM remark_items WHERE id = $1 AND user_id = $2", id, user.ID)
 	if err != nil {

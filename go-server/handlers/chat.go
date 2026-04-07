@@ -25,6 +25,10 @@ func GetChatLogs(c *fiber.Ctx) error {
 	}
 
 	user := c.Locals("user").(*Claims)
+	userID := user.ID
+	if userID == "" {
+		userID = "00000000-0000-0000-0000-000000000000" // Use a dummy valid UUID to prevent PG syntax error for guests
+	}
 	
 	// 修正：使用 LEFT JOIN 聯手 media_archives 以獲取媒體真實類型，並 JOIN remark_items 檢查是否已整合
 	sql := `
@@ -37,7 +41,7 @@ func GetChatLogs(c *fiber.Ctx) error {
 		LEFT JOIN remark_items ri ON c.id = ri.log_id AND ri.user_id = $2
 		WHERE c.platform = $1
 	`
-	args := []interface{}{platform, user.ID}
+	args := []interface{}{platform, userID}
 	argIdx := 3
 
 	if searchQuery != "" {
@@ -62,7 +66,8 @@ func GetChatLogs(c *fiber.Ctx) error {
 
 	rows, err := db.Query(context.Background(), sql, args...)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		fmt.Printf("[DB ERROR] Chat Logs: %v\n", err)
+		return c.Status(500).JSON(fiber.Map{"error": err.Error(), "sql": "chat_logs_query"})
 	}
 	defer rows.Close()
 
