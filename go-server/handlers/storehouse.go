@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -286,8 +287,26 @@ func GetFileProxy(c *fiber.Ctx) error {
 		return c.Status(502).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	// Smart Content-Type fix for Documents
+	if contentType == "application/octet-stream" || contentType == "" {
+		// Try to detect by file extension if possible, or look up in DB
+		var title string
+		_ = database.LocalDB.QueryRow(context.Background(), "SELECT title FROM media_archives WHERE file_id = $1 OR id::text = $1", fileID).Scan(&title)
+		title = strings.ToLower(title)
+		if strings.HasSuffix(title, ".pdf") {
+			contentType = "application/pdf"
+		} else if strings.HasSuffix(title, ".epub") {
+			contentType = "application/epub+zip"
+		} else if strings.HasSuffix(title, ".djvu") {
+			contentType = "image/vnd.djvu"
+		}
+	}
+
 	if c.Query("download") == "1" {
 		c.Set("Content-Disposition", "attachment")
+	} else {
+		// Allow inline preview for PDFs/Images
+		c.Set("Content-Disposition", "inline")
 	}
 
 	c.Set("Content-Type", contentType)

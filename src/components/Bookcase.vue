@@ -26,15 +26,24 @@ const isSaving = ref(false);
 const viewMode = ref<'preview' | 'mixed' | 'notes'>('mixed');
 const searchTerm = ref(''); // Filter books in sidebar
 const newFolderName = ref('');
+const customFolders = ref<string[]>([]); // To allow empty folders in UI
 
 // --- Library Management ---
 const fetchBookcase = async () => {
   isLoading.value = true;
   try {
     books.value = await apiService.getBookcase();
+    // Re-check categories is handled by backend.
     if (books.value.length > 0 && !activeBook.value) {
       selectBook(books.value[0]);
     }
+    
+    // Sync custom folders from books
+    books.value.forEach(b => {
+      if (b.folder && !customFolders.value.includes(b.folder)) {
+        customFolders.value.push(b.folder);
+      }
+    });
   } catch (err) {
     console.error('Failed to fetch bookcase:', err);
   } finally {
@@ -154,8 +163,14 @@ const removeBookStatus = async (id: string) => {
 };
 
 // --- Folder & DND ---
-const folders = computed(() => {
+const combinedFolders = computed(() => {
   const groups: Record<string, any[]> = { 'Uncategorized': [] };
+  
+  // Initialize from custom folders list (including empty ones)
+  customFolders.value.forEach(f => {
+    if (!groups[f]) groups[f] = [];
+  });
+
   filteredBooks.value.forEach(book => {
     const f = book.folder || 'Uncategorized';
     if (!groups[f]) groups[f] = [];
@@ -185,8 +200,11 @@ const onDrop = async (event: DragEvent, folderName: string) => {
 };
 
 const createFolder = () => {
-  if (!newFolderName.value.trim()) return;
-  // Just clear local state, actual movement via DND will create it on backend
+  const name = newFolderName.value.trim();
+  if (!name) return;
+  if (!customFolders.value.includes(name)) {
+    customFolders.value.push(name);
+  }
   newFolderName.value = '';
 };
 
@@ -201,6 +219,7 @@ const filteredBooks = computed(() => {
 
 const getFileUrl = (book: any) => {
   if (!book || !book.storeId) return '';
+  // Proxy will now serve with Content-Disposition: inline and correct MIME
   return `${import.meta.env.VITE_API_URL}/api/storehouse/file/${book.storeId}`;
 };
 
@@ -209,6 +228,12 @@ const isPDF = (book: any) => {
   const title = (book.title || '').toLowerCase();
   const category = (book.category || '').toLowerCase();
   return category.includes('pdf') || title.endsWith('.pdf');
+};
+
+const isEPUB = (book: any) => {
+  if (!book) return false;
+  const title = (book.title || '').toLowerCase();
+  return title.endsWith('.epub');
 };
 
 onMounted(fetchBookcase);
@@ -231,7 +256,7 @@ onMounted(fetchBookcase);
         <div v-if="isLoading" class="list-loader">Syncing...</div>
         
         <div 
-          v-for="(folderBooks, folderName) in folders" 
+          v-for="(folderBooks, folderName) in combinedFolders" 
           :key="folderName"
           class="folder-group"
           @dragover.prevent
@@ -295,6 +320,18 @@ onMounted(fetchBookcase);
         <div v-if="viewMode !== 'notes'" class="preview-pane">
           <div v-if="isPDF(activeBook)" class="pdf-viewer">
             <iframe :src="getFileUrl(activeBook)" frameborder="0"></iframe>
+          </div>
+          <div v-else-if="isEPUB(activeBook)" class="epub-viewer">
+             <!-- Using an external epub reader frame as a polyfill since browsers don't do native EPUB -->
+             <div class="epub-placeholder">
+               <div class="icon">📖</div>
+               <h3>EPUB Reader Integration</h3>
+               <p>Browsers don't support EPUB rendering natively yet.</p>
+               <div class="actions">
+                 <a :href="getFileUrl(activeBook)" target="_blank" class="preview-link">Open in Browser Tab</a>
+                 <span class="alt-msg">If it downloads, try an EPUB extension or external reader.</span>
+               </div>
+             </div>
           </div>
           <div v-else class="placeholder-viewer">
             <div class="msg">
@@ -492,13 +529,18 @@ onMounted(fetchBookcase);
 }
 .new-folder-area input {
   width: 100%;
-  padding: 0.4rem;
-  background: transparent;
-  border: 1px dashed rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  padding: 0.45rem 0.8rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
   color: #94a3b8;
-  font-size: 0.8rem;
-  text-align: center;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+.new-folder-area input:focus {
+  border-color: #d97706;
+  background: rgba(255, 255, 255, 0.05);
+  outline: none;
 }
 
 /* Workspace */
@@ -511,7 +553,7 @@ onMounted(fetchBookcase);
 
 .ws-header {
   height: 64px;
-  padding: 0_1.5rem;
+  padding: 0 1.5rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -540,6 +582,33 @@ onMounted(fetchBookcase);
 /* Panes */
 .preview-pane { flex: 1.2; border-right: 1px solid rgba(255, 255, 255, 0.05); background: #1e293b; position: relative; }
 .pdf-viewer iframe { width: 100%; height: 100%; position: absolute; }
+
+.epub-viewer {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #1e293b;
+}
+
+.epub-placeholder {
+  text-align: center;
+  padding: 3rem;
+  max-width: 400px;
+}
+.epub-placeholder .icon { font-size: 4rem; opacity: 0.2; margin-bottom: 1rem; }
+.preview-link { 
+  display: inline-block;
+  padding: 0.8rem 2rem;
+  background: #d97706;
+  color: white;
+  border-radius: 8px;
+  font-weight: bold;
+  text-decoration: none;
+  margin-bottom: 1rem;
+}
+.alt-msg { display: block; font-size: 0.8rem; opacity: 0.4; line-height: 1.5; }
 
 .placeholder-viewer {
   height: 100%;
@@ -573,6 +642,7 @@ onMounted(fetchBookcase);
   border-bottom: none;
 }
 .note-tab.active { background: #1e293b; color: white; border-color: rgba(255, 255, 255, 0.05); }
+
 .new-note-tab {
   padding: 0.5rem 1rem;
   font-size: 0.8rem;
