@@ -25,6 +25,7 @@ const showAddModal = ref(false);
 const isSaving = ref(false);
 const viewMode = ref<'preview' | 'mixed' | 'notes'>('mixed');
 const searchTerm = ref(''); // Filter books in sidebar
+const newFolderName = ref('');
 
 // --- Library Management ---
 const fetchBookcase = async () => {
@@ -88,7 +89,6 @@ const saveCurrentNote = async () => {
         noteType: activeNote.value.noteType
       });
     }
-    // Refresh notes list
     bookNotes.value = await apiService.getBookNotes(activeBook.value.id);
   } catch (err) {
     alert('Failed to save note');
@@ -153,6 +153,43 @@ const removeBookStatus = async (id: string) => {
   }
 };
 
+// --- Folder & DND ---
+const folders = computed(() => {
+  const groups: Record<string, any[]> = { 'Uncategorized': [] };
+  filteredBooks.value.forEach(book => {
+    const f = book.folder || 'Uncategorized';
+    if (!groups[f]) groups[f] = [];
+    groups[f].push(book);
+  });
+  return groups;
+});
+
+const onDragStart = (event: DragEvent, bookId: string) => {
+  if (event.dataTransfer) {
+    event.dataTransfer.setData('bookId', bookId);
+    event.dataTransfer.effectAllowed = 'move';
+  }
+};
+
+const onDrop = async (event: DragEvent, folderName: string) => {
+  event.preventDefault();
+  const bookId = event.dataTransfer?.getData('bookId');
+  if (bookId) {
+    try {
+      await apiService.updateBookFolder(bookId, folderName === 'Uncategorized' ? '' : folderName);
+      fetchBookcase();
+    } catch (err) {
+      console.error('Move failed:', err);
+    }
+  }
+};
+
+const createFolder = () => {
+  if (!newFolderName.value.trim()) return;
+  // Just clear local state, actual movement via DND will create it on backend
+  newFolderName.value = '';
+};
+
 // --- Helpers ---
 const filteredBooks = computed(() => {
   if (!searchTerm.value) return books.value;
@@ -165,6 +202,13 @@ const filteredBooks = computed(() => {
 const getFileUrl = (book: any) => {
   if (!book || !book.storeId) return '';
   return `${import.meta.env.VITE_API_URL}/api/storehouse/file/${book.storeId}`;
+};
+
+const isPDF = (book: any) => {
+  if (!book) return false;
+  const title = (book.title || '').toLowerCase();
+  const category = (book.category || '').toLowerCase();
+  return category.includes('pdf') || title.endsWith('.pdf');
 };
 
 onMounted(fetchBookcase);
@@ -183,20 +227,47 @@ onMounted(fetchBookcase);
         </button>
       </div>
 
-      <div class="book-list">
+      <div class="folder-list">
         <div v-if="isLoading" class="list-loader">Syncing...</div>
+        
         <div 
-          v-for="book in filteredBooks" 
-          :key="book.id"
-          class="book-item"
-          :class="{ active: activeBook?.id === book.id }"
-          @click="selectBook(book)"
+          v-for="(folderBooks, folderName) in folders" 
+          :key="folderName"
+          class="folder-group"
+          @dragover.prevent
+          @drop="onDrop($event, folderName)"
         >
-          <div class="item-icon">📚</div>
-          <div class="item-info">
-            <div class="item-title">{{ book.title }}</div>
-            <div class="item-meta">{{ book.category }}</div>
+          <div class="folder-header">
+            <span class="folder-icon">📂</span>
+            <span class="folder-name">{{ folderName }}</span>
+            <span class="count">{{ folderBooks.length }}</span>
           </div>
+          
+          <div class="folder-content">
+            <div 
+              v-for="book in folderBooks" 
+              :key="book.id"
+              class="book-item"
+              :class="{ active: activeBook?.id === book.id }"
+              draggable="true"
+              @dragstart="onDragStart($event, book.id)"
+              @click="selectBook(book)"
+            >
+              <div class="item-icon">🔖</div>
+              <div class="item-info">
+                <div class="item-title">{{ book.title }}</div>
+                <div class="item-meta">{{ book.category }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="new-folder-area">
+          <input 
+            v-model="newFolderName" 
+            placeholder="+ New Folder" 
+            @keyup.enter="createFolder" 
+          />
         </div>
       </div>
     </aside>
@@ -206,7 +277,7 @@ onMounted(fetchBookcase);
       <!-- Workspace Toolbar -->
       <header class="ws-header">
         <div class="active-book-info">
-          <h2>{{ activeBook.title }}</h2>
+          <h2 :title="activeBook.title">{{ activeBook.title }}</h2>
           <span class="badge">{{ activeBook.category }}</span>
         </div>
         <div class="ws-controls">
@@ -222,14 +293,16 @@ onMounted(fetchBookcase);
       <div class="ws-body" :class="'mode-' + viewMode">
         <!-- Left: Preview Pane -->
         <div v-if="viewMode !== 'notes'" class="preview-pane">
-          <div v-if="activeBook.category === 'PDF' || activeBook.title.toLowerCase().endsWith('.pdf')" class="pdf-viewer">
+          <div v-if="isPDF(activeBook)" class="pdf-viewer">
             <iframe :src="getFileUrl(activeBook)" frameborder="0"></iframe>
           </div>
           <div v-else class="placeholder-viewer">
             <div class="msg">
               <div class="icon">🔍</div>
-              <p>Preview for {{ activeBook.category }} coming soon.</p>
-              <a :href="getFileUrl(activeBook)" target="_blank" class="download-link">Open Original File</a>
+              <p>Direct preview for <b>{{ activeBook.category }}</b> is coming soon.</p>
+              <div class="actions">
+                <a :href="getFileUrl(activeBook)" target="_blank" class="download-link">Open Original File</a>
+              </div>
             </div>
           </div>
         </div>
@@ -246,7 +319,7 @@ onMounted(fetchBookcase);
             >
               {{ note.title }}
             </div>
-            <button @click="createNewNote" class="new-note-tab">+ New</button>
+            <button @click="createNewNote" class="new-note-tab">+ New Note</button>
           </div>
 
           <div v-if="activeNote" class="note-editor-container">
@@ -286,7 +359,7 @@ onMounted(fetchBookcase);
       <div class="welcome">
         <div class="hero-icon">🏛️</div>
         <h1>Your Knowledge Library</h1>
-        <p>Select a book from the sidebar to start reading and mapping notes.</p>
+        <p>Select a book from the sidebar or drag items into folders to specialize your research.</p>
         <button @click="showAddModal = true; searchAvailable()" class="cta-btn">Add My First Book</button>
       </div>
     </main>
@@ -328,8 +401,8 @@ onMounted(fetchBookcase);
 
 /* Sidebar */
 .sidebar {
-  width: 280px;
-  background: rgba(0, 0, 0, 0.2);
+  width: 300px;
+  background: rgba(0, 0, 0, 0.25);
   border-right: 1px solid rgba(255, 255, 255, 0.05);
   display: flex;
   flex-direction: column;
@@ -363,10 +436,37 @@ onMounted(fetchBookcase);
   cursor: pointer;
 }
 
-.book-list {
+.folder-list {
   flex: 1;
   overflow-y: auto;
   padding: 0.5rem;
+}
+
+.folder-group {
+  margin-bottom: 0.5rem;
+}
+
+.folder-header {
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #94a3b8;
+  border-radius: 6px;
+}
+
+.folder-header .count {
+  margin-left: auto;
+  font-size: 0.7rem;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.1rem 0.4rem;
+  border-radius: 10px;
+}
+
+.folder-content {
+  padding-left: 0.5rem;
 }
 
 .book-item {
@@ -377,14 +477,29 @@ onMounted(fetchBookcase);
   cursor: pointer;
   transition: all 0.2s;
   margin-bottom: 2px;
+  user-select: none;
 }
 
 .book-item:hover { background: rgba(255, 255, 255, 0.05); }
 .book-item.active { background: rgba(217, 119, 6, 0.15); border: 1px solid rgba(217, 119, 6, 0.3); }
 
-.item-icon { font-size: 1.2rem; }
-.item-title { font-size: 0.9rem; font-weight: 500; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
-.item-meta { font-size: 0.7rem; opacity: 0.4; text-transform: uppercase; margin-top: 2px; }
+.item-icon { font-size: 1.1rem; opacity: 0.6; }
+.item-title { font-size: 0.85rem; font-weight: 500; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; text-align: left; }
+.item-meta { font-size: 0.65rem; opacity: 0.4; text-transform: uppercase; margin-top: 2px; text-align: left; }
+
+.new-folder-area {
+  padding: 1rem;
+}
+.new-folder-area input {
+  width: 100%;
+  padding: 0.4rem;
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  text-align: center;
+}
 
 /* Workspace */
 .workspace {
@@ -396,7 +511,7 @@ onMounted(fetchBookcase);
 
 .ws-header {
   height: 64px;
-  padding: 0 1.5rem;
+  padding: 0_1.5rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -404,17 +519,17 @@ onMounted(fetchBookcase);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.active-book-info { display: flex; align-items: center; gap: 1rem; }
-.active-book-info h2 { font-size: 1.1rem; margin: 0; }
-.badge { background: rgba(217, 119, 6, 0.2); color: #fbbf24; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.7rem; font-weight: bold; }
+.active-book-info { display: flex; align-items: center; gap: 1rem; max-width: 60%; }
+.active-book-info h2 { font-size: 1rem; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.badge { background: rgba(217, 119, 6, 0.2); color: #fbbf24; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.7rem; font-weight: bold; flex-shrink: 0; }
 
 .mode-toggle { display: flex; background: rgba(255, 255, 255, 0.05); border-radius: 8px; padding: 2px; }
 .mode-toggle button {
-  padding: 0.4rem 1rem;
+  padding: 0.4rem 0.9rem;
   border: none;
   background: transparent;
   color: #94a3b8;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   cursor: pointer;
   border-radius: 6px;
 }
@@ -434,8 +549,8 @@ onMounted(fetchBookcase);
   text-align: center;
   padding: 2rem;
 }
-.placeholder-viewer .icon { font-size: 3rem; opacity: 0.2; margin-bottom: 1rem; }
-.download-link { color: #fbbf24; text-decoration: underline; font-size: 0.9rem; margin-top: 1rem; display: inline-block; }
+.placeholder-viewer .icon { font-size: 3rem; opacity: 0.15; margin-bottom: 1rem; }
+.download-link { color: #fbbf24; text-decoration: underline; font-size: 0.9rem; margin-top: 1.5rem; display: inline-block; }
 
 .notes-pane { flex: 1; display: flex; flex-direction: column; background: #0f172a; }
 
@@ -450,21 +565,22 @@ onMounted(fetchBookcase);
 .note-tab {
   padding: 0.5rem 1rem;
   font-size: 0.85rem;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 8px 8px 0 0;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px 6px 0 0;
   cursor: pointer;
   white-space: nowrap;
   border: 1px solid transparent;
   border-bottom: none;
 }
-.note-tab.active { background: #334155; color: white; border-color: rgba(255, 255, 255, 0.1); }
+.note-tab.active { background: #1e293b; color: white; border-color: rgba(255, 255, 255, 0.05); }
 .new-note-tab {
   padding: 0.5rem 1rem;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   background: transparent;
   border: none;
   color: #fbbf24;
   cursor: pointer;
+  opacity: 0.7;
 }
 
 .note-editor-container { flex: 1; display: flex; flex-direction: column; }
@@ -525,8 +641,9 @@ onMounted(fetchBookcase);
 .search-bar { padding: 1rem; }
 .search-bar input { width: 100%; padding: 0.75rem; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; }
 .available-list { flex: 1; overflow-y: auto; padding: 1rem; }
-.resource-item { padding: 0.75rem; background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 0.5rem; cursor: pointer; display: flex; align-items: center; gap: 0.75rem; }
+.resource-item { padding: 0.75rem; background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 0.5rem; cursor: pointer; display: flex; align-items: center; gap: 0.75rem; text-align: left;}
 .res-type { font-size: 0.7rem; color: #fbbf24; font-weight: bold; min-width: 80px; }
+.res-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Layout adjustments */
 .mode-preview .notes-pane { display: none; }
@@ -534,7 +651,7 @@ onMounted(fetchBookcase);
 
 /* Empty States */
 .empty-ws { align-items: center; justify-content: center; background: #0f172a; text-align: center; }
-.hero-icon { font-size: 5rem; margin-bottom: 1.5rem; opacity: 0.3; }
+.hero-icon { font-size: 5rem; margin-bottom: 1.5rem; opacity: 0.2; }
 .cta-btn { margin-top: 1.5rem; padding: 1rem 2.5rem; background: #d97706; border: none; color: white; border-radius: 12px; font-weight: bold; cursor: pointer; transition: transform 0.2s; }
 .cta-btn:hover { transform: scale(1.05); background: #fbbf24; }
 
