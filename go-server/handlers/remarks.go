@@ -187,9 +187,15 @@ func MoveRemarkItem(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid body"})
 	}
 
+	// Handle empty string as NULL for UUID column
+	var cid interface{} = body.ContainerID
+	if body.ContainerID != nil && *body.ContainerID == "" {
+		cid = nil
+	}
+
 	_, err := database.LocalDB.Exec(context.Background(), 
 		"UPDATE remark_items SET container_id = $1, sort_order = $2 WHERE id = $3 AND user_id = $4", 
-		body.ContainerID, body.SortOrder, body.ItemID, user.ID)
+		cid, body.SortOrder, body.ItemID, user.ID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
