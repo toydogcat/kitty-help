@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 	"github.com/gofiber/fiber/v2"
 	"github.com/toydogcat/kitty-help/go-server/database"
 	"github.com/toydogcat/kitty-help/go-server/models"
