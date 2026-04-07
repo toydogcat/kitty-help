@@ -142,6 +142,13 @@ const initGraph = () => {
                 await apiService.deleteImpressionLink(params.edges[0]);
                 await loadGraph();
             }
+        } else {
+            // Edit Mode: Empty space hold -> Create Point
+            const title = prompt("New Memory Node Title:");
+            if (title) {
+                const res = await apiService.createImpressionNode({ title, content: '', nodeType: 'general', kgName: kgName.value });
+                await loadGraph(res.id);
+            }
         }
     }
   });
