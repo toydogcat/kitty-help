@@ -6,7 +6,8 @@ const activePlatform = ref('line');
 const platforms = [
   { id: 'telegram', name: 'Telegram', icon: '✈️' },
   { id: 'discord', name: 'Discord', icon: '🎮' },
-  { id: 'line', name: 'Line', icon: '🟢' }
+  { id: 'line', name: 'Line', icon: '🟢' },
+  { id: 'remarks', name: 'Integrated', icon: '📚' }
 ];
 
 const messages = ref<any[]>([]);
@@ -32,6 +33,10 @@ const cardBackgrounds = [
   'linear-gradient(135deg, rgba(231, 76, 60, 0.2), rgba(231, 76, 60, 0.05))', // Red
 ];
 
+// --- Integrated Remarks Logic ---
+const remarkContainers = ref<any[]>([]);
+const stagedItems = ref<any[]>([]);
+
 const fetchMyStatus = async () => {
   try {
     const data = await apiService.getMyBotStatus();
@@ -42,6 +47,10 @@ const fetchMyStatus = async () => {
 };
 
 const fetchMessages = async () => {
+  if (activePlatform.value === 'remarks') {
+    await fetchRemarks();
+    return;
+  }
   loading.value = true;
   try {
     const data = await apiService.getChatLogs(
@@ -50,7 +59,6 @@ const fetchMessages = async () => {
       startDate.value,
       endDate.value
     );
-    // Initialize background colors for new messages
     messages.value = data.map((m: any) => ({
       ...m,
       bgIndex: 0,
@@ -58,6 +66,19 @@ const fetchMessages = async () => {
     }));
   } catch (err) {
     console.error('Failed to fetch messages:', err);
+  } finally {
+    loading.value = false;
+  }
+};
+
+const fetchRemarks = async () => {
+  loading.value = true;
+  try {
+    const data = await apiService.getRemarks();
+    remarkContainers.value = data.containers;
+    stagedItems.value = data.staged;
+  } catch (err) {
+    console.error('Failed to fetch remarks:', err);
   } finally {
     loading.value = false;
   }
@@ -94,17 +115,78 @@ const cycleBg = (m: any) => {
   m.bgIndex = (m.bgIndex + 1) % cardBackgrounds.length;
 };
 
+const resetBg = (m: any) => {
+  m.bgIndex = 0;
+};
+
 const toggleZoom = (m: any) => {
   m.isZoomed = !m.isZoomed;
 };
+
+const toggleIntegrate = async (m: any) => {
+  try {
+    const res = await apiService.toggleIntegration(m.id);
+    m.isIntegrated = (res.status === 'added');
+  } catch (err) {
+    console.error('Integration toggle failed:', err);
+  }
+};
+
+// --- Remarks Management Logic ---
+const createNewRemark = async () => {
+  const name = prompt('Enter Remark Group Name:');
+  if (name) {
+    await apiService.createRemark({ name });
+    await fetchRemarks();
+  }
+};
+
+const updateRemarkContent = async (container: any) => {
+  await apiService.updateRemark(container.id, { name: container.name, content: container.content });
+};
+
+const copyRemark = async (container: any) => {
+  await apiService.createRemark({ name: container.name + ' (Copy)', content: container.content });
+  await fetchRemarks();
+};
+
+const deleteRemark = async (id: string) => {
+  if (confirm('Delete this remark group?')) {
+    await apiService.deleteRemark(id);
+    await fetchRemarks();
+  }
+};
+
+// Drag & Drop Handlers
+const handleDragStart = (e: DragEvent, type: string, id: string) => {
+  e.dataTransfer?.setData('type', type);
+  e.dataTransfer?.setData('id', id);
+};
+
+const handleDropToContainer = async (e: DragEvent, containerId: string | null) => {
+  e.preventDefault();
+  const type = e.dataTransfer?.getData('type');
+  const id = e.dataTransfer?.getData('id');
+
+  if (type === 'item') {
+    await apiService.moveRemarkItem(id!, containerId);
+    await fetchRemarks();
+  }
+};
+
+const removeItem = async (itemId: string) => {
+  await apiService.removeRemarkItem(itemId);
+  await fetchRemarks();
+};
+
 </script>
 
 <template>
   <div class="chat-view">
     <header class="view-header">
       <div class="header-content">
-        <h2>💬 Discovery History</h2>
-        <p>Browse your cross-platform conversation archives from AI assistants.</p>
+        <h2>💬 Discovery & Knowledge</h2>
+        <p>Browse archives and integrate insights into permanent remarks.</p>
       </div>
       
       <div class="platform-tabs">
@@ -116,13 +198,16 @@ const toggleZoom = (m: any) => {
         >
           <span class="p-icon">{{ p.icon }}</span>
           {{ p.name }}
-          <span v-if="myStatus[p.id as keyof typeof myStatus]" class="status-dot linked" title="Linked"></span>
-          <span v-else class="status-dot unlinked" title="Not Linked"></span>
+          <template v-if="p.id !== 'remarks'">
+            <span v-if="myStatus[p.id as keyof typeof myStatus]" class="status-dot linked" title="Linked"></span>
+            <span v-else class="status-dot unlinked" title="Not Linked"></span>
+          </template>
         </button>
       </div>
     </header>
 
-    <div class="search-toolbar card">
+    <!-- Search Tool (Hidden for Remarks) -->
+    <div v-if="activePlatform !== 'remarks'" class="search-toolbar card">
       <div class="search-input-group">
         <span class="search-icon">🔍</span>
         <input 
@@ -148,79 +233,165 @@ const toggleZoom = (m: any) => {
       </div>
     </div>
 
+    <!-- Main Content Container -->
     <div class="chat-container">
-      <div v-if="!myStatus[activePlatform as keyof typeof myStatus]" class="unlinked-notice card">
-        <h3>🚫 Platform Not Linked</h3>
-        <p>You haven't linked your <strong>{{ activePlatform }}</strong> account yet.</p>
-        <div class="instruction">
-          <p>To link your account:</p>
-          <ol>
-            <li v-if="activePlatform === 'telegram'">Find <strong>@super_kitty_help_bot</strong> on Telegram</li>
-            <li v-if="activePlatform === 'discord'">Invite <strong>KittyHelp</strong> to your Discord server</li>
-            <li v-if="activePlatform === 'line'">Add <strong>KittyHelp</strong> as a friend on LINE</li>
-            <li>Send the message: <code>我請求加入</code></li>
-            <li>Enter the 8-digit code in the <strong>Home</strong> page's verification portal.</li>
-            <li>Wait for AdminToby approval in the dashboard to complete binding.</li>
-          </ol>
+      <!-- 1. Standard Platform Feed -->
+      <template v-if="activePlatform !== 'remarks'">
+        <div v-if="!myStatus[activePlatform as keyof typeof myStatus]" class="unlinked-notice card">
+          <h3>🚫 Platform Not Linked</h3>
+          <p>You haven't linked your <strong>{{ activePlatform }}</strong> account yet.</p>
+          <div class="instruction">
+            <p>To link your account:</p>
+            <ol>
+              <li v-if="activePlatform === 'telegram'">Find <strong>@super_kitty_help_bot</strong> on Telegram</li>
+              <li v-if="activePlatform === 'discord'">Invite <strong>KittyHelp</strong> to your Discord server</li>
+              <li v-if="activePlatform === 'line'">Add <strong>KittyHelp</strong> as a friend on LINE</li>
+              <li>Send the message: <code>我請求加入</code></li>
+              <li>Enter the 8-digit code in the <strong>Home</strong> page's verification portal.</li>
+              <li>Wait for AdminToby approval in the dashboard to complete binding.</li>
+            </ol>
+          </div>
         </div>
-      </div>
 
-      <div v-else-if="loading" class="chat-loading">
-        <div class="spinner"></div>
-        <p>Scanning archives...</p>
-      </div>
+        <div v-else-if="loading" class="chat-loading">
+          <div class="spinner"></div>
+          <p>Scanning archives...</p>
+        </div>
 
-      <div v-else-if="messages.length === 0" class="empty-chat">
-        <p v-if="searchQuery || startDate || endDate">No results match your filters. Try widening your search!</p>
-        <p v-else>No messages found on this platform yet. Start talking to your bot!</p>
-      </div>
+        <div v-else-if="messages.length === 0" class="empty-chat">
+          <p v-if="searchQuery || startDate || endDate">No results match your filters. Try widening your search!</p>
+          <p v-else>No messages found on this platform yet. Start talking to your bot!</p>
+        </div>
 
-      <div v-else class="message-feed grid-layout">
-        <div 
-          v-for="m in messages" 
-          :key="m.id" 
-          class="message-card" 
-          :style="{ background: cardBackgrounds[m.bgIndex] }"
-        >
-          <div class="card-controls">
-            <button @click="cycleBg(m)" class="control-btn" title="Change Background">🎨</button>
+        <div v-else class="message-feed grid-layout">
+          <div 
+            v-for="m in messages" 
+            :key="m.id" 
+            class="message-card" 
+            :style="{ background: cardBackgrounds[m.bgIndex] }"
+          >
+            <div class="card-controls">
+              <button @click="toggleIntegrate(m)" class="control-btn" :class="{ integrated: m.isIntegrated }" title="Integrate into Remarks">
+                {{ m.isIntegrated ? '🌟' : '📁' }}
+              </button>
+              <button @click="resetBg(m)" class="control-btn" title="Reset Color">🔄</button>
+              <button @click="cycleBg(m)" class="control-btn" title="Change Background">🎨</button>
+            </div>
+
+            <div class="msg-header">
+              <span class="sender">{{ m.senderName }}</span>
+              <span class="time">{{ formatDate(m.createdAt) }}</span>
+            </div>
+
+            <div class="msg-content">
+              <template v-if="m.msgType === 'media' && m.mediaId">
+                <div 
+                  class="media-container" 
+                  :class="{ zoomed: m.isZoomed }"
+                  @click="toggleZoom(m)"
+                  v-if="m.mediaType === 'image' || m.mediaType === 'photo' || m.content.includes('[Image]') || m.content.includes('[photo]')"
+                >
+                  <img :src="getStorehouseUrl(m.mediaId)" loading="lazy" />
+                  <div v-if="!m.isZoomed" class="zoom-hint">🔍 Expand</div>
+                </div>
+                <div v-else class="file-card">
+                  <span class="file-icon">{{ m.mediaType === 'video' ? '🎬' : '📎' }}</span>
+                  <div class="file-info">
+                    <span class="file-name">{{ m.mediaType === 'video' ? 'Video' : 'File' }}</span>
+                    <a :href="getStorehouseUrl(m.mediaId)" target="_blank" class="download-link">View</a>
+                  </div>
+                </div>
+              </template>
+              <p v-else class="text-content">{{ m.content }}</p>
+            </div>
           </div>
+        </div>
+      </template>
 
-          <div class="msg-header">
-            <span class="sender">{{ m.senderName }}</span>
-            <span class="time">{{ formatDate(m.createdAt) }}</span>
-          </div>
-
-          <div class="msg-content">
-            <template v-if="m.msgType === 'media' && m.mediaId">
+      <!-- 2. Integrated Remarks View -->
+      <template v-else>
+        <div class="remarks-view">
+          <!-- STAGING AREA -->
+          <div 
+            class="staging-section card"
+            @dragover.prevent
+            @drop="handleDropToContainer($event, null)"
+          >
+            <div class="section-header">
+              <h3>📥 Staging Area (暫存區)</h3>
+              <p>Drag items here to unassign or click to remove.</p>
+            </div>
+            <div class="staged-grid">
               <div 
-                class="media-container" 
-                :class="{ zoomed: m.isZoomed }"
-                @click="toggleZoom(m)"
-                v-if="m.mediaType === 'image' || m.mediaType === 'photo' || m.content.includes('[Image]') || m.content.includes('[photo]')"
+                v-for="item in stagedItems" 
+                :key="item.id" 
+                class="staged-card"
+                draggable="true"
+                @dragstart="handleDragStart($event, 'item', item.id)"
               >
-                <img :src="getStorehouseUrl(m.mediaId)" loading="lazy" />
-                <div v-if="!m.isZoomed" class="zoom-hint">🔍 Click to Expand</div>
+                <div class="staged-content">
+                  <span class="platform-indicator">{{ item.log.platform }}</span>
+                  <p>{{ item.log.content.substring(0, 50) }}{{ item.log.content.length > 50 ? '...' : '' }}</p>
+                </div>
+                <button @click="removeItem(item.id)" class="remove-item">✕</button>
               </div>
-              <div v-else class="file-card">
-                <span class="file-icon">{{ m.mediaType === 'video' ? '🎬' : '📎' }}</span>
-                <div class="file-info">
-                  <span class="file-name">{{ m.mediaType === 'video' ? 'Video Memory' : 'Media Backup' }}</span>
-                  <a :href="getStorehouseUrl(m.mediaId)" target="_blank" class="download-link">{{ m.mediaType === 'video' ? 'Watch' : 'View File' }}</a>
+              <div v-if="stagedItems.length === 0" class="empty-staged">
+                No items staged. Start integrating cards from other tabs!
+              </div>
+            </div>
+          </div>
+
+          <!-- REMARK CONTAINERS -->
+          <div class="remark-list">
+            <div class="list-actions">
+              <button @click="createNewRemark" class="primary-btn">+ New Remark Group</button>
+            </div>
+
+            <div class="remark-grid">
+              <div 
+                v-for="c in remarkContainers" 
+                :key="c.id" 
+                class="remark-container card"
+                @dragover.prevent
+                @drop="handleDropToContainer($event, c.id)"
+              >
+                <div class="container-header">
+                  <input v-model="c.name" @blur="updateRemarkContent(c)" class="title-input" />
+                  <div class="container-actions">
+                    <button @click="copyRemark(c)" title="Duplicate">📋</button>
+                    <button @click="deleteRemark(c.id)" title="Delete">🗑️</button>
+                  </div>
+                </div>
+
+                <div class="container-items">
+                  <div 
+                    v-for="item in c.items" 
+                    :key="item.id" 
+                    class="mini-item-card"
+                    draggable="true"
+                    @dragstart="handleDragStart($event, 'item', item.id)"
+                  >
+                    <p>{{ item.log.content.substring(0, 60) }}...</p>
+                    <button @click="removeItem(item.id)" class="mini-remove">✕</button>
+                  </div>
+                  <div v-if="c.items.length === 0" class="drop-hint">Drop items here</div>
+                </div>
+
+                <div class="container-footer">
+                  <textarea 
+                    v-model="c.content" 
+                    @blur="updateRemarkContent(c)" 
+                    placeholder="Enter your summary/note here..."
+                  ></textarea>
                 </div>
               </div>
-            </template>
-            <p v-else class="text-content">{{ m.content }}</p>
-          </div>
-
-          <div class="msg-footer" v-if="m.mediaType === 'image' || m.mediaType === 'photo'">
-            <span class="type-tag">📸 Image</span>
+            </div>
           </div>
         </div>
-      </div>
+      </template>
     </div>
 
-    <!-- Zoom Overlay -->
+    <!-- Zoom Overlay (Global) -->
     <Transition name="fade">
       <div v-if="messages.some(m => m.isZoomed)" class="zoom-overlay" @click="messages.forEach(m => m.isZoomed = false)">
         <span class="close-overlay">✕</span>
@@ -234,7 +405,7 @@ const toggleZoom = (m: any) => {
   display: flex;
   flex-direction: column;
   gap: 1.2rem;
-  max-width: 1400px;
+  max-width: 1500px;
   margin: 0 auto;
   padding: 1rem;
 }
@@ -250,11 +421,7 @@ const toggleZoom = (m: any) => {
 .header-content h2 { font-size: 1.8rem; margin-bottom: 0.2rem; }
 .header-content p { opacity: 0.6; font-size: 0.9rem; }
 
-.platform-tabs {
-  display: flex;
-  gap: 0.8rem;
-}
-
+.platform-tabs { display: flex; gap: 0.8rem; }
 .platform-btn {
   display: flex;
   align-items: center;
@@ -269,7 +436,6 @@ const toggleZoom = (m: any) => {
   transition: all 0.2s ease;
   position: relative;
 }
-
 .platform-btn.active {
   background: var(--primary-color);
   color: white;
@@ -277,16 +443,9 @@ const toggleZoom = (m: any) => {
   box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
 }
 
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  position: absolute;
-  top: 5px;
-  right: 10px;
-}
-.status-dot.linked { border-radius: 50%; background: #2ecc71; box-shadow: 0 0 5px #2ecc71; }
-.status-dot.unlinked { border-radius: 50%; background: #95a5a6; }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; position: absolute; top: 5px; right: 10px; }
+.status-dot.linked { background: #2ecc71; box-shadow: 0 0 5px #2ecc71; }
+.status-dot.unlinked { background: #95a5a6; }
 
 /* Search Toolbar */
 .search-toolbar {
@@ -298,7 +457,6 @@ const toggleZoom = (m: any) => {
   background: rgba(var(--primary-rgb), 0.03);
   backdrop-filter: blur(10px);
 }
-
 .search-input-group {
   flex: 1;
   display: flex;
@@ -309,86 +467,20 @@ const toggleZoom = (m: any) => {
   border-radius: 10px;
   border: 1px solid var(--border-color);
 }
+.search-input-group input { background: transparent; border: none; color: white; width: 100%; outline: none; }
 
-.search-input-group input {
-  background: transparent;
-  border: none;
-  color: white;
-  width: 100%;
-  outline: none;
-}
-
-.date-filters {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.date-field {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  transition: all 0.3s ease;
-}
-
-.date-field.active {
-  background: rgba(var(--primary-rgb), 0.1);
-  padding: 2px 8px;
-  border-radius: 8px;
-  box-shadow: 0 0 10px rgba(var(--primary-rgb), 0.3);
-}
-
-.date-field label { font-size: 0.75rem; opacity: 0.6; text-transform: uppercase; font-weight: 800; }
-
-.date-field input {
-  background: rgba(0,0,0,0.3);
-  border: 1px solid var(--border-color);
-  color: white;
-  padding: 0.4rem 0.6rem;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  outline: none;
-  transition: all 0.2s;
-}
-
-.date-field input:focus {
-  border-color: var(--primary-color);
-  box-shadow: 0 0 15px rgba(var(--primary-rgb), 0.5);
-  background: rgba(var(--primary-rgb), 0.1);
-}
-
-/* Chrome/Safari Calendar Icon glow */
+.date-filters { display: flex; align-items: center; gap: 1rem; }
+.date-field { display: flex; align-items: center; gap: 0.5rem; }
+.date-field.active { background: rgba(var(--primary-rgb), 0.1); padding: 2px 8px; border-radius: 8px; }
+.date-field input { background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); color: white; padding: 0.4rem 0.6rem; border-radius: 6px; outline: none; }
 .date-field input::-webkit-calendar-picker-indicator {
-  filter: invert(1);
-  cursor: pointer;
-  background-color: var(--primary-color);
-  border-radius: 3px;
-  padding: 2px;
-  box-shadow: 0 0 8px var(--primary-color);
+  filter: invert(1); background-color: var(--primary-color); border-radius: 3px; padding: 2px;
 }
 
-.clear-btn {
-  background: rgba(255,255,255,0.05);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 0.4rem 0.6rem;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-.clear-btn:hover { background: rgba(255,255,255,0.1); }
-
-/* Chat Container */
-.chat-container {
-  min-height: 60vh;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-
+/* Page Layout */
 .grid-layout {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  grid-auto-rows: min-content;
   gap: 1.5rem;
   padding: 1rem 0;
 }
@@ -401,26 +493,22 @@ const toggleZoom = (m: any) => {
   border-radius: 16px;
   border: 1px solid var(--border-color);
   box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s;
+  transition: all 0.3s ease;
   height: fit-content;
-  overflow: hidden;
 }
 
-.message-card:hover {
-  transform: translateY(-5px) scale(1.01);
-  box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-  border-color: rgba(var(--primary-rgb), 0.3);
-}
+.message-card:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(0,0,0,0.2); }
 
 .card-controls {
   position: absolute;
   top: 10px;
   right: 10px;
+  display: flex;
+  gap: 5px;
   opacity: 0;
   transition: opacity 0.2s;
   z-index: 5;
 }
-
 .message-card:hover .card-controls { opacity: 1; }
 
 .control-btn {
@@ -433,176 +521,134 @@ const toggleZoom = (m: any) => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font-size: 1rem;
   backdrop-filter: blur(5px);
 }
-.control-btn:hover { background: rgba(255,255,255,0.2); transform: scale(1.1); }
+.control-btn:hover { background: rgba(255,255,255,0.3); transform: scale(1.1); }
+.control-btn.integrated { background: rgba(241, 196, 15, 0.4); border: 1px solid #f1c40f; }
 
-.msg-header {
-  display: flex;
-  flex-direction: column;
-  margin-bottom: 0.8rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
-}
-
+.msg-header { display: flex; flex-direction: column; margin-bottom: 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem; }
 .sender { font-weight: 800; color: var(--primary-color); font-size: 0.9rem; }
 .time { opacity: 0.4; font-size: 0.75rem; }
 
-.text-content {
-  line-height: 1.6;
-  white-space: pre-wrap;
-  color: rgba(255,255,255,0.9);
-  font-size: 0.95rem;
-}
-
 .media-container {
-  position: relative;
-  cursor: zoom-in;
-  margin: 0.5rem -0.5rem 0;
-  border-radius: 12px;
-  overflow: hidden;
-  max-height: 200px;
-  transition: all 0.4s ease;
-  border: 1px solid rgba(255,255,255,0.1);
+  cursor: zoom-in; margin: 0.5rem -0.5rem 0; border-radius: 12px; overflow: hidden; max-height: 200px;
 }
-
-.media-container img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.3s;
-}
-
-.media-container:hover img { transform: scale(1.05); }
-
+.media-container img { width: 100%; height: 100%; object-fit: cover; }
 .media-container.zoomed {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 90vw;
-  max-height: 90vh;
-  z-index: 1001;
-  cursor: zoom-out;
-  box-shadow: 0 0 50px rgba(0,0,0,0.8);
-  border: 2px solid var(--primary-color);
-  max-width: 1200px;
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90vw; max-height: 90vh; z-index: 1001; cursor: zoom-out; box-shadow: 0 0 50px rgba(0,0,0,0.8);
 }
 
-.media-container.zoomed img {
-  object-fit: contain;
-}
-
-.zoom-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0,0,0,0.9);
-  z-index: 1000;
-  cursor: zoom-out;
-}
-
-.close-overlay {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  color: white;
-  font-size: 2rem;
-  cursor: pointer;
-}
-
-.zoom-hint {
-  position: absolute;
-  bottom: 10px;
-  right: 10px;
-  background: rgba(0,0,0,0.6);
-  color: white;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 0.7rem;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.media-container:hover .zoom-hint { opacity: 1; }
-
-.file-card {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  background: rgba(0,0,0,0.3);
-  padding: 1rem;
-  border-radius: 12px;
-  border: 1px dashed rgba(var(--primary-rgb), 0.3);
-  margin-top: 0.5rem;
-}
-
-.file-icon { font-size: 1.5rem; }
-.file-info { display: flex; flex-direction: column; gap: 0.2rem; }
-.file-name { font-size: 0.9rem; font-weight: 600; }
-
-.download-link {
-  color: var(--primary-color);
-  text-decoration: none;
-  font-size: 0.85rem;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-.download-link:hover { text-decoration: underline; }
-
-.msg-footer {
-  margin-top: auto;
-  padding-top: 1rem;
-  display: flex;
-  justify-content: flex-end;
-}
-
-.type-tag {
-  font-size: 0.7rem;
-  background: rgba(var(--primary-rgb), 0.2);
-  color: var(--primary-color);
-  padding: 2px 8px;
-  border-radius: 20px;
-  font-weight: 800;
-}
-
-.fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
-
-.spinner {
-  width: 50px;
-  height: 50px;
-  border: 4px solid rgba(var(--primary-rgb), 0.1);
-  border-top-color: var(--primary-color);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 1.5rem;
-}
-
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.unlinked-notice {
-  flex: 1;
+/* Remarks View Styles */
+.remarks-view {
   display: flex;
   flex-direction: column;
+  gap: 2rem;
+}
+
+.staging-section {
+  padding: 1.5rem;
+  background: rgba(var(--primary-rgb), 0.05);
+}
+
+.section-header h3 { margin-bottom: 0.5rem; color: var(--primary-color); }
+.staged-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1rem;
+  min-height: 80px;
+}
+
+.staged-card {
+  background: rgba(255,255,255,0.07);
+  padding: 0.8rem;
+  border-radius: 12px;
+  width: 250px;
+  position: relative;
+  cursor: grab;
+  border: 1px dashed var(--border-color);
+}
+.staged-card:active { cursor: grabbing; }
+
+.platform-indicator { font-size: 0.6rem; text-transform: uppercase; background: var(--primary-color); color: white; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-bottom: 5px; }
+.remove-item { position: absolute; top: 5px; right: 5px; background: transparent; border: none; color: #e74c3c; cursor: pointer; }
+
+.remark-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 2rem;
+}
+
+.remark-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 400px;
+  background: rgba(255,255,255,0.03);
+  padding: 1.5rem;
+  border: 1px solid var(--border-color);
+}
+
+.container-header {
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  justify-content: center;
-  padding: 4rem;
+  margin-bottom: 1rem;
+}
+.title-input { background: transparent; border: none; font-size: 1.2rem; font-weight: 800; color: white; border-bottom: 2px solid transparent; width: 100%; outline: none; }
+.title-input:focus { border-bottom-color: var(--primary-color); }
+
+.container-actions button { background: transparent; border: none; cursor: pointer; font-size: 1.1rem; padding: 5px; opacity: 0.6; }
+.container-actions button:hover { opacity: 1; }
+
+.container-items {
+  flex: 1;
+  background: rgba(0,0,0,0.2);
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+  border: 2px dashed rgba(255,255,255,0.05);
 }
 
-.instruction {
-  background: rgba(0,0,0,0.25);
-  padding: 2rem;
-  border-radius: 16px;
-  margin-top: 2rem;
-  max-width: 500px;
-  text-align: left;
+.mini-item-card {
+  background: rgba(255,255,255,0.05);
+  padding: 0.8rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  position: relative;
 }
 
-.instruction li { margin-bottom: 0.8rem; color: rgba(255,255,255,0.8); }
+.mini-remove { position: absolute; top: 2px; right: 2px; border: none; background: transparent; color: #888; cursor: pointer; font-size: 0.7rem; }
+
+.container-footer textarea {
+  width: 100%;
+  height: 100px;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  color: white;
+  padding: 1rem;
+  resize: vertical;
+  outline: none;
+}
+.container-footer textarea:focus { border-color: var(--primary-color); }
+
+.primary-btn {
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  padding: 0.8rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-bottom: 1rem;
+}
+
+.zoom-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 1000; }
+.close-overlay { position: absolute; top: 20px; right: 20px; color: white; font-size: 2rem; cursor: pointer; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { width: 50px; height: 50px; border: 4px solid rgba(var(--primary-rgb), 0.1); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 1.5rem; }
 </style>

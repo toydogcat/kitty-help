@@ -294,6 +294,32 @@ func EnsureTables() {
 			sort_order INT DEFAULT 0,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE IF NOT EXISTS chat_logs (
+			id SERIAL PRIMARY KEY,
+			platform TEXT NOT NULL,
+			sender_id TEXT NOT NULL,
+			sender_name TEXT,
+			content TEXT,
+			msg_type TEXT,
+			media_id TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS remark_containers (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			content TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS remark_items (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			container_id UUID REFERENCES remark_containers(id) ON DELETE CASCADE, -- NULL means in staging area
+			log_id INT NOT NULL,
+			sort_order INT DEFAULT 0,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
 	}
 
 	if LocalDB != nil {

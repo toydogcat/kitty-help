@@ -382,6 +382,36 @@ export const apiService = {
     const params = new URLSearchParams({ platform, q: query, startDate, endDate });
     const response = await axios.get(`${API_BASE}/chat/logs?${params.toString()}`);
     return response.data;
+  },
+
+  // 📝 Integrated Remarks
+  async getRemarks() {
+    const res = await axios.get(`${API_BASE}/chat/remarks`);
+    return res.data;
+  },
+  async createRemark(data: { name: string; content?: string }) {
+    const res = await axios.post(`${API_BASE}/chat/remarks`, data);
+    return res.data;
+  },
+  async updateRemark(id: string, data: { name: string; content?: string }) {
+    const res = await axios.put(`${API_BASE}/chat/remarks/${id}`, data);
+    return res.data;
+  },
+  async deleteRemark(id: string) {
+    const res = await axios.delete(`${API_BASE}/chat/remarks/${id}`);
+    return res.data;
+  },
+  async toggleIntegration(logId: number) {
+    const res = await axios.post(`${API_BASE}/chat/remarks/toggle`, { logId: Number(logId) });
+    return res.data;
+  },
+  async moveRemarkItem(itemId: string, containerId: string | null, sortOrder: number = 0) {
+    const res = await axios.post(`${API_BASE}/chat/remarks/move`, { itemId, containerId, sortOrder });
+    return res.data;
+  },
+  async removeRemarkItem(id: string) {
+    const res = await axios.delete(`${API_BASE}/chat/remarks/items/${id}`);
+    return res.data;
   }
 };
 

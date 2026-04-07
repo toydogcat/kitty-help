@@ -24,17 +24,21 @@ func GetChatLogs(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "platform query required"})
 	}
 
-	// 修正：使用 LEFT JOIN 聯手 media_archives 以獲取媒體真實類型
+	user := c.Locals("user").(*Claims)
+	
+	// 修正：使用 LEFT JOIN 聯手 media_archives 以獲取媒體真實類型，並 JOIN remark_items 檢查是否已整合
 	sql := `
 		SELECT 
 			c.id, c.platform, c.sender_id, c.sender_name, c.content, c.msg_type, c.media_id, c.created_at,
-			COALESCE(m.media_type, '') as media_type
+			COALESCE(m.media_type, '') as media_type,
+			CASE WHEN ri.id IS NOT NULL THEN true ELSE false END as is_integrated
 		FROM chat_logs c
 		LEFT JOIN media_archives m ON c.media_id::text = m.id::text
+		LEFT JOIN remark_items ri ON c.id = ri.log_id AND ri.user_id = $2
 		WHERE c.platform = $1
 	`
-	args := []interface{}{platform}
-	argIdx := 2
+	args := []interface{}{platform, user.ID}
+	argIdx := 3
 
 	if searchQuery != "" {
 		sql += fmt.Sprintf(" AND c.content ILIKE $%d", argIdx)
@@ -65,7 +69,7 @@ func GetChatLogs(c *fiber.Ctx) error {
 	logs := []models.ChatLog{}
 	for rows.Next() {
 		var l models.ChatLog
-		err := rows.Scan(&l.ID, &l.Platform, &l.SenderID, &l.SenderName, &l.Content, &l.MsgType, &l.MediaID, &l.CreatedAt, &l.MediaType)
+		err := rows.Scan(&l.ID, &l.Platform, &l.SenderID, &l.SenderName, &l.Content, &l.MsgType, &l.MediaID, &l.CreatedAt, &l.MediaType, &l.IsIntegrated)
 		if err != nil {
 			fmt.Printf("[SCAN ERROR] %v\n", err)
 			continue
