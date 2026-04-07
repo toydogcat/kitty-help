@@ -29,9 +29,9 @@ const isLinkingMode = ref(false);
 
 // Multi-KG State
 const kgName = ref(localStorage.getItem('impression_kg_name') || 'default');
-const availableKGs = ref<string[]>(['default']);
 const commandInput = ref('');
 const commandResults = ref<any[]>([]);
+const availableKGsList = ref<string[]>([]);
 const showCommandHelp = ref(false);
 
 // Desk Linkage
@@ -206,24 +206,28 @@ const loadGraph = async (nodeId?: string) => {
         font: { color: kgName.value === 'default' ? '#94a3b8' : '#22d3ee' }
     })));
     
-    if (nodeId && network.value) {
+    if (nodeId && network.value && nodes.length > 0) {
         setTimeout(() => {
-            network.value?.fit({ nodes: [nodeId], animation: true });
+            if (network.value && nodes.get(nodeId)) {
+                network.value.fit({ nodes: [nodeId], animation: true });
+            } else if (network.value && nodes.length > 0) {
+                network.value.fit({ animation: true });
+            }
             centerNodeId.value = nodeId;
             localStorage.setItem('impression_last_center', nodeId);
-        }, 200);
+        }, 300);
     } else if (localStorage.getItem('impression_view_state') && network.value) {
         const { x, y, scale } = JSON.parse(localStorage.getItem('impression_view_state')!);
         network.value.moveTo({ position: { x, y }, scale, animation: false });
-    } else if (data.nodes.length > 0 && network.value) {
-        network.value.fit({ animation: true });
+    } else if (network.value && nodes.length > 0) {
+        setTimeout(() => network.value?.fit({ animation: true }), 300);
     }
   } catch (e) { console.error(e); } finally { isLoading.value = false; }
 };
 
 const fetchKGs = async () => {
     try {
-        availableKGs.value = await apiService.getKnowledgeGraphs();
+        availableKGsList.value = await apiService.getKnowledgeGraphs();
     } catch (e) { console.error(e); }
 };
 
@@ -239,6 +243,23 @@ const resolveNodeByTitle = async (title: string) => {
     return exact || null;
 };
 
+const pinToDesk = async () => {
+    try {
+        const currentShelves = await apiService.getShelves();
+        let targetShelf = currentShelves.find((s: any) => s.name === 'Knowledge Universe');
+        if (!targetShelf) {
+            targetShelf = await apiService.createShelf({ name: 'Knowledge Universe', description: 'Quick access to Impression KGs' });
+        }
+        await apiService.createDeskItem({
+            shelfId: targetShelf.id,
+            title: `Universe: ${kgName.value}`,
+            content: `/impression?kg=${kgName.value}`,
+            type: 'bookmark'
+        });
+        alert(`Successfully pinned '${kgName.value}' to Desk!`);
+    } catch (e) { alert('Pinning failed'); }
+};
+
 const executeCommand = async () => {
     const input = commandInput.value.trim();
     if (!input) return;
@@ -252,7 +273,7 @@ const executeCommand = async () => {
     try {
         if (cmd === '/add' && args[0] === 'point') {
             const title = args.slice(1).join(' ');
-            if (!title) throw new Error('Title required');
+            if (!title) throw new Error('Title required. Usage: /add point [title]');
             const newNode = await apiService.createImpressionNode({ title, content: '', nodeType: 'general', kgName: kgName.value });
             await loadGraph(newNode.id);
             commandInput.value = '';
@@ -262,7 +283,7 @@ const executeCommand = async () => {
             const matches = argString.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
             const cleanArgs = matches.map(a => a.replace(/"/g, ''));
 
-            if (cleanArgs.length < 2) throw new Error('Source and Target required');
+            if (cleanArgs.length < 2) throw new Error('Source and Target titles required. Usage: /add edge "Source" "Target" [Label]');
             const src = await resolveNodeByTitle(cleanArgs[0]);
             const tgt = await resolveNodeByTitle(cleanArgs[1]);
             const label = cleanArgs[2] || '';
@@ -273,11 +294,36 @@ const executeCommand = async () => {
             commandInput.value = '';
         } else if (cmd === '/search') {
             const q = args.join(' ');
+            if (!q) throw new Error('Query required. Usage: /search [term]');
             commandResults.value = await apiService.searchImpression(q, kgName.value);
         } else if (cmd === '/list') {
-            commandResults.value = await apiService.searchImpression('', kgName.value);
+            const typeFilter = args[0]?.toLowerCase();
+            if (typeFilter === 'kg' || typeFilter === 'kgs') {
+                await fetchKGs();
+                const q = args.slice(1).join(' ').toLowerCase();
+                let filtered = availableKGsList.value;
+                if (q) {
+                    filtered = availableKGsList.value.filter(n => n.toLowerCase().includes(q));
+                }
+                commandResults.value = filtered.map(name => ({
+                    id: name, title: name, resultType: 'kg', kgName: name
+                }));
+                return;
+            }
+            const all = await apiService.searchImpression('', kgName.value);
+            if (typeFilter === 'point' || typeFilter === 'node') {
+                commandResults.value = all.filter((r: any) => r.resultType === 'node');
+            } else if (typeFilter === 'edge' || typeFilter === 'link') {
+                commandResults.value = all.filter((r: any) => r.resultType === 'edge');
+            } else {
+                commandResults.value = all;
+            }
         } else if (cmd === '/kg') {
-            if (args[0]) switchKG(args[0]);
+            if (!args[0]) throw new Error('KG name required. Usage: /kg [name]');
+            switchKG(args[0]);
+            commandInput.value = '';
+        } else if (cmd === '/pin') {
+            await pinToDesk();
             commandInput.value = '';
         } else if (cmd === '/help') {
             showCommandHelp.value = true;
@@ -285,7 +331,7 @@ const executeCommand = async () => {
             commandResults.value = await apiService.searchImpression(input, kgName.value);
         }
     } catch (e: any) {
-        alert(`Command Failed: ${e.message}`);
+        alert(`${e.message}`);
     }
 };
 
@@ -449,7 +495,7 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
 
             <!-- Command Results Terminal -->
             <div v-if="commandResults.length" class="console-results">
-                <div v-for="r in commandResults" :key="r.id" class="res-row" @click="loadGraph(r.id); commandResults = []">
+                <div v-for="r in commandResults" :key="r.id" class="res-row" @click="r.resultType === 'kg' ? switchKG(r.title) : loadGraph(r.id); commandResults = []">
                     <span class="res-type" :class="r.resultType">{{ r.resultType }}</span>
                     <span class="res-title">{{ r.title }}</span>
                     <span v-if="r.resultType === 'edge'" class="res-link">({{ r.sourceTitle }} → {{ r.targetTitle }})</span>
@@ -460,14 +506,15 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
             <!-- Command Help Inline -->
             <div v-if="showCommandHelp" class="console-help glass">
                 <button class="close-help" @click="showCommandHelp = false">×</button>
-                <h3>Knowledge Terminal Commands</h3>
+                <h3>Knowledge Terminal 知識圖譜終端機控制台</h3>
                 <ul>
-                    <li><code>/add point [title]</code> - Create a new concept node</li>
-                    <li><code>/add edge "[from]" "[to]" [label]</code> - Connect two nodes by title</li>
-                    <li><code>/search [query]</code> - Search for nodes and edges</li>
-                    <li><code>/list</code> - List recently active items</li>
-                    <li><code>/kg [name]</code> - Create or switch to a knowledge graph</li>
-                    <li><code>/help</code> - Toggle this manual</li>
+                    <li><code>/add point [標題]</code> - 建立一個新的知識點 (Concept Node)</li>
+                    <li><code>/add edge "[起點]" "[終點]" [標籤]</code> - 透過標題連結兩個點 (含空格標題請用雙引號)</li>
+                    <li><code>/search [關鍵字]</code> - 同時搜尋當前圖譜中的節點與連線</li>
+                    <li><code>/list [point/edge/kg]</code> - 分類列出所有節點、邊或是現有的知識宇宙 (KG)</li>
+                    <li><code>/kg [名稱]</code> - 切換至指定的知識宇宙，若名稱不存在則會建立新圖譜</li>
+                    <li><code>/pin</code> - 將目前的圖譜固定至 Desk 工作台，方便從其他畫面快速進入</li>
+                    <li><code>/help</code> - 切換顯示此專業說明手冊</li>
                 </ul>
             </div>
         </div>
@@ -486,6 +533,11 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
             <div class="tool-btn" @click="showExportPanel = !showExportPanel" :class="{ on: showExportPanel }">
                 <div class="t-icon">📸</div>
                 <div class="t-label">Photo</div>
+            </div>
+            <div class="t-sep"></div>
+            <div class="tool-btn" @click="pinToDesk">
+                <div class="t-icon">📌</div>
+                <div class="t-label">Pin Desk</div>
             </div>
             <div class="t-sep"></div>
             <div class="tool-btn" @click="exportGraphData"><div class="t-icon">📥</div><div class="t-label">Export</div></div>
@@ -615,6 +667,7 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
 .res-type { font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; font-weight: 900; }
 .res-type.node { background: rgba(34, 211, 238, 0.2); color: #22d3ee; }
 .res-type.edge { background: rgba(139, 92, 246, 0.2); color: #a78bfa; }
+.res-type.kg { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
 .res-kg { margin-left: auto; color: #475569; font-size: 0.7rem; }
 
 .console-help { position: absolute; top: 75px; left: 0; width: 100%; padding: 30px; z-index: 100; }
