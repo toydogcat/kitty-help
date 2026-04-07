@@ -335,7 +335,10 @@ func GetFileProxy(c *fiber.Ctx) error {
 	// SMART DETECT: If the fileID looks like a Telegram ID (long base64 string),
 	// or it contains 'AgAC' (common Telegram image prefix),
 	// we should treat this as a cloud backup and fetch from Telegram instead.
-	if (len(fileID) > 40 || strings.Contains(fileID, "AgAC")) && platform != "telegram" {
+	// CRITICAL: Must not redirect if it's already an absolute URL (Discord) or platform is specifically not telegram.
+	if platform == "" || platform == "unknown" { platform = "telegram" } // Default
+	
+	if !strings.HasPrefix(fileID, "http") && (len(fileID) > 40 || strings.Contains(fileID, "AgAC")) && platform != "telegram" && platform != "line" {
 		log.Printf("☁️ [Proxy] Redirecting %s request to Telegram Cloud Backup for ID: %s", platform, fileID)
 		platform = "telegram"
 	}
@@ -365,8 +368,12 @@ func GetFileProxy(c *fiber.Ctx) error {
 			contentType = content.ContentType
 	} else if platform == "discord" {
 		if !strings.HasPrefix(fileID, "http") { return c.Status(400).JSON(fiber.Map{"error": "Invalid Discord URL"}) }
-		resp, err := http.Get(fileID)
-		if err != nil { return c.Status(502).JSON(fiber.Map{"error": "Discord error"}) }
+		
+		req, _ := http.NewRequest("GET", fileID, nil)
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+		resp, err := http.DefaultClient.Do(req)
+		
+		if err != nil { return c.Status(502).JSON(fiber.Map{"error": "Discord error: " + err.Error()}) }
 		defer resp.Body.Close()
 		bodyBytes, _ = io.ReadAll(resp.Body)
 		contentType = resp.Header.Get("Content-Type")

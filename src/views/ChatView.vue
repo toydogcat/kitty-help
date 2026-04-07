@@ -526,7 +526,20 @@ const otherRemarks = computed(() => remarkContainers.value.filter(c => !c.isPinn
 .modal-card.wide-editor { width: 1000px; max-width: 95vw; background: var(--card-bg); border-radius: 32px; border: 1px solid rgba(var(--primary-rgb), 0.3); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,0.8), inset 0 0 100px rgba(var(--primary-rgb), 0.05); }
 .modal-card.is-full { width: 100vw; height: 100vh; border-radius: 0; }
 
-.editor-body { flex: 1; overflow-y: auto; padding: 3rem; display: flex; flex-direction: column; gap: 2.2rem; }
+.modal-header { padding: 1.2rem 3rem; display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); border-bottom: 1px solid rgba(255,255,255,0.05); }
+.modal-header h3 { margin: 0; font-size: 1.2rem; letter-spacing: 2px; color: var(--primary-color); opacity: 0.8; }
+
+.unified-controls { display: flex; align-items: center; gap: 0.8rem; }
+.mode-capsule { display: flex; background: rgba(0,0,0,0.4); padding: 4px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
+.mode-capsule button { background: none; border: none; color: #fff; padding: 6px 14px; border-radius: 9px; font-size: 0.75rem; font-weight: 800; cursor: pointer; opacity: 0.4; transition: all 0.2s; }
+.mode-capsule button.active { background: var(--primary-color); opacity: 1; box-shadow: 0 2px 8px rgba(var(--primary-rgb), 0.4); }
+
+.action-set { display: flex; background: rgba(255,255,255,0.05); padding: 4px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
+.action-item { background: none; border: none; color: #fff; width: 34px; height: 34px; border-radius: 9px; font-size: 1.1rem; cursor: pointer; opacity: 0.6; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
+.action-item:hover { background: rgba(255,255,255,0.1); opacity: 1; }
+.action-item.close:hover { background: #e74c3c; }
+
+.modal-body { flex: 1; overflow-y: auto; padding: 3rem; display: flex; flex-direction: column; gap: 2.2rem; }
 .form-group label { font-size: 0.75rem; font-weight: 900; text-transform: uppercase; color: var(--primary-color); opacity: 0.6; margin-bottom: 0.8rem; display: block; letter-spacing: 2px; }
 input, textarea { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 1.4rem; color: #fff; width: 100%; outline: none; transition: border-color 0.2s; font-size: 1.05rem; }
 input:focus, textarea:focus { border-color: var(--primary-color); }

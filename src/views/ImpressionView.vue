@@ -335,12 +335,6 @@ const resolveNodeByTitle = async (title: string) => {
 
 const pinToDesk = async () => {
     try {
-        const currentShelves = await apiService.getShelves();
-        let targetShelf = currentShelves.find((s: any) => s.name === 'Knowledge Universe');
-        if (!targetShelf) {
-            targetShelf = await apiService.createShelf({ name: 'Knowledge Universe' });
-        }
-        
         // 1. Create a bookmark first
         const bookmark = await apiService.addBookmark({
             title: `Universe: ${kgName.value}`,
@@ -348,15 +342,18 @@ const pinToDesk = async () => {
             category: 'Impression'
         });
 
-        // 2. Add that bookmark to the shelf
+        // 2. Add to Main Desktop (shelfId: null)
         await apiService.addDeskItem({
-            shelfId: targetShelf.id,
+            shelfId: null,
             refId: bookmark.id,
             type: 'bookmark'
         });
 
-        alert(`Successfully pinned '${kgName.value}' to Desk!`);
-    } catch (e) { alert('Pinning failed'); }
+        alert(`Successfully pinned '${kgName.value}' to Main Desktop!`);
+    } catch (e) { 
+        console.error(e);
+        alert('Pinning failed. It might already be pinned or there was a connection error.'); 
+    }
 };
 
 const executeCommand = async () => {
