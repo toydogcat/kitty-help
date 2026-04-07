@@ -306,29 +306,29 @@ const otherRemarks = computed(() => remarkContainers.value.filter(c => !c.isPinn
           
           <div class="modal-body custom-scrollbar">
             <div class="form-group">
-              <label>Category / Name</label>
-              <input v-model="remarkEditBuffer.title" placeholder="Group Name..." />
+              <label>Title / Category Name</label>
+              <input v-model="remarkEditBuffer.title" placeholder="e.g., My Project Notes" />
             </div>
 
             <div class="form-group fill">
-              <label>Notes & Summary (Markdown)</label>
+              <label>Notes & Summary (Markdown Supported)</label>
               <div v-if="remarkModalEditMode === 'preview'" class="md-preview-box" v-html="marked.parse(remarkEditBuffer.content || '')"></div>
-              <textarea v-else v-model="remarkEditBuffer.content" placeholder="Type summary here..."></textarea>
+              <textarea v-else v-model="remarkEditBuffer.content" placeholder="Paste or type details here..."></textarea>
             </div>
 
-            <!-- QUOTED ITEMS GRID (Simplified cards) -->
+            <!-- UNIFIED QUOTED ITEMS GRID -->
             <div class="quoted-section">
               <label class="section-label">📚 Quoted Items (引用項目)</label>
-              <div class="items-grid-lite">
-                <div v-for="item in (remarkModalDetails?.items || [])" :key="item.id" class="lite-card">
-                  <div class="lite-cap">
-                    <span>{{ item.log?.platform.toUpperCase() }}</span>
-                    <span>{{ item.log?.senderName }}</span>
+              <div class="quoted-items-grid">
+                <div v-for="item in (remarkModalDetails?.items || [])" :key="item.id" class="quoted-item-card">
+                  <div class="item-meta-top">
+                    <span class="p-slug">{{ item.log?.platform }}</span>
+                    <span class="p-user">{{ item.log?.senderName }}</span>
                   </div>
-                  <div v-if="item.log?.mediaId && (item.log?.msgType === 'image' || item.log?.content.includes('[Image]'))" class="lite-img" @click="zoomedImageUrl = getStorehouseUrl(item.log.mediaId, item.log.platform)">
+                  <div v-if="item.log?.mediaId && (item.log?.msgType === 'image' || item.log?.content.includes('[Image]'))" class="item-img-box" @click="zoomedImageUrl = getStorehouseUrl(item.log.mediaId, item.log.platform)">
                     <img :src="getStorehouseUrl(item.log.mediaId, item.log.platform)" />
                   </div>
-                  <div v-else class="lite-txt">
+                  <div v-else class="item-text-box">
                     <p>{{ item.log?.content }}</p>
                   </div>
                 </div>
@@ -461,13 +461,17 @@ textarea { height: 350px; resize: none; font-size: 1rem; }
 .md-preview-box { background: rgba(0,0,0,0.4); padding: 2rem; border-radius: 14px; border: 1px solid rgba(255,255,255,0.05); min-height: 350px; color: #eee; line-height: 1.7; }
 .md-preview-box :deep(h1) { color: var(--primary-color); border-bottom: 1px solid rgba(255,255,255,0.1); margin: 1.5rem 0 1rem; }
 
-/* Items grid in Modal */
-.items-grid-lite { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; margin-top: 1rem; }
-.lite-card { background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); overflow: hidden; }
-.lite-cap { background: rgba(0,0,0,0.2); padding: 0.6rem; display: flex; justify-content: space-between; font-size: 0.6rem; font-weight: 800; opacity: 0.5; }
-.lite-img { height: 140px; cursor: zoom-in; }
-.lite-img img { width: 100%; height: 100%; object-fit: cover; }
-.lite-txt { padding: 1rem; font-size: 0.9rem; color: #ccc; }
+/* UNIFIED QUOTED ITEMS GRID (Shared by Chat/Desk) */
+.quoted-items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.2rem; margin-top: 1.2rem; padding-bottom: 2rem; }
+.quoted-item-card { background: rgba(255,255,255,0.03); border-radius: 16px; border: 1px solid rgba(255,255,255,0.06); overflow: hidden; display: flex; flex-direction: column; transition: all 0.2s; }
+.quoted-item-card:hover { transform: scale(1.02); border-color: var(--primary-color); background: rgba(var(--primary-rgb), 0.05); }
+.item-meta-top { background: rgba(0,0,0,0.3); padding: 0.7rem 1rem; display: flex; justify-content: space-between; font-size: 0.65rem; font-weight: 800; align-items: center; }
+.p-slug { opacity: 0.5; letter-spacing: 1px; text-transform: uppercase; }
+.p-user { color: var(--primary-color); }
+.item-img-box { height: 180px; cursor: zoom-in; overflow: hidden; background: #000; }
+.item-img-box img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s; }
+.quoted-item-card:hover .item-img-box img { transform: scale(1.1); }
+.item-text-box { padding: 1.2rem; font-size: 0.95rem; color: #ddd; line-height: 1.6; max-height: 180px; overflow-y: auto; }
 
 .modal-footer { padding: 1.5rem 2.5rem; display: flex; justify-content: flex-end; gap: 1.2rem; background: rgba(0,0,0,0.2); }
 .save-btn { background: var(--primary-color); color: #fff; padding: 0.8rem 2.8rem; border-radius: 12px; font-weight: 800; cursor: pointer; border: none; }

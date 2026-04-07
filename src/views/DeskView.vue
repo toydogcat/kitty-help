@@ -355,29 +355,30 @@ const saveItemEdit = async () => {
             </div>
 
             <div class="field">
-              <label>Title</label>
-              <input v-model="editBuffer.title" placeholder="Item Name..." />
+              <label>Title / Category Name</label>
+              <input v-model="editBuffer.title" placeholder="e.g., Project Workspace" />
             </div>
 
             <div class="field fill">
-              <label>Notes / Description (Markdown Supported)</label>
+              <label>Notes & Summary (Markdown Supported)</label>
               <div v-if="editMode === 'preview'" class="md-preview-area" v-html="marked.parse(editBuffer.content || '')"></div>
-              <textarea v-else v-model="editBuffer.content" placeholder="Type something here..."></textarea>
+              <textarea v-else v-model="editBuffer.content" placeholder="Paste or type details here..."></textarea>
             </div>
 
+            <!-- UNIFIED QUOTED ITEMS GRID -->
             <div v-if="editingItem?.type === 'remark'" class="nested-remark-items">
               <label class="section-label">📚 Quoted Items (引用項目)</label>
               <div v-if="modalLoading" class="modal-item-loader"><span class="spinner"></span> Loading items...</div>
-              <div v-else class="nested-items-grid">
-                <div v-for="item in (remarkDetails?.items || [])" :key="item.id" class="nested-card">
-                  <div class="nested-cap">
-                    <span class="tag-p">{{ item.log?.platform }}</span>
-                    <span class="tag-s">{{ item.log?.senderName }}</span>
+              <div v-else class="quoted-items-grid">
+                <div v-for="item in (remarkDetails?.items || [])" :key="item.id" class="quoted-item-card">
+                  <div class="item-meta-top">
+                    <span class="p-slug">{{ item.log?.platform }}</span>
+                    <span class="p-user">{{ item.log?.senderName }}</span>
                   </div>
-                  <div v-if="item.log?.mediaId && (item.log?.msgType === 'image' || item.log?.content?.includes('[Image]'))" class="nested-img" @click="zoomedImageUrl = getStorehouseUrl(item.log.mediaId, item.log.platform)">
+                  <div v-if="item.log?.mediaId && (item.log?.msgType === 'image' || item.log?.content?.includes('[Image]'))" class="item-img-box" @click="zoomedImageUrl = getStorehouseUrl(item.log.mediaId, item.log.platform)">
                     <img :src="getStorehouseUrl(item.log.mediaId, item.log.platform)" />
                   </div>
-                  <div v-else class="nested-txt">
+                  <div v-else class="item-text-box">
                     <p>{{ item.log?.content }}</p>
                   </div>
                 </div>
@@ -463,6 +464,21 @@ const saveItemEdit = async () => {
 
 .global-zoom { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 4000; display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
 .global-zoom img { max-width: 90vw; max-height: 90vh; }
+
+/* UNIFIED QUOTED ITEMS GRID (Shared by Chat/Desk) */
+.nested-remark-items { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.05); }
+.section-label { font-size: 0.75rem; font-weight: 800; color: var(--primary-color); opacity: 0.6; letter-spacing: 1.5px; text-transform: uppercase; display: block; margin-bottom: 1rem; }
+
+.quoted-items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.2rem; margin-top: 1.2rem; padding-bottom: 2rem; }
+.quoted-item-card { background: rgba(255,255,255,0.03); border-radius: 16px; border: 1px solid rgba(255,255,255,0.06); overflow: hidden; display: flex; flex-direction: column; transition: all 0.2s; }
+.quoted-item-card:hover { transform: scale(1.02); border-color: var(--primary-color); background: rgba(var(--primary-rgb), 0.05); }
+.item-meta-top { background: rgba(0,0,0,0.3); padding: 0.7rem 1rem; display: flex; justify-content: space-between; font-size: 0.65rem; font-weight: 800; align-items: center; }
+.p-slug { opacity: 0.5; letter-spacing: 1px; text-transform: uppercase; }
+.p-user { color: var(--primary-color); }
+.item-img-box { height: 180px; cursor: zoom-in; overflow: hidden; background: #000; }
+.item-img-box img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s; }
+.quoted-item-card:hover .item-img-box img { transform: scale(1.1); }
+.item-text-box { padding: 1.2rem; font-size: 0.95rem; color: #ddd; line-height: 1.6; max-height: 180px; overflow-y: auto; }
 
 .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
