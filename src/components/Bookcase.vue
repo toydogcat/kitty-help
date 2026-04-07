@@ -76,8 +76,8 @@ const waitForLibs = () => {
     const check = () => {
       // @ts-ignore
       if (typeof ePub !== 'undefined' && typeof JSZip !== 'undefined') resolve(true);
-      else if (attempts > 30) reject(new Error("Core engines (EPub/JSZip) timeout. Check connection."));
-      else { attempts++; setTimeout(check, 200); }
+      else if (attempts > 40) reject(new Error("Core engines (EPub/JSZip) timeout."));
+      else { attempts++; setTimeout(check, 250); }
     };
     check();
   });
@@ -96,17 +96,15 @@ const initEpubReader = async () => {
     // @ts-ignore
     epubBook.value = ePub(buffer);
     epubRendition.value = epubBook.value.renderTo(epubViewerRef.value, { 
-       width: "100%", height: "100%", flow: "paginated", manager: "default"
+       width: "100%", height: "100%", flow: "paginated", manager: "continuous"
     });
     
-    // Resolve Sandbox Issues: Explicitly allow scripts for EpubJS frames
-    epubRendition.value.on("rendered", (_section: any, view: any) => {
-       const frame = view.iframe;
-       if (frame) {
-          frame.setAttribute("sandbox", "allow-same-origin allow-scripts");
-          // Re-trigger layout if frame was blocked
-          setTimeout(() => { if(epubRendition.value) epubRendition.value.resize(); }, 100);
-       }
+    epubRendition.value.on("attached", () => {
+       const frames = epubViewerRef.value?.querySelectorAll('iframe');
+       frames?.forEach(f => {
+          f.setAttribute("sandbox", "allow-same-origin allow-scripts");
+          f.removeAttribute("sandbox");
+       });
     });
 
     epubRendition.value.themes.register("dark", {
@@ -153,7 +151,7 @@ const saveCurrentNote = async () => {
 
 const deleteNote = async (id: string) => {
   if (id.startsWith('temp-')) { activeNote.value = null; return; }
-  if (!confirm('Eliminate data?')) return;
+  if (!confirm('Eliminate record?')) return;
   try {
     await apiService.removeBookNote(id);
     bookNotes.value = await apiService.getBookNotes(activeBook.value.id);
@@ -169,7 +167,7 @@ const removeBookStatus = async (id: string) => {
 
 const importBook = async (res: any) => {
   try {
-    await apiService.addBookToBookcase({ storeId: res.id, title: res.title || res.caption || 'Intel', category: res.mediaType?.toUpperCase() || 'VOLUME' });
+    await apiService.addBookToBookcase({ storeId: res.id, title: res.title || res.caption || 'Source', category: res.mediaType?.toUpperCase() || 'VOLUME' });
     showAddModal.value = false; fetchBookcase();
   } catch (e) { alert('Import error'); }
 };
@@ -215,7 +213,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
   <div class="bookcase-v2">
     <aside class="sidebar">
       <div class="sidebar-header">
-        <div class="search-wrap"><input v-model="searchTerm" placeholder="Filter Intel..." /></div>
+        <div class="search-wrap"><input v-model="searchTerm" placeholder="Filter Research..." /></div>
         <button @click="showAddModal = true" class="add-btn">+</button>
       </div>
 
@@ -291,11 +289,12 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
     </main>
     <main v-else class="empty-workspace">DEPLOY SYSTEM STANDBY.</main>
 
+    <!-- Modal Fix: Re-integrating intel repository -->
     <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
       <div class="modal">
         <header>INTEL REPOSITORY</header>
         <div class="m-content">
-          <input v-model="searchQuery" placeholder="Filter IDs..." @input="apiService.getAvailableBooks(searchQuery).then(r => availableResources = r)" />
+          <input v-model="searchQuery" placeholder="Filter sources..." @input="apiService.getAvailableBooks(searchQuery).then(r => availableResources = r)" />
           <div class="items">
             <div v-for="res in availableResources" :key="res.id" @click="importBook(res)"><span>[{{ res.mediaType }}]</span>{{ res.title || res.caption }}</div>
           </div>
@@ -314,9 +313,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 .add-btn { width: 34px; background: #d97706; border: none; color: #fff; border-radius: 4px; cursor: pointer; font-weight: bold; }
 .folder-list { flex: 1; overflow-y: auto; padding: 0.5rem; }
 .folder-header { padding: 0.75rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; border-radius: 6px; font-weight: 700; color: #e2e8f0; }
-.folder-name { font-size: 0.85rem; }
 .folder-header:hover { background: #11151a; }
-.fold-arrow { font-size: 0.6rem; width: 12px; opacity: 0.5; }
 .count { margin-left: auto; font-size: 0.7rem; color: #fbbf24; background: #fbbf2411; padding: 2px 6px; border-radius: 4px; }
 .book-item { padding: 0.65rem 0.65rem 0.65rem 1.5rem; display: flex; gap: 0.6rem; cursor: pointer; border-radius: 6px; margin-bottom: 2px; }
 .book-item.active { background: #d977061a; border: 1px solid #d9770633; color: #fff; }
@@ -331,8 +328,8 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 .preview-pane { flex: 1.4; position: relative; background: #121519; border-right: 1px solid #1a1e23; }
 .epub-reader { width:100%; height:100%; position:relative; }
 .epub-canvas { width:100%; height:100%; min-height: 500px; }
-.reader-controls { position: absolute; bottom: 2rem; left: 50%; transform: translateX(-50%); display: flex; gap: 1rem; z-index: 100; }
-.nav-btn { background: #d97706DD; backdrop-filter: blur(4px); color: #fff; border: 1px solid #fbbf2444; padding: 0.6rem 1.25rem; border-radius: 4px; cursor: pointer; font-size: 0.75rem; font-weight: 900; }
+.reader-controls { position: absolute; bottom: 1.5rem; left: 50%; transform: translateX(-50%); display: flex; gap: 0.75rem; z-index: 100; }
+.nav-btn { background: #d97706DD; backdrop-filter: blur(4px); color: #fff; border: 1px solid #fbbf2444; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.7rem; font-weight: 900; }
 .notes-pane { flex: 1; display: flex; flex-direction: column; background: #0a0c10; }
 .note-tabs { display: flex; padding: 0.6rem 1rem 0; border-bottom: 1px solid #1a1e23; overflow-x: auto; gap: 4px; }
 .note-tab { padding: 0.5rem 1.25rem; font-size: 0.8rem; background: #11151a; border-radius: 6px 6px 0 0; cursor: pointer; color: #666; }
@@ -344,11 +341,16 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 .ed-body { flex: 1; display: flex; overflow: hidden; }
 .ed-body textarea { flex: 1; background: transparent; border: none; padding: 1.5rem; color: #cbd5e1; font-family: monospace; font-size: 0.95rem; line-height: 1.7; resize: none; outline: none; border-right: 1px solid #1a1e23; }
 .markdown-body { flex: 1; padding: 1.5rem; overflow-y: auto; text-align: left; }
-.v-txt .markdown-body { display: none; }
-.v-md textarea { display: none; }
 .loader { position: absolute; top:0; left:0; width:100%; height:100%; background: #111; display: flex; align-items: center; justify-content: center; z-index: 50; }
 .spin { width: 32px; height: 32px; border: 3px solid #333; border-top-color: #d97706; border-radius: 50%; animation: rot 0.8s linear infinite; }
 @keyframes rot { to { transform: rotate(360deg); } }
 .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #000E; z-index: 2000; display: flex; align-items: center; justify-content: center; }
 .modal { background: #11151a; width: 440px; border-radius: 12px; border: 1px solid #222; overflow: hidden; }
+.modal header { padding: 1rem; background: #000; border-bottom: 1px solid #222; font-weight: 900; color: #fff; font-size: 0.8rem; letter-spacing: 1px; }
+.m-content { padding: 1.5rem; }
+.m-content input { width: 100%; padding: 0.75rem; background: #000; border: 1px solid #222; border-radius: 6px; color: #fff; margin-bottom: 1.5rem; }
+.items { max-height: 350px; overflow-y: auto; }
+.items div { padding: 0.75rem; border-bottom: 1px solid #1a1e23; cursor: pointer; font-size: 0.85rem; text-align: left; transition: all 0.2s; }
+.items div:hover { background: #d9770611; color: #fbbf24; }
+.items div span { color: #fbbf24; opacity: 0.5; margin-right: 0.5rem; font-size: 0.7rem; font-weight: bold; }
 </style>
