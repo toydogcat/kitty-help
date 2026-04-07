@@ -273,10 +273,6 @@ func UpdateBookFolder(c *fiber.Ctx) error {
 	}
 
 	_, err := database.LocalDB.Exec(context.Background(),
-		"UPDATE bookcase (folder, updated_at) VALUES ($1, now()) WHERE id = $2",
-		req.Folder, bookID)
-	// Wait, the SQL update syntax was wrong above. Let's fix.
-	_, err = database.LocalDB.Exec(context.Background(),
 		"UPDATE bookcase SET folder = $1, updated_at = now() WHERE id = $2",
 		req.Folder, bookID)
 	
