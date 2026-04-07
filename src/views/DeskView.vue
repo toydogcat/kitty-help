@@ -179,7 +179,6 @@ const openOriginal = async (item: any) => {
     return;
   }
   
-  // IMMEDIATELY OPEN MODAL
   editingItem.value = item;
   editBuffer.value = { 
     title: item.title, 
@@ -289,23 +288,42 @@ const saveItemEdit = async () => {
       </div>
     </div>
 
-    <!-- Shelves Area -->
+    <!-- Shelves Area (FIXED STYLING) -->
     <div class="shelves-rail shadow-lg">
       <div class="rail-header">
         <span class="rail-title">📚 My Shelves</span>
         <span class="rail-hint">Drag items below to store</span>
       </div>
-      <div class="shelves-container">
-        <div class="shelf-card desktop-link" :class="{ active: activeShelfId === null, 'drag-over': dragOverShelfId === 'desktop' }" @click="switchShelf(null)" @dragover.prevent="onDragOverShelf('desktop')" @dragleave="onDragOverShelf(null)" @drop="onDropOnShelf(null)">
+      <div class="shelves-container custom-scrollbar">
+        <!-- Main Desktop Entry -->
+        <div 
+          class="shelf-card desktop-link" 
+          :class="{ active: activeShelfId === null, 'drag-over': dragOverShelfId === 'desktop' }"
+          @click="switchShelf(null)"
+          @dragover.prevent="onDragOverShelf('desktop')"
+          @dragleave="onDragOverShelf(null)"
+          @drop="onDropOnShelf(null)"
+        >
           <span class="s-icon">{{ dragOverShelfId === 'desktop' ? '📥' : '🏠' }}</span>
           <span class="s-name">Desktop</span>
         </div>
-        <div v-for="s in shelves" :key="s.id" class="shelf-card" :class="{ active: activeShelfId === s.id, 'drag-over': dragOverShelfId === s.id }" @click="switchShelf(s.id)" @dragover.prevent="onDragOverShelf(s.id)" @dragleave="onDragOverShelf(null)" @drop="onDropOnShelf(s.id)">
+
+        <!-- Dynamic Shelves -->
+        <div 
+          v-for="s in shelves" 
+          :key="s.id"
+          class="shelf-card"
+          :class="{ active: activeShelfId === s.id, 'drag-over': dragOverShelfId === s.id }"
+          @click="switchShelf(s.id)"
+          @dragover.prevent="onDragOverShelf(s.id)"
+          @dragleave="onDragOverShelf(null)"
+          @drop="onDropOnShelf(s.id)"
+        >
           <div class="shelf-top">
             <span class="s-icon">{{ dragOverShelfId === s.id ? '📥' : '📁' }}</span>
             <div class="s-actions">
-              <button @click.stop="duplicateShelf(s.id)" class="s-dup">👯</button>
-              <button @click.stop="openRenameModal(s)" class="s-edit">✎</button>
+              <button @click.stop="duplicateShelf(s.id)" class="s-dup" title="Duplicate">👯</button>
+              <button @click.stop="openRenameModal(s)" class="s-edit" title="Rename">✎</button>
               <button @click.stop="deleteShelf(s.id)" class="s-del">×</button>
             </div>
           </div>
@@ -355,7 +373,6 @@ const saveItemEdit = async () => {
               <textarea v-else v-model="editBuffer.content" placeholder="Type something here..."></textarea>
             </div>
 
-            <!-- RENDER REMARK ITEMS -->
             <div v-if="editingItem?.type === 'remark'" class="nested-remark-items">
               <label class="section-label">📚 Quoted Items (引用項目)</label>
               <div v-if="modalLoading" class="modal-item-loader"><span class="spinner"></span> Loading items...</div>
@@ -385,7 +402,6 @@ const saveItemEdit = async () => {
         </div>
       </div>
 
-      <!-- Image Zoom -->
       <div v-if="zoomedImageUrl" class="global-zoom" @click="zoomedImageUrl = ''">
          <img :src="zoomedImageUrl" />
          <span class="close-zoom">✕</span>
@@ -412,13 +428,57 @@ const saveItemEdit = async () => {
 .tile-preview { width: 100%; height: 100px; border-radius: 12px; overflow: hidden; background: rgba(0,0,0,0.2); }
 .tile-preview img { width: 100%; height: 100%; object-fit: cover; }
 .tile-title { font-weight: 700; font-size: 0.9rem; text-align: center; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tile-meta { font-size: 0.7rem; opacity: 0.5; font-weight: 800; }
 
 .remove-btn { position: absolute; top: -5px; right: -5px; background: #e74c3c; border: none; border-radius: 50%; width: 22px; height: 22px; color: white; font-size: 0.8rem; cursor: pointer; opacity: 0; transition: opacity 0.2s; z-index: 10; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
 .desk-tile:hover .remove-btn { opacity: 1; }
 
+/* Fixed Shelves Rail Style */
+.shelves-rail {
+  background: rgba(var(--primary-rgb), 0.05);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  padding: 1.2rem;
+  border: 1px solid rgba(255,255,255,0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.rail-header { display: flex; justify-content: space-between; align-items: center; }
+.rail-title { font-weight: 800; font-size: 0.85rem; letter-spacing: 1px; color: var(--primary-color); }
+.rail-hint { font-size: 0.7rem; opacity: 0.4; }
+
+.shelves-container {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+.shelf-card {
+  min-width: 130px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+.shelf-card.active { background: var(--primary-color); border-color: transparent; box-shadow: 0 0 15px rgba(var(--primary-rgb), 0.3); }
+.shelf-card.drag-over { border-color: var(--primary-color); transform: scale(1.05); background: rgba(var(--primary-rgb), 0.1); }
+.shelf-card.desktop-link { flex-direction: row; justify-content: center; min-width: 110px; }
+
+.shelf-top { display: flex; justify-content: space-between; width: 100%; align-items: center; }
+.s-icon { font-size: 1.4rem; }
+.s-actions { opacity: 0; display: flex; gap: 4px; transition: opacity 0.2s; }
+.shelf-card:hover .s-actions { opacity: 1; }
+.s-actions button { background: rgba(0,0,0,0.3); border: none; border-radius: 4px; padding: 2px 4px; color: #fff; font-size: 0.75rem; cursor: pointer; }
+.s-name { font-weight: 700; font-size: 0.85rem; }
+
 /* Editor Modal Styles */
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 2001; }
 .editor-pane { background: var(--card-bg); width: 900px; max-width: 95vw; max-height: 90vh; border-radius: 24px; border: 1px solid rgba(var(--primary-rgb), 0.3); display: flex; flex-direction: column; overflow: hidden; }
 
 .editor-header { padding: 1.2rem 2rem; display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); border-bottom: 1px solid rgba(255,255,255,0.05); }
@@ -429,38 +489,23 @@ const saveItemEdit = async () => {
 .editor-body { flex: 1; overflow-y: auto; padding: 2.5rem; display: flex; flex-direction: column; gap: 2rem; }
 .field { display: flex; flex-direction: column; gap: 0.6rem; }
 .field input, .field textarea { background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 1.2rem; color: #eee; width: 100%; outline: none; font-size: 1rem; }
-.field input:focus, .field textarea:focus { border-color: var(--primary-color); }
 
 .md-preview-area { background: rgba(0,0,0,0.35); padding: 1.8rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); min-height: 250px; color: #eee; line-height: 1.7; font-size: 1.05rem; }
-.md-preview-area :deep(img) { max-width: 100%; border-radius: 8px; }
 .md-preview-area :deep(h1), .md-preview-area :deep(h2) { border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; margin: 1.5rem 0 1rem; color: var(--primary-color); }
-.md-preview-area :deep(code) { background: rgba(var(--primary-rgb), 0.2); padding: 2px 6px; border-radius: 4px; font-family: 'Fira Code', monospace; font-size: 0.9em; }
+.field textarea { height: 200px; resize: none; }
 
-.nested-remark-items { border-top: 1px solid rgba(255,255,255,0.08); padding-top: 2rem; }
 .nested-items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1.2rem; }
-.nested-card { background: rgba(255,255,255,0.03); border-radius: 14px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06); transition: transform 0.2s; }
-.nested-card:hover { transform: scale(1.02); border-color: var(--primary-color); }
+.nested-card { background: rgba(255,255,255,0.03); border-radius: 14px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06); }
 .nested-cap { padding: 0.8rem; display: flex; justify-content: space-between; font-size: 0.7rem; background: rgba(0,0,0,0.2); }
 .tag-p { color: var(--primary-color); font-weight: 800; text-transform: uppercase; }
-.tag-s { opacity: 0.6; }
-.nested-img { width: 100%; height: 160px; cursor: zoom-in; overflow: hidden; }
-.nested-img img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.3s; }
-.nested-img:hover img { transform: scale(1.1); }
-.nested-txt { padding: 1.2rem; font-size: 0.95rem; color: #ccc; line-height: 1.5; }
-
-.modal-item-loader { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 2rem; opacity: 0.6; }
-.spinner { width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.1); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
 
 .editor-footer { padding: 1.5rem 2.5rem; display: flex; justify-content: flex-end; gap: 1.2rem; background: rgba(0,0,0,0.2); border-top: 1px solid rgba(255,255,255,0.05); }
 .save-btn { background: var(--primary-color); color: #fff; padding: 0.8rem 2rem; border-radius: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s; }
-.save-btn:hover { filter: brightness(1.1); transform: translateY(-2px); }
+.close-x { background: none; border: none; color: #fff; font-size: 1.5rem; cursor: pointer; opacity: 0.5; }
 
 .global-zoom { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 3000; display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
-.global-zoom img { max-width: 90vw; max-height: 90vh; border-radius: 12px; box-shadow: 0 0 50px rgba(0,0,0,0.5); }
-.close-zoom { position: absolute; top: 30px; right: 30px; color: #fff; font-size: 2.5rem; }
+.global-zoom img { max-width: 90vw; max-height: 90vh; }
 
-.custom-scrollbar::-webkit-scrollbar { width: 8px; }
+.custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
-.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(var(--primary-rgb), 0.5); }
 </style>
