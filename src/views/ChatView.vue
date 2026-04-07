@@ -1,498 +1,449 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, computed } from 'vue';
-import { apiService } from '../services/api';
+import { ref, onMounted, computed, watch, nextTick } from 'vue';
+import { apiService, socket } from '../services/api';
+import { marked } from 'marked';
 
-const activePlatform = ref('remarks');
-const platforms = [
-  { id: 'telegram', name: 'Telegram', icon: '✈️' },
-  { id: 'discord', name: 'Discord', icon: '🎮' },
-  { id: 'line', name: 'Line', icon: '🟢' },
-  { id: 'remarks', name: 'Integrated', icon: '📚' }
-];
-
-const messages = ref<any[]>([]);
-const myStatus = ref({
-  telegram: false,
-  discord: false,
-  line: false
-});
+// ... (existing state)
+const recentMessages = ref<any[]>([]);
+const recentPhotos = ref<any[]>([]);
+const photoPage = ref(1);
+const totalPhotos = ref(0);
+const remarkContainers = ref<any[]>([]);
 const loading = ref(true);
 
-// Search Filters
-const searchQuery = ref('');
-const remarkSearchQuery = ref('');
-const startDate = ref('');
-const endDate = ref('');
+// Editor Toggle for Remarks in sidebar
+const remarkEditModes = ref<Record<string, 'preview' | 'edit'>>({});
 
-// Pagination
-const currentPage = ref(1);
-const pageSize = 20;
+// Global Editor for Remarks (Unified with Desk)
+const showRemarkModal = ref(false);
+const editingRemark = ref<any>(null);
+const remarkEditBuffer = ref({ title: '', content: '' });
+const remarkModalEditMode = ref<'preview' | 'edit'>('preview');
+const remarkModalFullScreen = ref(false);
+const savingRemark = ref(false);
+const remarkModalDetails = ref<any>(null); // For Quoted Items
+const zoomedImageUrl = ref('');
 
-// Zoom Overlay for Remarks
-const zoomedMediaUrl = ref('');
+// Drag & Drop
+const dragOverRemarkId = ref<string | null>(null);
 
-// Card Styling state
-const cardBackgrounds = [
-  'rgba(255, 255, 255, 0.05)', // Default
-  'linear-gradient(135deg, rgba(170, 59, 255, 0.2), rgba(170, 59, 255, 0.05))', // Purple
-  'linear-gradient(135deg, rgba(46, 204, 113, 0.2), rgba(46, 204, 113, 0.05))', // Green
-  'linear-gradient(135deg, rgba(52, 152, 219, 0.2), rgba(52, 152, 219, 0.05))', // Blue
-  'linear-gradient(135deg, rgba(241, 196, 15, 0.2), rgba(241, 196, 15, 0.05))', // Yellow
-  'linear-gradient(135deg, rgba(231, 76, 60, 0.2), rgba(231, 76, 60, 0.05))', // Red
-];
-
-// --- Integrated Remarks Logic ---
-const remarkContainers = ref<any[]>([]);
-const stagedItems = ref<any[]>([]);
-const deskItems = ref<any[]>([]); // To track which remarks are on desk
-
-const fetchMyStatus = async () => {
-  try {
-    const data = await apiService.getMyBotStatus();
-    myStatus.value = data;
-  } catch (err) {
-    console.error('Failed to fetch bot status:', err);
-  }
-};
-
-const fetchMessages = async () => {
-  if (activePlatform.value === 'remarks') {
-    await fetchRemarks();
-    return;
-  }
+const fetchData = async () => {
   loading.value = true;
   try {
-    const data = await apiService.getChatLogs(
-      activePlatform.value,
-      searchQuery.value,
-      startDate.value,
-      endDate.value
-    );
-    messages.value = data.map((m: any) => ({
-      ...m,
-      bgIndex: 0,
-      isZoomed: false
-    }));
-  } catch (err) {
-    console.error('Failed to fetch messages:', err);
-  } finally {
-    loading.value = false;
-  }
-};
-
-const fetchRemarks = async () => {
-  loading.value = true;
-  try {
-    const [remarksData, deskData] = await Promise.all([
-      apiService.getRemarks(),
-      apiService.getDeskItems('null') // Fetch desktop top-level items
+    const [msgData, photoData, remarkData] = await Promise.all([
+      apiService.getRecentMessages(),
+      apiService.getRecentPhotos(photoPage.value),
+      apiService.getRemarks()
     ]);
-    remarkContainers.value = remarksData.containers || [];
-    stagedItems.value = remarksData.staged || [];
-    deskItems.value = deskData || [];
+    recentMessages.value = msgData;
+    recentPhotos.value = photoData.photos || [];
+    totalPhotos.value = photoData.total || 0;
+    remarkContainers.value = remarkData.containers || [];
+    
+    // Init edit modes
+    remarkData.containers?.forEach((c: any) => {
+      if (!remarkEditModes.value[c.id]) {
+        remarkEditModes.value[c.id] = 'preview';
+      }
+    });
   } catch (err) {
-    console.error('Failed to fetch remarks:', err);
+    console.error("Fetch error:", err);
   } finally {
     loading.value = false;
   }
 };
 
-onMounted(async () => {
-  await fetchMyStatus();
-  await fetchMessages();
+onMounted(() => {
+  fetchData();
+  socket.on('messagesUpdate', fetchData);
 });
 
-watch([activePlatform, startDate, endDate], () => {
-  currentPage.value = 1;
-  fetchMessages();
-});
+const handleDragStart = (e: DragEvent, photo: any) => {
+  e.dataTransfer?.setData('application/json', JSON.stringify({ type: 'media', data: photo }));
+};
 
-// Debounce search
-let searchTimeout: any;
-watch([searchQuery, remarkSearchQuery], () => {
-  clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(() => {
-    if (activePlatform.value !== 'remarks') {
-      fetchMessages();
+const handleDragOver = (e: DragEvent, containerId: string) => {
+  e.preventDefault();
+  dragOverRemarkId.value = containerId;
+};
+
+const handleDropOnRemark = async (e: DragEvent, containerId: string) => {
+  e.preventDefault();
+  dragOverRemarkId.value = null;
+  const raw = e.dataTransfer?.getData('application/json');
+  if (!raw) return;
+  const payload = JSON.parse(raw);
+  
+  if (payload.type === 'media') {
+    try {
+      await apiService.addRemarkItem({
+        containerId: containerId,
+        logId: payload.data.id
+      });
+      await fetchData();
+    } catch (err) {
+      alert("Failed to add to remark");
     }
-  }, 500);
-});
-
-const getStorehouseUrl = (mediaId: string, platform?: string) => {
-  const p = platform || activePlatform.value;
-  return apiService.getStorehouseFileUrl(mediaId, p);
-};
-
-const formatDate = (dateStr: string) => {
-  const d = new Date(dateStr);
-  return d.toLocaleString();
-};
-
-const cycleBg = (m: any) => {
-  m.bgIndex = (m.bgIndex + 1) % cardBackgrounds.length;
-};
-
-const toggleZoom = (m: any) => {
-  m.isZoomed = !m.isZoomed;
-};
-
-const openRemarkZoom = (url: string) => {
-  zoomedMediaUrl.value = url;
-};
-
-const closeRemarkZoom = () => {
-  zoomedMediaUrl.value = '';
-};
-
-const toggleIntegrate = async (m: any) => {
-  try {
-    const res = await apiService.toggleIntegration(m.id);
-    m.isIntegrated = (res.status === 'added');
-  } catch (err) {
-    console.error('Integration toggle failed:', err);
   }
 };
 
-// --- Remarks Management Logic ---
 const createNewRemark = async () => {
-  const name = prompt('Enter Remark Group Name:');
-  if (name) {
-    await apiService.createRemark({ name });
-    await fetchRemarks();
+  const name = prompt("Enter Remark Group Name:");
+  if (!name) return;
+  try {
+    await apiService.createRemark({ name, content: "" });
+    await fetchData();
+  } catch (err) {
+    alert("Creation failed");
   }
 };
 
-const updateRemarkContent = async (container: any) => {
-  await apiService.updateRemark(container.id, { 
-    name: container.name, 
-    content: container.content,
-    isPinned: container.isPinned
-  });
-};
-
-const togglePin = async (container: any) => {
-  container.isPinned = !container.isPinned;
-  await updateRemarkContent(container);
-  await fetchRemarks(); // Re-fetch to sort
-};
-
-// Toggle Citation to Desk
-const isItemOnDesk = (containerId: string) => {
-  return deskItems.value.some(item => item.type === 'remark' && item.refId === containerId);
-};
-
-const toggleDeskPin = async (container: any) => {
-  const existing = deskItems.value.find(item => item.type === 'remark' && item.refId === container.id);
-  if (existing) {
-    await apiService.deleteDeskItem(existing.id);
-  } else {
-    await apiService.addDeskItem({
-      type: 'remark',
-      refId: container.id,
-      shelfId: null,
-      sortOrder: 0
-    });
+const togglePin = async (c: any) => {
+  try {
+    await apiService.updateRemark(c.id, { isPinned: !c.isPinned });
+    await fetchData();
+  } catch (err) {
+    alert("Pin toggle failed");
   }
-  await fetchRemarks(); // Refresh desk items state
-};
-
-const copyRemark = async (container: any) => {
-  await apiService.createRemark({ name: container.name + ' (Copy)', content: container.content });
-  await fetchRemarks();
 };
 
 const deleteRemark = async (id: string) => {
-  if (confirm('Delete this remark group?')) {
+  if (!confirm("Delete this group and all its links?")) return;
+  try {
     await apiService.deleteRemark(id);
-    await fetchRemarks();
+    await fetchData();
+  } catch (err) {
+    alert("Delete failed");
   }
 };
 
-const handleDragStart = (e: DragEvent, type: string, id: string) => {
-  e.dataTransfer?.setData('type', type);
-  e.dataTransfer?.setData('id', id);
-};
-
-const handleDropToContainer = async (e: DragEvent, containerId: string | null) => {
-  e.preventDefault();
-  const type = e.dataTransfer?.getData('type');
-  const id = e.dataTransfer?.getData('id');
-
-  if (type === 'item') {
-    await apiService.moveRemarkItem(id!, containerId);
-    await fetchRemarks();
+const addToDesk = async (c: any) => {
+  try {
+    await apiService.addDeskItem({ type: 'remark', refId: c.id, shelfId: null });
+    alert("Pinned to Desk! 📌");
+  } catch (err) {
+    console.error("Failed to pin to desk:", err);
   }
 };
 
-const removeItem = async (itemId: string) => {
-  await apiService.removeRemarkItem(itemId);
-  await fetchRemarks();
+const copyRemark = (c: any) => {
+  const text = (c.content || "") + "\n\n--- Items ---\n" + 
+               (c.items || []).map((i: any) => `[${i.log.platform}] ${i.log.senderName}: ${i.log.content}`).join("\n");
+  navigator.clipboard.writeText(text);
+  alert("Copied to clipboard!");
 };
 
-// Computed Filters
-const filteredRemarks = computed(() => {
-  if (!remarkSearchQuery.value) return remarkContainers.value;
-  const q = remarkSearchQuery.value.toLowerCase();
-  return remarkContainers.value.filter(c => 
-    c.name.toLowerCase().includes(q) || (c.content && c.content.toLowerCase().includes(q))
-  );
-});
+// MODAL LOGIC (Unified)
+const openRemarkModal = async (c: any) => {
+  editingRemark.value = c;
+  remarkEditBuffer.value = { title: c.name, content: c.content || '' };
+  remarkModalEditMode.value = 'preview';
+  remarkModalFullScreen.value = false;
+  showRemarkModal.value = true;
+  
+  // Reload details to ensure we have latest items
+  try {
+    const data = await apiService.getRemarks();
+    const container = data.containers?.find((x: any) => x.id === c.id);
+    remarkModalDetails.value = container || null;
+  } catch (err) {
+    console.error("Detail reload failed");
+  }
+};
 
-const pinnedRemarks = computed(() => filteredRemarks.value.filter(c => c.isPinned));
-const unpinnedRemarks = computed(() => filteredRemarks.value.filter(c => !c.isPinned));
+const saveRemarkEdit = async () => {
+  if (!editingRemark.value) return;
+  savingRemark.value = true;
+  try {
+    await apiService.updateRemark(editingRemark.value.id, {
+      name: remarkEditBuffer.value.title,
+      content: remarkEditBuffer.value.content
+    });
+    showRemarkModal.value = false;
+    await fetchData();
+  } catch (err) {
+    alert("Save failed");
+  } finally {
+    savingRemark.value = false;
+  }
+};
 
-const paginatedUnpinned = computed(() => {
-  const start = (currentPage.value - 1) * pageSize;
-  const end = start + pageSize;
-  return unpinnedRemarks.value.slice(start, end);
-});
+const getStorehouseUrl = (mediaId: string, platform?: string) => {
+  return apiService.getStorehouseFileUrl(mediaId, platform || 'line');
+};
 
-const totalPages = computed(() => Math.ceil(unpinnedRemarks.value.length / pageSize));
-
+const pinnedRemarks = computed(() => remarkContainers.value.filter(c => c.isPinned));
+const otherRemarks = computed(() => remarkContainers.value.filter(c => !c.isPinned));
 </script>
 
 <template>
   <div class="chat-view">
-    <header class="view-header">
-      <div class="header-content">
-        <h2>💬 Discovery & Knowledge</h2>
-        <p>Browse archives and integrate insights into permanent remarks.</p>
+    <!-- Center Panel: Recent Messages -->
+    <div class="center-panel">
+      <div class="panel-header">
+        <h2>💬 Unified Chat (Recent)</h2>
       </div>
-      
-      <div class="platform-tabs">
-        <button 
-          v-for="p in platforms" 
-          :key="p.id"
-          @click="activePlatform = p.id"
-          :class="['platform-btn', { active: activePlatform === p.id }]"
-        >
-          <span class="p-icon">{{ p.icon }}</span>
-          {{ p.name }}
-          <template v-if="p.id !== 'remarks'">
-            <span v-if="myStatus[p.id as keyof typeof myStatus]" class="status-dot linked" title="Linked"></span>
-            <span v-else class="status-dot unlinked" title="Not Linked"></span>
-          </template>
-        </button>
+      <div class="messages-list custom-scrollbar">
+         <div v-for="m in recentMessages" :key="m.id" class="msg-card" :class="m.platform">
+            <div class="msg-meta">
+              <span class="platform-tag">{{ m.platform }}</span>
+              <span class="sender">{{ m.senderName }}</span>
+              <span class="time">{{ new Date(m.timestamp).toLocaleTimeString() }}</span>
+            </div>
+            <div class="msg-content">{{ m.content }}</div>
+         </div>
       </div>
-    </header>
-
-    <div class="search-toolbar card">
-      <template v-if="activePlatform !== 'remarks'">
-        <div class="search-input-group">
-          <span class="search-icon">🔍</span>
-          <input v-model="searchQuery" type="text" placeholder="Search messages..." class="text-input" />
-        </div>
-        <div class="date-filters">
-           <div class="date-field"><label>From</label><input v-model="startDate" type="date" /></div>
-           <div class="date-field"><label>To</label><input v-model="endDate" type="date" /></div>
-           <button @click="searchQuery = ''; startDate = ''; endDate = '';" class="clear-btn">🧹</button>
-        </div>
-      </template>
-      <template v-else>
-        <div class="search-input-group">
-          <span class="search-icon">🔍</span>
-          <input v-model="remarkSearchQuery" type="text" placeholder="Search within remarks..." class="text-input" />
-        </div>
-        <button @click="createNewRemark" class="primary-btn-mini">+ New Group</button>
-      </template>
     </div>
 
-    <div class="chat-container">
-      <template v-if="activePlatform !== 'remarks'">
-        <div v-if="loading" class="chat-loading"><div class="spinner"></div><p>Scanning archives...</p></div>
-        <div v-else-if="messages.length === 0" class="empty-chat"><p>No messages found.</p></div>
-        <div v-else class="message-feed grid-layout">
-          <div v-for="m in messages" :key="m.id" class="message-card" :style="{ background: cardBackgrounds[m.bgIndex] }">
-            <div class="card-controls">
-              <button @click="toggleIntegrate(m)" class="control-btn" :class="{ integrated: m.isIntegrated }">{{ m.isIntegrated ? '🌟' : '📁' }}</button>
-              <button @click="cycleBg(m)" class="control-btn">🎨</button>
+    <!-- Right Panel: Remarks & Photos -->
+    <div class="right-panel">
+      <!-- Photos Bucket (Drag source) -->
+      <div class="photos-bucket">
+        <h3>🖼️ Recent Photos <span class="badge">{{ totalPhotos }}</span></h3>
+        <div class="photos-grid custom-scrollbar">
+          <div v-for="p in recentPhotos" :key="p.id" class="photo-item" draggable="true" @dragstart="handleDragStart($event, p)">
+            <img :src="getStorehouseUrl(p.mediaId, p.platform)" loading="lazy" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Remarks Section -->
+      <div class="remarks-section">
+        <div class="section-header">
+           <h3>📚 Integrated Remarks</h3>
+           <button @click="createNewRemark" class="new-remark-btn">+ New Group</button>
+        </div>
+
+        <div class="remarks-list custom-scrollbar">
+          <!-- Pinned Section -->
+          <div v-if="pinnedRemarks.length > 0" class="remark-group-label">✨ Pinned (釘選)</div>
+          <div 
+            v-for="c in pinnedRemarks" :key="c.id" 
+            class="remark-item-card"
+            :class="{ 'drag-over': dragOverRemarkId === c.id }"
+            @dragover="handleDragOver($event, c.id)" @dragleave="dragOverRemarkId = null" @drop="handleDropOnRemark($event, c.id)"
+          >
+            <div class="remark-card-header">
+               <span class="remark-title" @click="openRemarkModal(c)">{{ c.name }}</span>
+               <div class="remark-actions">
+                  <button @click="togglePin(c)" class="act-btn">{{ c.isPinned ? '⭐' : '☆' }}</button>
+                  <button @click="addToDesk(c)" class="act-btn">📌</button>
+                  <button @click="copyRemark(c)" class="act-btn">📋</button>
+                  <button @click="deleteRemark(c.id)" class="act-btn del">🗑️</button>
+               </div>
             </div>
-            <div class="msg-header">
-              <span class="sender">{{ m.senderName }}</span>
-              <span class="time">{{ formatDate(m.createdAt) }}</span>
+            <!-- SIDEBAR REMARK CONTENT: Default to MD, with txt toggle -->
+            <div class="remark-card-body">
+               <div class="body-header">
+                  <span class="label">Content</span>
+                  <div class="mini-mode-switch">
+                    <button :class="{ active: remarkEditModes[c.id] === 'preview' }" @click="remarkEditModes[c.id] = 'preview'">MD</button>
+                    <button :class="{ active: remarkEditModes[c.id] === 'edit' }" @click="remarkEditModes[c.id] = 'edit'">TXT</button>
+                  </div>
+               </div>
+               <div v-if="remarkEditModes[c.id] === 'preview'" class="sidebar-md-box" v-html="marked.parse(c.content || 'No description.')"></div>
+               <div v-else class="sidebar-txt-box">{{ c.content || 'Empty...' }}</div>
+               <div class="items-count" @click="openRemarkModal(c)">🔗 {{ c.items?.length || 0 }} items linked</div>
             </div>
-            <div class="msg-content">
-              <template v-if="m.mediaId && (m.msgType === 'image' || m.content.includes('[Image]'))">
-                <div class="media-container" :class="{ zoomed: m.isZoomed }" @click="toggleZoom(m)">
-                  <img :src="getStorehouseUrl(m.mediaId)" loading="lazy" />
-                  <div v-if="!m.isZoomed" class="zoom-hint">🔍 Expand</div>
-                </div>
-              </template>
-              <p v-else class="text-content">{{ m.content }}</p>
+          </div>
+
+          <!-- Other Section -->
+          <div v-if="otherRemarks.length > 0" class="remark-group-label">All Remarks</div>
+          <div 
+            v-for="c in otherRemarks" :key="c.id" 
+            class="remark-item-card"
+            :class="{ 'drag-over': dragOverRemarkId === c.id }"
+            @dragover="handleDragOver($event, c.id)" @dragleave="dragOverRemarkId = null" @drop="handleDropOnRemark($event, c.id)"
+          >
+            <div class="remark-card-header">
+               <span class="remark-title" @click="openRemarkModal(c)">{{ c.name }}</span>
+               <div class="remark-actions">
+                  <button @click="togglePin(c)" class="act-btn">☆</button>
+                  <button @click="addToDesk(c)" class="act-btn">📌</button>
+                  <button @click="copyRemark(c)" class="act-btn">📋</button>
+                  <button @click="deleteRemark(c.id)" class="act-btn del">🗑️</button>
+               </div>
+            </div>
+            <div class="remark-card-body">
+               <div class="body-header">
+                  <span class="label">Content</span>
+                  <div class="mini-mode-switch">
+                    <button :class="{ active: remarkEditModes[c.id] === 'preview' }" @click="remarkEditModes[c.id] = 'preview'">MD</button>
+                    <button :class="{ active: remarkEditModes[c.id] === 'edit' }" @click="remarkEditModes[c.id] = 'edit'">TXT</button>
+                  </div>
+               </div>
+               <div v-if="remarkEditModes[c.id] === 'preview'" class="sidebar-md-box" v-html="marked.parse(c.content || '')"></div>
+               <div v-else class="sidebar-txt-box">{{ c.content || 'Empty...' }}</div>
+               <div class="items-count" @click="openRemarkModal(c)">🔗 {{ c.items?.length || 0 }} items linked</div>
             </div>
           </div>
         </div>
-      </template>
+      </div>
+    </div>
 
-      <!-- 2. Integrated Remarks View -->
-      <template v-else>
-        <div class="remarks-view">
-          <div class="staging-section card" @dragover.prevent @drop="handleDropToContainer($event, null)">
-            <div class="section-header">
-              <h3>📥 Staging Area (暫存區)</h3>
-              <p>Drag items here to unassign or click to remove.</p>
+    <!-- UNIFIED REMARK EDITOR MODAL (Same as Desk) -->
+    <Teleport to="body">
+      <div v-if="showRemarkModal" class="modal-overlay remark-editor-overlay" @click.self="showRemarkModal = false">
+        <div class="modal-card wide-editor" :class="{ 'is-full': remarkModalFullScreen }">
+          <div class="modal-header">
+            <h3>📖 REMARK EDITOR</h3>
+            <div class="unified-controls">
+               <div class="mode-capsule">
+                  <button :class="{ active: remarkModalEditMode === 'preview' }" @click="remarkModalEditMode = 'preview'">MD PREVIEW</button>
+                  <button :class="{ active: remarkModalEditMode === 'edit' }" @click="remarkModalEditMode = 'edit'">TXT / EDIT</button>
+               </div>
+               <div class="action-set">
+                  <button @click="remarkModalFullScreen = !remarkModalFullScreen" class="action-item">
+                    {{ remarkModalFullScreen ? '❐' : '⛶' }}
+                  </button>
+                  <button @click="showRemarkModal = false" class="action-item close">✕</button>
+               </div>
             </div>
-            <div class="staged-grid">
-              <div v-for="item in stagedItems" :key="item.id" class="staged-card" draggable="true" @dragstart="handleDragStart($event, 'item', item.id)">
-                <div class="staged-content">
-                  <header class="mini-tag-line">
-                    <span class="platform-indicator">{{ item.log.platform }}</span>
-                    <button @click="removeItem(item.id)" class="remove-item">✕</button>
-                  </header>
-                  <div v-if="item.log?.mediaId && (item.log?.msgType === 'image' || item.log?.content.includes('[Image]'))" class="staged-thumb" @click="openRemarkZoom(getStorehouseUrl(item.log.mediaId, item.log.platform))">
+          </div>
+          
+          <div class="modal-body custom-scrollbar">
+            <div class="form-group">
+              <label>Category / Name</label>
+              <input v-model="remarkEditBuffer.title" placeholder="Group Name..." />
+            </div>
+
+            <div class="form-group fill">
+              <label>Notes & Summary (Markdown)</label>
+              <div v-if="remarkModalEditMode === 'preview'" class="md-preview-box" v-html="marked.parse(remarkEditBuffer.content || '')"></div>
+              <textarea v-else v-model="remarkEditBuffer.content" placeholder="Type summary here..."></textarea>
+            </div>
+
+            <!-- QUOTED ITEMS GRID (Simplified cards) -->
+            <div class="quoted-section">
+              <label class="section-label">📚 Quoted Items (引用項目)</label>
+              <div class="items-grid-lite">
+                <div v-for="item in (remarkModalDetails?.items || [])" :key="item.id" class="lite-card">
+                  <div class="lite-cap">
+                    <span>{{ item.log?.platform.toUpperCase() }}</span>
+                    <span>{{ item.log?.senderName }}</span>
+                  </div>
+                  <div v-if="item.log?.mediaId && (item.log?.msgType === 'image' || item.log?.content.includes('[Image]'))" class="lite-img" @click="zoomedImageUrl = getStorehouseUrl(item.log.mediaId, item.log.platform)">
                     <img :src="getStorehouseUrl(item.log.mediaId, item.log.platform)" />
                   </div>
-                  <p v-else>{{ item.log.content.substring(0, 100) }}</p>
-                </div>
-              </div>
-              <div v-if="(stagedItems || []).length === 0" class="empty-staged">No items staged.</div>
-            </div>
-          </div>
-
-          <!-- PINNED SECTION -->
-          <div v-if="pinnedRemarks.length > 0" class="pinned-section">
-            <h3 class="section-title">✨ Pinned (釘選)</h3>
-            <div class="remark-grid">
-              <div v-for="c in pinnedRemarks" :key="c.id" class="remark-container card pinned" @dragover.prevent @drop="handleDropToContainer($event, c.id)">
-                <div class="container-header">
-                  <input v-model="c.name" @blur="updateRemarkContent(c)" class="title-input" />
-                  <div class="container-actions">
-                    <!-- Internal Pin uses Star -->
-                    <button @click="togglePin(c)" title="Pin/Unpin internally" class="pin-btn active">⭐</button>
-                    <!-- Desk Pin uses Pushpin -->
-                    <button @click="toggleDeskPin(c)" :title="isItemOnDesk(c.id) ? 'Remove from Desk' : 'Pin to Desk'" class="desk-pin-btn" :class="{ onDesk: isItemOnDesk(c.id) }">📌</button>
-                    <button @click="copyRemark(c)" title="Copy Group">📋</button>
-                    <button @click="deleteRemark(c.id)" title="Delete">🗑️</button>
+                  <div v-else class="lite-txt">
+                    <p>{{ item.log?.content }}</p>
                   </div>
-                </div>
-                <div class="container-items custom-scrollbar">
-                  <div v-for="item in (c.items || [])" :key="item.id" class="mini-item-card" draggable="true" @dragstart="handleDragStart($event, 'item', item.id)">
-                    <div class="mini-item-content">
-                       <div v-if="item.log?.mediaId && (item.log?.msgType === 'image' || item.log?.content.includes('[Image]'))" class="mini-thumb" @click="openRemarkZoom(getStorehouseUrl(item.log.mediaId, item.log.platform))">
-                          <img :src="getStorehouseUrl(item.log.mediaId, item.log.platform)" loading="lazy" />
-                       </div>
-                       <p v-else>{{ item.log?.content ? (item.log.content.substring(0, 80)) : 'No Content' }}</p>
-                    </div>
-                    <button @click="removeItem(item.id)" class="mini-remove">✕</button>
-                  </div>
-                  <div v-if="!(c.items && c.items.length > 0)" class="drop-hint">Drop items here</div>
-                </div>
-                <div class="container-footer">
-                  <label>Notes & Summary</label>
-                  <textarea v-model="c.content" @blur="updateRemarkContent(c)" placeholder="Summary..."></textarea>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- ALL REMARKS -->
-          <div class="all-remarks-section">
-            <h3 class="section-title">📚 All Remarks (共 {{ unpinnedRemarks.length }} 個)</h3>
-            <div class="remark-grid">
-              <div v-for="c in paginatedUnpinned" :key="c.id" class="remark-container card" @dragover.prevent @drop="handleDropToContainer($event, c.id)">
-                <div class="container-header">
-                   <input v-model="c.name" @blur="updateRemarkContent(c)" class="title-input" />
-                   <div class="container-actions">
-                     <!-- Internal Pin uses Star -->
-                     <button @click="togglePin(c)" title="Pin/Unpin internally" class="pin-btn">⭐</button>
-                     <!-- Desk Pin uses Pushpin -->
-                     <button @click="toggleDeskPin(c)" :title="isItemOnDesk(c.id) ? 'Remove from Desk' : 'Pin to Desk'" class="desk-pin-btn" :class="{ onDesk: isItemOnDesk(c.id) }">📌</button>
-                     <button @click="copyRemark(c)" title="Copy Group">📋</button>
-                     <button @click="deleteRemark(c.id)" title="Delete">🗑️</button>
-                   </div>
-                </div>
-                <div class="container-items custom-scrollbar">
-                  <div v-for="item in (c.items || [])" :key="item.id" class="mini-item-card" draggable="true" @dragstart="handleDragStart($event, 'item', item.id)">
-                    <div class="mini-item-content">
-                       <div v-if="item.log?.mediaId && (item.log?.msgType === 'image' || item.log?.content.includes('[Image]'))" class="mini-thumb" @click="openRemarkZoom(getStorehouseUrl(item.log.mediaId, item.log.platform))">
-                          <img :src="getStorehouseUrl(item.log.mediaId, item.log.platform)" loading="lazy" />
-                       </div>
-                       <p v-else>{{ item.log?.content }}</p>
-                    </div>
-                    <button @click="removeItem(item.id)" class="mini-remove">✕</button>
-                  </div>
-                  <div v-if="!(c.items && c.items.length > 0)" class="drop-hint">Drop items here</div>
-                </div>
-                <div class="container-footer">
-                   <label>Notes & Summary</label>
-                  <textarea v-model="c.content" @blur="updateRemarkContent(c)" placeholder="Summary..."></textarea>
-                </div>
-              </div>
-            </div>
-            <div v-if="totalPages > 1" class="pagination-footer card">
-              <button :disabled="currentPage === 1" @click="currentPage--">Previous</button>
-              <span>Page {{ currentPage }} of {{ totalPages }}</span>
-              <button :disabled="currentPage === totalPages" @click="currentPage++">Next</button>
-            </div>
+          <div class="modal-footer">
+            <button @click="showRemarkModal = false" class="cancel-btn">Discard</button>
+            <button @click="saveRemarkEdit" class="save-btn" :disabled="savingRemark">
+              {{ savingRemark ? 'Saving...' : '✅ Save Changes' }}
+            </button>
           </div>
         </div>
-      </template>
-    </div>
-
-    <Transition name="fade">
-      <div v-if="messages.some(m => m.isZoomed) || zoomedMediaUrl" class="zoom-overlay" @click="messages.forEach(m => m.isZoomed = false); closeRemarkZoom()">
-        <template v-if="zoomedMediaUrl"><img :src="zoomedMediaUrl" class="zoomed-image-remark" /></template>
-        <span class="close-overlay">✕</span>
       </div>
-    </Transition>
+
+      <div v-if="zoomedImageUrl" class="global-zoom" @click="zoomedImageUrl = ''">
+         <img :src="zoomedImageUrl" />
+         <span class="close-zoom">✕</span>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <style scoped>
-.chat-view { display: flex; flex-direction: column; gap: 1.2rem; max-width: 1600px; margin: 0 auto; padding: 1rem; }
-.view-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid rgba(var(--primary-rgb), 0.2); padding-bottom: 1.5rem; }
-.platform-tabs { display: flex; gap: 0.8rem; }
-.platform-btn { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1.2rem; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-color); border-radius: 20px; color: var(--text-color); cursor: pointer; font-weight: 600; }
-.platform-btn.active { background: var(--primary-color); color: white; box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3); }
+.chat-view { display: flex; height: calc(100vh - 100px); gap: 1rem; padding: 1rem; }
+.center-panel { flex: 1; background: rgba(0,0,0,0.2); border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; }
+.right-panel { width: 450px; display: flex; flex-direction: column; gap: 1rem; }
 
-.search-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 1.5rem; padding: 0.8rem 1.5rem; background: rgba(var(--primary-rgb), 0.03); backdrop-filter: blur(10px); }
-.search-input-group { flex: 1; display: flex; align-items: center; gap: 0.8rem; background: rgba(0,0,0,0.2); padding: 0.6rem 1rem; border-radius: 10px; border: 1px solid var(--border-color); }
-.search-input-group input { background: transparent; border: none; color: white; width: 100%; outline: none; }
+/* Photos Bucket */
+.photos-bucket { height: 280px; background: rgba(255,255,255,0.03); border-radius: 20px; padding: 1.2rem; display: flex; flex-direction: column; }
+.photos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; overflow-y: auto; flex: 1; padding-top: 10px; }
+.photo-item { border-radius: 8px; overflow: hidden; aspect-ratio: 1; cursor: grab; background: rgba(0,0,0,0.2); transition: transform 0.2s; }
+.photo-item:hover { transform: scale(1.05); }
+.photo-item img { width: 100%; height: 100%; object-fit: cover; }
 
-.grid-layout { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem; padding: 1rem 0; }
-.message-card { position: relative; display: flex; flex-direction: column; padding: 1.2rem; border-radius: 16px; border: 1px solid var(--border-color); background: rgba(255,255,255,0.05); }
+/* Remarks Section */
+.remarks-section { flex: 1; min-height: 0; background: rgba(255,255,255,0.03); border-radius: 20px; padding: 1.5rem; display: flex; flex-direction: column; }
+.remarks-list { flex: 1; overflow-y: auto; padding-right: 8px; display: flex; flex-direction: column; gap: 1.2rem; margin-top: 1rem; }
 
-.media-container { cursor: zoom-in; margin-top: 0.5rem; border-radius: 12px; overflow: hidden; max-height: 200px; position: relative; }
-.media-container img { width: 100%; height: 100%; object-fit: cover; }
+.remark-group-label { font-size: 0.75rem; font-weight: 800; opacity: 0.5; letter-spacing: 1px; color: var(--primary-color); }
 
-.remarks-view { display: flex; flex-direction: column; gap: 2rem; }
-.staging-section { padding: 1.5rem; background: rgba(var(--primary-rgb), 0.05); min-height: 150px; }
-.staged-grid { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 1rem; }
-.staged-card { background: rgba(255,255,255,0.07); padding: 0.8rem; border-radius: 12px; width: 280px; border: 1px dashed var(--border-color); }
-.staged-thumb { width: 100%; height: 120px; border-radius: 8px; overflow: hidden; cursor: zoom-in; margin-bottom: 5px; }
-.staged-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.remark-item-card { 
+  background: rgba(255,255,255,0.04); 
+  border: 1px solid rgba(255,255,255,0.08); 
+  border-radius: 16px; 
+  padding: 1.2rem; 
+  transition: all 0.3s; 
+  position: relative;
+}
+.remark-item-card.drag-over { 
+  background: rgba(var(--primary-rgb), 0.1); 
+  border-color: var(--primary-color); 
+  box-shadow: 0 0 20px rgba(var(--primary-rgb), 0.4); 
+  transform: scale(1.02);
+}
 
-.remark-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 1.5rem; }
-.remark-container { display: flex; flex-direction: column; background: rgba(255,255,255,0.03); padding: 1.5rem; border: 1px solid var(--border-color); border-radius: 16px; min-height: 520px; max-height: 600px; }
-.remark-container.pinned { border-color: rgba(241, 196, 15, 0.5); background: linear-gradient(135deg, rgba(241, 196, 15, 0.08), rgba(241, 196, 15, 0.02)); }
+.remark-card-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.8rem; }
+.remark-title { font-weight: 800; font-size: 1.05rem; color: #fff; cursor: pointer; }
+.remark-title:hover { color: var(--primary-color); }
 
-.container-actions { display: flex; gap: 5px; }
-.pin-btn, .desk-pin-btn { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 2px 6px; cursor: pointer; transition: all 0.2s; }
-.pin-btn:hover, .desk-pin-btn:hover { background: rgba(255,255,255,0.15); border-color: var(--primary-color); }
-.pin-btn.active { background: rgba(241, 196, 15, 0.2); border-color: #f1c40f; }
-.desk-pin-btn.onDesk { background: rgba(var(--primary-rgb), 0.2); border-color: var(--primary-color); }
+.remark-actions { display: flex; gap: 4px; }
+.act-btn { background: rgba(255,255,255,0.05); border: none; border-radius: 6px; width: 28px; height: 28px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+.act-btn:hover { background: rgba(255,255,255,0.15); transform: translateY(-2px); }
+.act-btn.del:hover { background: #e74c3c; color: white; }
 
-.container-items { flex: 1; overflow-y: auto; background: rgba(0,0,0,0.1); padding: 1rem; border-radius: 12px; margin: 1rem 0; border: 1px solid rgba(255,255,255,0.05); }
-.mini-item-card { background: rgba(255,255,255,0.05); padding: 0.8rem; border-radius: 8px; margin-bottom: 0.8rem; position: relative; }
-.mini-thumb { width: 100%; height: 100px; border-radius: 6px; overflow: hidden; cursor: zoom-in; margin-top: 5px; }
-.mini-thumb img { width: 100%; height: 100%; object-fit: cover; }
+/* Sidebar MD Box */
+.remark-card-body { background: rgba(0,0,0,0.2); border-radius: 12px; padding: 1rem; border: 1px solid rgba(255,255,255,0.03); }
+.body-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.body-header .label { font-size: 0.65rem; opacity: 0.5; font-weight: 800; }
+
+.mini-mode-switch { display: flex; gap: 2px; background: rgba(255,255,255,0.05); padding: 2px; border-radius: 6px; }
+.mini-mode-switch button { background: none; border: none; font-size: 0.6rem; color: #fff; padding: 2px 6px; border-radius: 4px; cursor: pointer; opacity: 0.5; }
+.mini-mode-switch button.active { background: var(--primary-color); opacity: 1; }
+
+.sidebar-md-box { font-size: 0.9rem; color: #ccc; line-height: 1.6; max-height: 150px; overflow: hidden; }
+.sidebar-md-box :deep(h1), .sidebar-md-box :deep(h2) { font-size: 1rem; margin: 0.5rem 0; }
+.sidebar-txt-box { font-size: 0.9rem; opacity: 0.7; color: #eee; }
+
+.items-count { margin-top: 10px; font-size: 0.7rem; font-weight: 800; color: var(--primary-color); cursor: pointer; opacity: 0.7; }
+.items-count:hover { opacity: 1; text-decoration: underline; }
+
+/* Unified Editor Styles (Same as Desk) */
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; z-index: 3001; }
+.modal-card.wide-editor { width: 950px; max-width: 95vw; background: var(--card-bg); border-radius: 28px; border: 1px solid rgba(var(--primary-rgb), 0.3); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 60px rgba(0,0,0,0.6); }
+.modal-card.is-full { width: 100vw; height: 100vh; border-radius: 0; }
+
+.unified-controls { display: flex; gap: 0.8rem; align-items: center; }
+.mode-capsule { display: flex; background: rgba(0,0,0,0.4); padding: 4px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
+.mode-capsule button { background: none; border: none; color: #fff; padding: 6px 14px; border-radius: 9px; font-size: 0.75rem; font-weight: 800; cursor: pointer; opacity: 0.4; }
+.mode-capsule button.active { background: var(--primary-color); opacity: 1; }
+.action-set { display: flex; background: rgba(255,255,255,0.05); padding: 4px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
+.action-item { background: none; border: none; color: #fff; width: 34px; height: 34px; border-radius: 9px; font-size: 1rem; cursor: pointer; opacity: 0.6; display: flex; align-items: center; justify-content: center; }
+.action-item:hover { background: rgba(255,255,255,0.1); opacity: 1; }
+.action-item.close:hover { background: #e74c3c; }
+
+.editor-body { flex: 1; overflow-y: auto; padding: 2.5rem; display: flex; flex-direction: column; gap: 1.8rem; }
+.form-group.fill { flex: 1; }
+input, textarea { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 14px; padding: 1.2rem; color: #fff; width: 100%; outline: none; }
+textarea { height: 350px; resize: none; font-size: 1rem; }
+
+.md-preview-box { background: rgba(0,0,0,0.4); padding: 2rem; border-radius: 14px; border: 1px solid rgba(255,255,255,0.05); min-height: 350px; color: #eee; line-height: 1.7; }
+.md-preview-box :deep(h1) { color: var(--primary-color); border-bottom: 1px solid rgba(255,255,255,0.1); margin: 1.5rem 0 1rem; }
+
+/* Items grid in Modal */
+.items-grid-lite { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; margin-top: 1rem; }
+.lite-card { background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); overflow: hidden; }
+.lite-cap { background: rgba(0,0,0,0.2); padding: 0.6rem; display: flex; justify-content: space-between; font-size: 0.6rem; font-weight: 800; opacity: 0.5; }
+.lite-img { height: 140px; cursor: zoom-in; }
+.lite-img img { width: 100%; height: 100%; object-fit: cover; }
+.lite-txt { padding: 1rem; font-size: 0.9rem; color: #ccc; }
+
+.modal-footer { padding: 1.5rem 2.5rem; display: flex; justify-content: flex-end; gap: 1.2rem; background: rgba(0,0,0,0.2); }
+.save-btn { background: var(--primary-color); color: #fff; padding: 0.8rem 2.8rem; border-radius: 12px; font-weight: 800; cursor: pointer; border: none; }
+
+.global-zoom { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 4000; display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
+.global-zoom img { max-width: 90vw; max-height: 90vh; }
 
 .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-.custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(var(--primary-rgb), 0.3); border-radius: 10px; }
-.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--primary-color); }
-
-.container-footer { border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
-.container-footer label { font-size: 0.7rem; text-transform: uppercase; opacity: 0.5; font-weight: 700; }
-.container-footer textarea { width: 100%; min-height: 100px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; padding: 0.8rem; resize: none; outline: none; transition: border-color 0.2s; }
-.container-footer textarea:focus { border-color: var(--primary-color); }
-
-.zoom-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 2000; display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
-.zoomed-image-remark { max-width: 90vw; max-height: 90vh; border-radius: 12px; box-shadow: 0 0 50px rgba(0,0,0,0.5); }
-.close-overlay { position: absolute; top: 20px; right: 20px; color: white; font-size: 2rem; cursor: pointer; }
-
-.pagination-footer { display: flex; justify-content: center; align-items: center; gap: 2rem; padding: 1.5rem; margin-top: 2rem; background: rgba(var(--primary-rgb), 0.05); }
-
-.spinner { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.1); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
 </style>
