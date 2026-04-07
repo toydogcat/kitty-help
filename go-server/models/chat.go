@@ -20,6 +20,7 @@ type RemarkContainer struct {
 	UserID    string       `json:"userId"`
 	Name      string       `json:"name"`
 	Content   string       `json:"content"`
+	IsPinned  bool         `json:"isPinned"`
 	CreatedAt time.Time    `json:"createdAt"`
 	UpdatedAt time.Time    `json:"updatedAt"`
 	Items     []RemarkItem `json:"items,omitempty"`

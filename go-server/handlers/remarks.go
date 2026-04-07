@@ -22,7 +22,7 @@ func GetRemarks(c *fiber.Ctx) error {
 	// 1. Fetch Containers
 	containers := []models.RemarkContainer{}
 	rows, err := db.Query(context.Background(), 
-		"SELECT id, user_id, name, content, created_at, updated_at FROM remark_containers WHERE user_id = $1 ORDER BY created_at DESC", 
+		"SELECT id, user_id, name, content, is_pinned, created_at, updated_at FROM remark_containers WHERE user_id = $1 ORDER BY is_pinned DESC, created_at DESC", 
 		user.ID)
 	if err == nil {
 		defer rows.Close()
@@ -115,16 +115,17 @@ func UpdateRemark(c *fiber.Ctx) error {
 	if user.ID == "" { return c.Status(401).JSON(fiber.Map{"error": "Unauthorized"}) }
 	id := c.Params("id")
 	var body struct {
-		Name    string `json:"name"`
-		Content string `json:"content"`
+		Name     string `json:"name"`
+		Content  string `json:"content"`
+		IsPinned bool   `json:"isPinned"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid body"})
 	}
 
 	_, err := database.LocalDB.Exec(context.Background(), 
-		"UPDATE remark_containers SET name = $1, content = $2, updated_at = NOW() WHERE id = $3 AND user_id = $4", 
-		body.Name, body.Content, id, user.ID)
+		"UPDATE remark_containers SET name = $1, content = $2, is_pinned = $3, updated_at = NOW() WHERE id = $4 AND user_id = $5", 
+		body.Name, body.Content, body.IsPinned, id, user.ID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

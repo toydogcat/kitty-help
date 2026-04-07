@@ -350,6 +350,7 @@ func EnsureTables() {
 			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS sort_order INT DEFAULT 0`,
 			`ALTER TABLE bookmarks ALTER COLUMN url DROP NOT NULL`,
 			`ALTER TABLE remark_items ALTER COLUMN log_id TYPE TEXT`,
+			`ALTER TABLE remark_containers ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE`,
 			`ALTER TABLE impression_nodes ADD COLUMN IF NOT EXISTS desk_shelf_id UUID REFERENCES desk_shelves(id) ON DELETE SET NULL`,
 			// --- Performance Indexes ---
 			`CREATE INDEX IF NOT EXISTS idx_impression_nodes_user ON impression_nodes(user_id)`,
