@@ -13,7 +13,8 @@ TUNNEL_CONTAINER = "kitty-tunnel"
 DB_CONTAINER = "kitty-db"  # Defaults to standard name, can be changed
 DB_NAME = "kitty_help"
 DB_USER = "toby"
-BACKUP_FILE = "backup_kitty_local.sql"
+BACKUP_DIR = "/home/toymsi/文件/等待整理"
+BACKUP_FILE = os.path.join(BACKUP_DIR, "kitty_help_backup.sql")
 
 # --- Terminal Colors ---
 class Colors:
@@ -81,24 +82,20 @@ def catch_tunnel_url():
     return False
 
 def export_db():
-    """Backup the local database to a SQL file."""
-    print_step(f"🗄️ Exporting database [{DB_NAME}] from [{DB_CONTAINER}]...")
-    # Using docker exec to run pg_dump. 
-    # Note: We try to find the container name dynamically if 'kitty-db' fails
-    cmd = f"docker exec -t {DB_CONTAINER} pg_dump -U {DB_USER} {DB_NAME} > {BACKUP_FILE}"
+    """Backup the remote database (150) using Docker tool container."""
+    if not os.path.exists(BACKUP_DIR):
+        print_step(f"📂 Creating backup directory: {BACKUP_DIR}")
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+
+    print_step(f"🗄️ Exporting database [kitty_help] from 192.168.0.150...")
+    # Using Docker to run latest pg_dump to avoid version mismatch
+    cmd = f'docker run --rm -e PGPASSWORD=andy1984 postgres:latest pg_dump -h 192.168.0.150 -U toby kitty_help > "{BACKUP_FILE}"'
     try:
         subprocess.run(cmd, shell=True, check=True)
         print(f"{Colors.OKGREEN}✅ Successfully backed up to: {BACKUP_FILE}{Colors.ENDC}")
+        print(f"{Colors.OKCYAN}📍 File Size: {os.path.getsize(BACKUP_FILE) / 1024:.2f} KB{Colors.ENDC}")
     except Exception as e:
-        print(f"{Colors.WARNING}⚠️ Failed with default container name, trying to find any postgres container...{Colors.ENDC}")
-        # Fallback: try to find any container running postgres
-        fb_cmd = f"docker ps --format '{{{{.Names}}}}' | grep db | head -n 1"
-        container = subprocess.getoutput(fb_cmd)
-        if container:
-            print(f"🔍 Found candidate container: {container}")
-            cmd = f"docker exec -t {container} pg_dump -U {DB_USER} {DB_NAME} > {BACKUP_FILE}"
-            subprocess.run(cmd, shell=True)
-            print(f"{Colors.OKGREEN}✅ Backup complete via {container}.{Colors.ENDC}")
+        print(f"{Colors.FAIL}❌ Backup failed: {e}{Colors.ENDC}")
 
 def import_db():
     """Restore the database from a SQL file."""
@@ -112,10 +109,9 @@ def import_db():
         print("Restoration cancelled.")
         return
 
-    print_step(f"📥 Restoring database from {BACKUP_FILE}...")
-    # 1. Clear existing data (optional but recommended for clean start)
-    # 2. Run psql
-    cmd = f"cat {BACKUP_FILE} | docker exec -i {DB_CONTAINER} psql -U {DB_USER} -d {DB_NAME}"
+    print_step(f"📥 Restoring database from {BACKUP_FILE} to 192.168.0.150...")
+    # Using Docker to run latest psql for restoration
+    cmd = f'cat "{BACKUP_FILE}" | docker run -i --rm -e PGPASSWORD=andy1984 postgres:latest psql -h 192.168.0.150 -U toby -d kitty_help'
     try:
         subprocess.run(cmd, shell=True, check=True)
         print(f"{Colors.OKGREEN}🎉 Database restoration SUCCESSFUL!{Colors.ENDC}")
