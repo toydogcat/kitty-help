@@ -3,13 +3,17 @@ import { ref, onMounted, computed } from 'vue';
 import { apiService, socket } from '../services/api';
 import { marked } from 'marked';
 
-// ... (existing state)
+// Search & Filters
 const recentMessages = ref<any[]>([]);
-const recentPhotos = ref<any[]>([]);
-const photoPage = ref(1);
-const totalPhotos = ref(0);
 const remarkContainers = ref<any[]>([]);
 const loading = ref(true);
+const filters = ref({
+  platform: '',
+  q: '',
+  startDate: '',
+  endDate: '',
+  limit: 100
+});
 
 // Editor Toggle for Remarks in sidebar
 const remarkEditModes = ref<Record<string, 'preview' | 'edit'>>({});
@@ -27,20 +31,25 @@ const zoomedImageUrl = ref('');
 // Drag & Drop
 const dragOverRemarkId = ref<string | null>(null);
 
-const fetchData = async () => {
+const getStorehouseUrl = (mediaId: string, platform?: string) => {
+  return apiService.getStorehouseFileUrl(mediaId, platform || 'line');
+};
+
+const fetchRecentMessages = async () => {
   loading.value = true;
   try {
-    const [msgData, photoData, remarkData] = await Promise.all([
-      apiService.getRecentMessages(),
-      apiService.getRecentPhotos(photoPage.value),
+    const [msgData, remarkData] = await Promise.all([
+      apiService.getChatLogs(
+        filters.value.platform,
+        filters.value.q,
+        filters.value.startDate,
+        filters.value.endDate
+      ),
       apiService.getRemarks()
     ]);
-    recentMessages.value = msgData;
-    recentPhotos.value = photoData.photos || [];
-    totalPhotos.value = photoData.total || 0;
+    recentMessages.value = msgData.slice(0, filters.value.limit);
     remarkContainers.value = remarkData.containers || [];
     
-    // Init edit modes
     remarkData.containers?.forEach((c: any) => {
       if (!remarkEditModes.value[c.id]) {
         remarkEditModes.value[c.id] = 'preview';
@@ -54,12 +63,12 @@ const fetchData = async () => {
 };
 
 onMounted(() => {
-  fetchData();
-  socket.on('messagesUpdate', fetchData);
+  fetchRecentMessages();
+  socket.on('messagesUpdate', fetchRecentMessages);
 });
 
-const handleDragStart = (e: DragEvent, photo: any) => {
-  e.dataTransfer?.setData('application/json', JSON.stringify({ type: 'media', data: photo }));
+const onDragStart = (e: DragEvent, item: any, type: string = 'media') => {
+  e.dataTransfer?.setData('application/json', JSON.stringify({ type: 'media', data: item }));
 };
 
 const handleDragOver = (e: DragEvent, containerId: string) => {
@@ -178,106 +187,153 @@ const otherRemarks = computed(() => remarkContainers.value.filter(c => !c.isPinn
 
 <template>
   <div class="chat-view">
-    <!-- Center Panel: Recent Messages -->
+    <!-- Center Panel: Unified Search Terminal -->
     <div class="center-panel">
-      <div class="panel-header">
-        <h2>💬 Unified Chat (Recent)</h2>
+      <div class="panel-header search-header">
+        <div class="header-top">
+          <h2>🔍 Unified Chat Terminal</h2>
+          <div class="quick-stats">{{ recentMessages.length }} items found</div>
+        </div>
+        
+        <div class="filter-bar">
+          <div class="f-group">
+            <label>Platform</label>
+            <select v-model="filters.platform" @change="fetchRecentMessages">
+              <option value="">All Platforms</option>
+              <option value="discord">Discord</option>
+              <option value="telegram">Telegram</option>
+              <option value="line">LINE</option>
+            </select>
+          </div>
+          <div class="f-group">
+            <label>Start Date</label>
+            <input type="date" v-model="filters.startDate" @change="fetchRecentMessages" />
+          </div>
+          <div class="f-group">
+            <label>End Date</label>
+            <input type="date" v-model="filters.endDate" @change="fetchRecentMessages" />
+          </div>
+          <div class="f-group flex-grow">
+            <label>Search Query</label>
+            <input type="text" v-model="filters.q" placeholder="Type to search..." @keyup.enter="fetchRecentMessages" />
+          </div>
+          <div class="f-group">
+            <label>Limit</label>
+            <select v-model="filters.limit" @change="fetchRecentMessages">
+              <option :value="50">50 (Default)</option>
+              <option :value="100">100</option>
+              <option :value="200">200</option>
+            </select>
+          </div>
+        </div>
       </div>
+
       <div class="messages-list custom-scrollbar">
          <div v-for="m in recentMessages" :key="m.id" class="msg-card" :class="m.platform">
-            <div class="msg-bubble shadow-sm">
+            <div class="msg-bubble shadow-sm" draggable="true" @dragstart="onDragStart($event, m, 'log')">
               <div class="msg-meta">
                 <span class="platform-indicator" :class="m.platform"></span>
                 <span class="platform-name">{{ m.platform.toUpperCase() }}</span>
                 <span class="sender-name">{{ m.senderName }}</span>
-                <span class="time">{{ m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '' }}</span>
+                <span class="time">{{ m.createdAt ? new Date(m.createdAt).toLocaleString([], {month: 'numeric', day: 'numeric', hour: '2-digit', minute:'2-digit'}) : '' }}</span>
               </div>
+
+              <!-- Media Context -->
+              <div v-if="m.mediaId" class="msg-media-snippet">
+                <!-- If Image -->
+                <div v-if="m.msgType === 'image' || m.content.includes('[Image]')" class="inline-thumb" @click="zoomedImageUrl = getStorehouseUrl(m.mediaId, m.platform)">
+                   <img :src="getStorehouseUrl(m.mediaId, m.platform)" loading="lazy" />
+                   <div class="zoom-overlay"><span class="icon">🔍</span></div>
+                </div>
+                <!-- If Other File -->
+                <div v-else class="file-tag">
+                   <span class="file-icon">📄</span>
+                   <span class="file-info">{{ m.mediaType || 'Attachment' }}</span>
+                </div>
+              </div>
+
               <div class="msg-text">{{ m.content }}</div>
             </div>
          </div>
       </div>
     </div>
 
-    <!-- Right Panel: Remarks & Photos -->
+    <!-- Right Panel: Resource Organization (資源整合) -->
     <div class="right-panel">
-      <!-- Photos Bucket (Drag source) -->
-      <div class="photos-bucket">
-        <h3>🖼️ Recent Photos <span class="badge">{{ totalPhotos }}</span></h3>
-        <div class="photos-grid custom-scrollbar">
-          <div v-for="p in recentPhotos" :key="p.id" class="photo-item" draggable="true" @dragstart="handleDragStart($event, p)">
-            <img :src="getStorehouseUrl(p.mediaId, p.platform)" loading="lazy" />
-          </div>
-        </div>
-      </div>
-
-      <!-- Remarks Section -->
       <div class="remarks-section">
-        <div class="section-header">
-           <h3>📚 Integrated Remarks</h3>
-           <button @click="createNewRemark" class="new-remark-btn">+ New Group</button>
+        <div class="remarks-header">
+          <label class="remark-group-label">Resource Repository (知識庫)</label>
+          <div class="header-main">
+            <h2>🔖 Remarks</h2>
+            <button class="add-btn" @click="createNewRemark">+ New Group</button>
+          </div>
         </div>
 
         <div class="remarks-list custom-scrollbar">
-          <!-- Pinned Section -->
-          <div v-if="pinnedRemarks.length > 0" class="remark-group-label">✨ Pinned (釘選)</div>
-          <div 
-            v-for="c in pinnedRemarks" :key="c.id" 
-            class="remark-item-card"
-            :class="{ 'drag-over': dragOverRemarkId === c.id }"
-            @dragover="handleDragOver($event, c.id)" @dragleave="dragOverRemarkId = null" @drop="handleDropOnRemark($event, c.id)"
-          >
+          <div v-if="pinnedRemarks.length > 0" class="remark-group-label mini">✨ Pinned (釘選)</div>
+          <div v-for="c in pinnedRemarks" :key="c.id" 
+               class="remark-item-card" 
+               :class="{ 'drag-over': dragOverRemarkId === c.id }"
+               @dragover="handleDragOver($event, c.id)"
+               @dragleave="dragOverRemarkId = null"
+               @drop="handleDropOnRemark($event, c.id)">
+            
             <div class="remark-card-header">
-               <span class="remark-title" @click="openRemarkModal(c)">{{ c.name }}</span>
-               <div class="remark-actions">
-                  <button @click="togglePin(c)" class="act-btn">{{ c.isPinned ? '⭐' : '☆' }}</button>
-                  <button @click="addToDesk(c)" class="act-btn">📌</button>
-                  <button @click="copyRemark(c)" class="act-btn">📋</button>
-                  <button @click="deleteRemark(c.id)" class="act-btn del">🗑️</button>
-               </div>
+              <div class="remark-title" @click="openRemarkModal(c)">
+                <span class="icon">⭐</span> {{ c.name }}
+              </div>
+              <div class="remark-actions">
+                <button class="act-btn" @click="togglePin(c)" title="Unpin">📌</button>
+                <button class="act-btn" @click="addToDesk(c)" title="Add to Desk">📋</button>
+                <button class="act-btn" @click="copyRemark(c)" title="Copy">📄</button>
+                <button class="act-btn del" @click="deleteRemark(c.id)" title="Delete">🗑️</button>
+              </div>
             </div>
-            <!-- SIDEBAR REMARK CONTENT: Default to MD, with txt toggle -->
+
             <div class="remark-card-body">
-               <div class="body-header">
-                  <span class="label">Content</span>
-                  <div class="mini-mode-switch">
-                    <button :class="{ active: remarkEditModes[c.id] === 'preview' }" @click="remarkEditModes[c.id] = 'preview'">MD</button>
-                    <button :class="{ active: remarkEditModes[c.id] === 'edit' }" @click="remarkEditModes[c.id] = 'edit'">TXT</button>
-                  </div>
-               </div>
-               <div v-if="remarkEditModes[c.id] === 'preview'" class="sidebar-md-box" v-html="marked.parse(c.content || 'No description.')"></div>
-               <div v-else class="sidebar-txt-box">{{ c.content || 'Empty...' }}</div>
-               <div class="items-count" @click="openRemarkModal(c)">🔗 {{ c.items?.length || 0 }} items linked</div>
+              <div class="body-header">
+                <span class="label">Preview</span>
+                <div class="mini-mode-switch">
+                  <button :class="{ active: remarkEditModes[c.id] === 'preview' }" @click="remarkEditModes[c.id] = 'preview'">MD</button>
+                  <button :class="{ active: remarkEditModes[c.id] === 'edit' }" @click="remarkEditModes[c.id] = 'edit'">TXT</button>
+                </div>
+              </div>
+              <div v-if="remarkEditModes[c.id] === 'preview'" class="sidebar-md-box custom-scrollbar" v-html="marked.parse(c.content || 'No description.')"></div>
+              <div v-else class="sidebar-txt-box">{{ c.content || 'No description.' }}</div>
+              <div class="items-count" @click="openRemarkModal(c)">🔗 {{ c.items?.length || 0 }} items linked</div>
             </div>
           </div>
 
           <!-- Other Section -->
-          <div v-if="otherRemarks.length > 0" class="remark-group-label">All Remarks</div>
-          <div 
-            v-for="c in otherRemarks" :key="c.id" 
-            class="remark-item-card"
-            :class="{ 'drag-over': dragOverRemarkId === c.id }"
-            @dragover="handleDragOver($event, c.id)" @dragleave="dragOverRemarkId = null" @drop="handleDropOnRemark($event, c.id)"
-          >
+          <div v-if="otherRemarks.length > 0" class="remark-group-label mini">📦 All Groups (全部)</div>
+          <div v-for="c in otherRemarks" :key="c.id" 
+               class="remark-item-card" 
+               :class="{ 'drag-over': dragOverRemarkId === c.id }"
+               @dragover="handleDragOver($event, c.id)"
+               @dragleave="dragOverRemarkId = null"
+               @drop="handleDropOnRemark($event, c.id)">
+            
             <div class="remark-card-header">
-               <span class="remark-title" @click="openRemarkModal(c)">{{ c.name }}</span>
-               <div class="remark-actions">
-                  <button @click="togglePin(c)" class="act-btn">☆</button>
-                  <button @click="addToDesk(c)" class="act-btn">📌</button>
-                  <button @click="copyRemark(c)" class="act-btn">📋</button>
-                  <button @click="deleteRemark(c.id)" class="act-btn del">🗑️</button>
-               </div>
+              <div class="remark-title" @click="openRemarkModal(c)">{{ c.name }}</div>
+              <div class="remark-actions">
+                <button class="act-btn" @click="togglePin(c)" title="Pin">☆</button>
+                <button class="act-btn" @click="addToDesk(c)" title="Add to Desk">📋</button>
+                <button class="act-btn" @click="copyRemark(c)" title="Copy">📄</button>
+                <button class="act-btn del" @click="deleteRemark(c.id)" title="Delete">🗑️</button>
+              </div>
             </div>
+
             <div class="remark-card-body">
-               <div class="body-header">
-                  <span class="label">Content</span>
-                  <div class="mini-mode-switch">
-                    <button :class="{ active: remarkEditModes[c.id] === 'preview' }" @click="remarkEditModes[c.id] = 'preview'">MD</button>
-                    <button :class="{ active: remarkEditModes[c.id] === 'edit' }" @click="remarkEditModes[c.id] = 'edit'">TXT</button>
-                  </div>
-               </div>
-               <div v-if="remarkEditModes[c.id] === 'preview'" class="sidebar-md-box" v-html="marked.parse(c.content || '')"></div>
-               <div v-else class="sidebar-txt-box">{{ c.content || 'Empty...' }}</div>
-               <div class="items-count" @click="openRemarkModal(c)">🔗 {{ c.items?.length || 0 }} items linked</div>
+              <div class="body-header">
+                <span class="label">Preview</span>
+                <div class="mini-mode-switch">
+                  <button :class="{ active: remarkEditModes[c.id] === 'preview' }" @click="remarkEditModes[c.id] = 'preview'">MD</button>
+                  <button :class="{ active: remarkEditModes[c.id] === 'edit' }" @click="remarkEditModes[c.id] = 'edit'">TXT</button>
+                </div>
+              </div>
+              <div v-if="remarkEditModes[c.id] === 'preview'" class="sidebar-md-box custom-scrollbar" v-html="marked.parse(c.content || 'No description.')"></div>
+              <div v-else class="sidebar-txt-box">{{ c.content || 'No description.' }}</div>
+              <div class="items-count" @click="openRemarkModal(c)">🔗 {{ c.items?.length || 0 }} items linked</div>
             </div>
           </div>
         </div>
@@ -355,130 +411,149 @@ const otherRemarks = computed(() => remarkContainers.value.filter(c => !c.isPinn
 
 <style scoped>
 .chat-view { display: flex; height: calc(100vh - 100px); gap: 1rem; padding: 1rem; }
-.right-panel { width: 450px; display: flex; flex-direction: column; gap: 1rem; }
-.center-panel { flex: 1; background: rgba(0,0,0,0.2); border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; overflow: hidden; }
-.panel-header { padding: 1.5rem; background: rgba(255,255,255,0.02); border-bottom: 1px solid rgba(255,255,255,0.05); }
-.messages-list { flex: 1; padding: 1.5rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem; }
 
-.msg-card { display: flex; flex-direction: column; align-items: flex-start; width: 100%; transition: all 0.2s; }
-.msg-bubble { 
-  max-width: 85%; 
-  background: rgba(255,255,255,0.05); 
-  border-radius: 18px; 
-  padding: 1rem 1.4rem; 
-  border: 1px solid rgba(255,255,255,0.08); 
+.center-panel { flex: 1.5; background: rgba(0,0,0,0.2); border-radius: 24px; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; overflow: hidden; }
+.search-header { 
+  padding: 1.5rem 2rem; 
+  background: rgba(255,255,255,0.02); 
+  border-bottom: 1px solid rgba(255,255,255,0.05); 
   display: flex; 
   flex-direction: column; 
-  gap: 0.5rem;
+  gap: 1.2rem;
 }
+.header-top { display: flex; justify-content: space-between; align-items: center; }
+.header-top h2 { font-size: 1.3rem; font-weight: 800; color: #fff; }
+.quick-stats { font-size: 0.75rem; opacity: 0.4; font-weight: 800; color: var(--primary-color); text-transform: uppercase; }
+
+.filter-bar { display: flex; gap: 0.8rem; flex-wrap: wrap; align-items: flex-end; }
+.f-group { display: flex; flex-direction: column; gap: 0.4rem; min-width: 110px; }
+.f-group label { font-size: 0.6rem; font-weight: 900; opacity: 0.3; text-transform: uppercase; letter-spacing: 1px; color: #fff; }
+.f-group select, .f-group input { 
+  background: rgba(255,255,255,0.03); 
+  border: 1px solid rgba(255,255,255,0.06); 
+  border-radius: 10px; 
+  padding: 0.6rem 0.8rem; 
+  color: #fff; 
+  font-size: 0.85rem; 
+  outline: none;
+  transition: all 0.2s;
+}
+.f-group select:focus, .f-group input:focus { border-color: var(--primary-color); background: rgba(0,0,0,0.4); }
+.flex-grow { flex: 1; min-width: 180px; }
+
+.messages-list { flex: 1; padding: 2rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1.2rem; }
+
+.msg-card { display: flex; flex-direction: column; align-items: flex-start; width: 100%; }
+.msg-bubble { 
+  max-width: 90%; 
+  background: rgba(255,255,255,0.04); 
+  border-radius: 20px; 
+  padding: 1rem 1.4rem; 
+  border: 1px solid rgba(255,255,255,0.06); 
+  display: flex; 
+  flex-direction: column; 
+  gap: 0.4rem;
+  transition: all 0.2s;
+}
+.msg-bubble:hover { border-color: rgba(var(--primary-rgb), 0.3); background: rgba(255,255,255,0.06); }
 
 .msg-meta { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 2px; }
 .platform-indicator { width: 8px; height: 8px; border-radius: 50%; }
-.platform-indicator.discord { background: #5865F2; }
-.platform-indicator.telegram { background: #0088cc; }
-.platform-indicator.line { background: #00B900; }
+.platform-indicator.discord { background: #5865F2; box-shadow: 0 0 10px #5865F2; }
+.platform-indicator.telegram { background: #0088cc; box-shadow: 0 0 10px #0088cc; }
+.platform-indicator.line { background: #00B900; box-shadow: 0 0 10px #00B900; }
 
-.platform-name { font-size: 0.7rem; font-weight: 800; opacity: 0.4; letter-spacing: 1px; }
-.sender-name { font-weight: 700; color: #fff; font-size: 0.9rem; }
-.time { font-size: 0.75rem; opacity: 0.4; margin-left: auto; }
+.platform-name { font-size: 0.65rem; font-weight: 900; opacity: 0.4; letter-spacing: 1.5px; text-transform: uppercase; }
+.sender-name { font-weight: 800; color: #fff; font-size: 0.9rem; }
+.time { font-size: 0.75rem; opacity: 0.3; margin-left: auto; letter-spacing: 0.5px; }
+
+.msg-media-snippet { margin: 0.6rem 0; border-radius: 14px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05); background: #000; }
+.inline-thumb { position: relative; height: 180px; cursor: zoom-in; overflow: hidden; }
+.inline-thumb img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s; }
+.inline-thumb:hover img { transform: scale(1.08); }
+.zoom-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; opacity: 0; transition: 0.2s; }
+.inline-thumb:hover .zoom-overlay { opacity: 1; }
+
+.file-tag { padding: 1.2rem; background: rgba(255,255,255,0.03); display: flex; align-items: center; gap: 1rem; }
+.file-info { font-weight: 800; color: var(--primary-color); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; }
 
 .msg-text { font-size: 1rem; color: #eee; line-height: 1.6; word-break: break-word; }
 
-.foto-badge { background: var(--primary-color); color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; }
-
-/* Photos Bucket */
-.photos-bucket { height: 280px; background: rgba(255,255,255,0.03); border-radius: 20px; padding: 1.2rem; display: flex; flex-direction: column; }
-.photos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; overflow-y: auto; flex: 1; padding-top: 10px; }
-.photo-item { border-radius: 8px; overflow: hidden; aspect-ratio: 1; cursor: grab; background: rgba(0,0,0,0.2); transition: transform 0.2s; }
-.photo-item:hover { transform: scale(1.05); }
-.photo-item img { width: 100%; height: 100%; object-fit: cover; }
-
-/* Remarks Section */
-.remarks-section { flex: 1; min-height: 0; background: rgba(255,255,255,0.03); border-radius: 20px; padding: 1.5rem; display: flex; flex-direction: column; }
+/* Right Panel Refactored */
+.right-panel { width: 450px; display: flex; flex-direction: column; }
+.remarks-section { flex: 1; min-height: 0; background: rgba(0,0,0,0.2); border-radius: 24px; padding: 1.5rem; display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.05); }
 .remarks-list { flex: 1; overflow-y: auto; padding-right: 8px; display: flex; flex-direction: column; gap: 1.2rem; margin-top: 1rem; }
 
-.remark-group-label { font-size: 0.75rem; font-weight: 800; opacity: 0.5; letter-spacing: 1px; color: var(--primary-color); }
+.remark-group-label { font-size: 0.75rem; font-weight: 900; opacity: 0.4; letter-spacing: 2px; color: var(--primary-color); text-transform: uppercase; margin-bottom: 0.5rem; }
 
 .remark-item-card { 
-  background: rgba(255,255,255,0.04); 
-  border: 1px solid rgba(255,255,255,0.08); 
-  border-radius: 16px; 
-  padding: 1.2rem; 
+  background: rgba(255,255,255,0.03); 
+  border: 1px solid rgba(255,255,255,0.06); 
+  border-radius: 20px; 
+  padding: 1.4rem; 
   transition: all 0.3s; 
   position: relative;
 }
 .remark-item-card.drag-over { 
-  background: rgba(var(--primary-rgb), 0.1); 
+  background: rgba(var(--primary-rgb), 0.08); 
   border-color: var(--primary-color); 
-  box-shadow: 0 0 20px rgba(var(--primary-rgb), 0.4); 
+  box-shadow: 0 0 30px rgba(var(--primary-rgb), 0.3); 
   transform: scale(1.02);
 }
 
-.remark-card-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.8rem; }
-.remark-title { font-weight: 800; font-size: 1.05rem; color: #fff; cursor: pointer; }
-.remark-title:hover { color: var(--primary-color); }
+.remark-card-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem; }
+.remark-title { font-weight: 800; font-size: 1.1rem; color: #fff; cursor: pointer; }
+.remark-title:hover { color: var(--primary-color); text-shadow: 0 0 10px rgba(var(--primary-rgb), 0.5); }
 
-.remark-actions { display: flex; gap: 4px; }
-.act-btn { background: rgba(255,255,255,0.05); border: none; border-radius: 6px; width: 28px; height: 28px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
-.act-btn:hover { background: rgba(255,255,255,0.15); transform: translateY(-2px); }
-.act-btn.del:hover { background: #e74c3c; color: white; }
+.remark-actions { display: flex; gap: 8px; }
+.act-btn { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; color: #fff; }
+.act-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); transform: translateY(-2px); }
+.act-btn.del:hover { background: rgba(231, 76, 60, 0.2); border-color: #e74c3c; color: #e74c3c; }
 
-/* Sidebar MD Box */
-.remark-card-body { background: rgba(0,0,0,0.2); border-radius: 12px; padding: 1rem; border: 1px solid rgba(255,255,255,0.03); }
-.body-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.body-header .label { font-size: 0.65rem; opacity: 0.5; font-weight: 800; }
+.remark-card-body { background: rgba(0,0,0,0.3); border-radius: 14px; padding: 1.2rem; border: 1px solid rgba(255,255,255,0.03); }
+.body-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.body-header .label { font-size: 0.65rem; opacity: 0.3; font-weight: 900; text-transform: uppercase; color: #fff; }
 
-.mini-mode-switch { display: flex; gap: 2px; background: rgba(255,255,255,0.05); padding: 2px; border-radius: 6px; }
-.mini-mode-switch button { background: none; border: none; font-size: 0.6rem; color: #fff; padding: 2px 6px; border-radius: 4px; cursor: pointer; opacity: 0.5; }
-.mini-mode-switch button.active { background: var(--primary-color); opacity: 1; }
+.mini-mode-switch { display: flex; gap: 2px; background: rgba(0,0,0,0.3); padding: 4px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05); }
+.mini-mode-switch button { background: none; border: none; font-size: 0.65rem; color: #fff; padding: 4px 10px; border-radius: 6px; cursor: pointer; opacity: 0.4; font-weight: 800; }
+.mini-mode-switch button.active { background: var(--primary-color); opacity: 1; box-shadow: 0 4px 10px rgba(var(--primary-rgb), 0.3); }
 
-.sidebar-md-box { font-size: 0.9rem; color: #ccc; line-height: 1.6; max-height: 150px; overflow: hidden; }
-.sidebar-md-box :deep(h1), .sidebar-md-box :deep(h2) { font-size: 1rem; margin: 0.5rem 0; }
-.sidebar-txt-box { font-size: 0.9rem; opacity: 0.7; color: #eee; }
+.sidebar-md-box { font-size: 0.95rem; color: #ddd; line-height: 1.6; max-height: 200px; overflow-y: auto; }
+.sidebar-md-box :deep(h1), .sidebar-md-box :deep(h2) { font-size: 1.1rem; margin: 1rem 0 0.5rem; color: var(--primary-color); }
+.sidebar-txt-box { font-size: 0.95rem; opacity: 0.7; color: #eee; white-space: pre-wrap; }
 
-.items-count { margin-top: 10px; font-size: 0.7rem; font-weight: 800; color: var(--primary-color); cursor: pointer; opacity: 0.7; }
-.items-count:hover { opacity: 1; text-decoration: underline; }
+.items-count { margin-top: 15px; font-size: 0.75rem; font-weight: 900; color: var(--primary-color); cursor: pointer; opacity: 0.6; transition: 0.2s; text-transform: uppercase; letter-spacing: 0.5px; }
+.items-count:hover { opacity: 1; text-decoration: underline; letter-spacing: 1px; }
 
-/* Unified Editor Styles (Same as Desk) */
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; z-index: 3001; }
-.modal-card.wide-editor { width: 950px; max-width: 95vw; background: var(--card-bg); border-radius: 28px; border: 1px solid rgba(var(--primary-rgb), 0.3); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 60px rgba(0,0,0,0.6); }
+/* MODAL & UNIFIED GRID */
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(15px); display: flex; align-items: center; justify-content: center; z-index: 5000; }
+.modal-card.wide-editor { width: 1000px; max-width: 95vw; background: var(--card-bg); border-radius: 32px; border: 1px solid rgba(var(--primary-rgb), 0.3); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,0.8), inset 0 0 100px rgba(var(--primary-rgb), 0.05); }
 .modal-card.is-full { width: 100vw; height: 100vh; border-radius: 0; }
 
-.unified-controls { display: flex; gap: 0.8rem; align-items: center; }
-.mode-capsule { display: flex; background: rgba(0,0,0,0.4); padding: 4px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
-.mode-capsule button { background: none; border: none; color: #fff; padding: 6px 14px; border-radius: 9px; font-size: 0.75rem; font-weight: 800; cursor: pointer; opacity: 0.4; }
-.mode-capsule button.active { background: var(--primary-color); opacity: 1; }
-.action-set { display: flex; background: rgba(255,255,255,0.05); padding: 4px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
-.action-item { background: none; border: none; color: #fff; width: 34px; height: 34px; border-radius: 9px; font-size: 1rem; cursor: pointer; opacity: 0.6; display: flex; align-items: center; justify-content: center; }
-.action-item:hover { background: rgba(255,255,255,0.1); opacity: 1; }
-.action-item.close:hover { background: #e74c3c; }
+.editor-body { flex: 1; overflow-y: auto; padding: 3rem; display: flex; flex-direction: column; gap: 2.2rem; }
+.form-group label { font-size: 0.75rem; font-weight: 900; text-transform: uppercase; color: var(--primary-color); opacity: 0.6; margin-bottom: 0.8rem; display: block; letter-spacing: 2px; }
+input, textarea { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 1.4rem; color: #fff; width: 100%; outline: none; transition: border-color 0.2s; font-size: 1.05rem; }
+input:focus, textarea:focus { border-color: var(--primary-color); }
+textarea { height: 400px; resize: none; line-height: 1.6; }
 
-.editor-body { flex: 1; overflow-y: auto; padding: 2.5rem; display: flex; flex-direction: column; gap: 1.8rem; }
-.form-group.fill { flex: 1; }
-input, textarea { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 14px; padding: 1.2rem; color: #fff; width: 100%; outline: none; }
-textarea { height: 350px; resize: none; font-size: 1rem; }
+.md-preview-box { background: rgba(0,0,0,0.4); padding: 2.5rem; border-radius: 18px; border: 1px solid rgba(255,255,255,0.06); min-height: 400px; color: #eee; line-height: 1.8; font-size: 1.1rem; }
+.md-preview-box :deep(h1) { color: var(--primary-color); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; }
 
-.md-preview-box { background: rgba(0,0,0,0.4); padding: 2rem; border-radius: 14px; border: 1px solid rgba(255,255,255,0.05); min-height: 350px; color: #eee; line-height: 1.7; }
-.md-preview-box :deep(h1) { color: var(--primary-color); border-bottom: 1px solid rgba(255,255,255,0.1); margin: 1.5rem 0 1rem; }
-
-/* UNIFIED QUOTED ITEMS GRID (Shared by Chat/Desk) */
-.quoted-items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.2rem; margin-top: 1.2rem; padding-bottom: 2rem; }
-.quoted-item-card { background: rgba(255,255,255,0.03); border-radius: 16px; border: 1px solid rgba(255,255,255,0.06); overflow: hidden; display: flex; flex-direction: column; transition: all 0.2s; }
-.quoted-item-card:hover { transform: scale(1.02); border-color: var(--primary-color); background: rgba(var(--primary-rgb), 0.05); }
-.item-meta-top { background: rgba(0,0,0,0.3); padding: 0.7rem 1rem; display: flex; justify-content: space-between; font-size: 0.65rem; font-weight: 800; align-items: center; }
-.p-slug { opacity: 0.5; letter-spacing: 1px; text-transform: uppercase; }
-.p-user { color: var(--primary-color); }
-.item-img-box { height: 180px; cursor: zoom-in; overflow: hidden; background: #000; }
-.item-img-box img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s; }
+.quoted-items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem; margin-top: 1.5rem; padding-bottom: 3rem; }
+.quoted-item-card { background: rgba(255,255,255,0.03); border-radius: 20px; border: 1px solid rgba(255,255,255,0.07); overflow: hidden; display: flex; flex-direction: column; transition: all 0.3s; }
+.quoted-item-card:hover { transform: translateY(-5px); border-color: var(--primary-color); background: rgba(255,255,255,0.05); }
+.item-meta-top { background: rgba(0,0,0,0.4); padding: 0.8rem 1.2rem; display: flex; justify-content: space-between; font-size: 0.7rem; font-weight: 800; align-items: center; }
+.p-slug { opacity: 0.4; letter-spacing: 1.5px; text-transform: uppercase; }
+.item-img-box { height: 200px; cursor: zoom-in; overflow: hidden; background: #000; }
+.item-img-box img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s; }
 .quoted-item-card:hover .item-img-box img { transform: scale(1.1); }
-.item-text-box { padding: 1.2rem; font-size: 0.95rem; color: #ddd; line-height: 1.6; max-height: 180px; overflow-y: auto; }
+.item-text-box { padding: 1.4rem; font-size: 1rem; color: #ddd; line-height: 1.7; max-height: 200px; overflow-y: auto; }
 
-.modal-footer { padding: 1.5rem 2.5rem; display: flex; justify-content: flex-end; gap: 1.2rem; background: rgba(0,0,0,0.2); }
-.save-btn { background: var(--primary-color); color: #fff; padding: 0.8rem 2.8rem; border-radius: 12px; font-weight: 800; cursor: pointer; border: none; }
+.global-zoom { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.92); z-index: 6000; display: flex; align-items: center; justify-content: center; cursor: zoom-out; backdrop-filter: blur(20px); }
+.global-zoom img { max-width: 92vw; max-height: 92vh; border-radius: 16px; box-shadow: 0 0 100px rgba(0,0,0,0.8); }
+.close-zoom { position: absolute; top: 3rem; right: 3rem; font-size: 2.5rem; color: #fff; cursor: pointer; opacity: 0.5; transition: 0.2s; }
+.close-zoom:hover { opacity: 1; transform: rotate(90deg); }
 
-.global-zoom { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 4000; display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
-.global-zoom img { max-width: 90vw; max-height: 90vh; }
-
-.custom-scrollbar::-webkit-scrollbar { width: 6px; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar { width: 8px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 10px; }
 </style>
