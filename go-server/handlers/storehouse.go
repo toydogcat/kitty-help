@@ -65,7 +65,7 @@ func GetStorehouseItems(c *fiber.Ctx) error {
 			if dbUserID != "" && !isAdmin {
 				sql = `
 					SELECT m.id, m.file_id, m.media_type, m.title, m.caption, m.notes, m.source_platform, m.sender_name, m.created_at, m.is_indexable, m.index_status 
-					FROM media_archives m
+					FROM (SELECT DISTINCT ON (file_id) * FROM media_archives ORDER BY file_id, created_at DESC) m
 					JOIN bot_authorized_users b ON m.sender_id = b.account_id AND m.source_platform = b.platform
 					WHERE b.user_id = $1 AND m.embedding IS NOT NULL`
 				args = append(args, dbUserID)
@@ -73,7 +73,7 @@ func GetStorehouseItems(c *fiber.Ctx) error {
 			} else {
 				// Admin or unauthenticated sees global (semantic)
 				sql = `SELECT id, file_id, media_type, title, caption, notes, source_platform, sender_name, created_at, is_indexable, index_status 
-				       FROM media_archives WHERE embedding IS NOT NULL`
+				       FROM (SELECT DISTINCT ON (file_id) * FROM media_archives ORDER BY file_id, created_at DESC) m WHERE embedding IS NOT NULL`
 				argIdx = 1
 			}
 			
@@ -94,7 +94,7 @@ func GetStorehouseItems(c *fiber.Ctx) error {
 		if dbUserID != "" && !isAdmin {
 			sql = `
 				SELECT m.id, m.file_id, m.media_type, m.title, m.caption, m.notes, m.source_platform, m.sender_name, m.created_at, m.is_indexable, m.index_status 
-				FROM media_archives m
+				FROM (SELECT DISTINCT ON (file_id) * FROM media_archives ORDER BY file_id, created_at DESC) m
 				JOIN bot_authorized_users b ON m.sender_id = b.account_id AND m.source_platform = b.platform
 				WHERE b.user_id = $1`
 			args = append(args, dbUserID)
@@ -102,7 +102,7 @@ func GetStorehouseItems(c *fiber.Ctx) error {
 		} else {
 			// Admin sees all
 			sql = `SELECT id, file_id, media_type, title, caption, notes, source_platform, sender_name, created_at, is_indexable, index_status 
-			       FROM media_archives m WHERE 1=1`
+			       FROM (SELECT DISTINCT ON (file_id) * FROM media_archives ORDER BY file_id, created_at DESC) m WHERE 1=1`
 			argIdx = 1
 		}
 

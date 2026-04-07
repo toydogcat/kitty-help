@@ -124,11 +124,21 @@ func GetAvailableBooks(c *fiber.Ctx) error {
 	query := c.Query("q", "")
 	
 	// Filter by document formats: PDF, EPUB, DJVU
-	// Case-insensitive search on title/caption
+	// Expanded detection to check both media_type and filenames/captions
+	// Using DISTINCT ON to avoid double-showing the same unique file
 	sqlQuery := `
 		SELECT id, file_id, media_type, title, caption, created_at 
-		FROM media_archives 
-		WHERE (LOWER(media_type) LIKE '%pdf%' OR LOWER(media_type) LIKE '%epub%' OR LOWER(media_type) LIKE '%djvu%')
+		FROM (
+			SELECT DISTINCT ON (file_id) id, file_id, media_type, title, caption, created_at
+			FROM media_archives 
+			WHERE (
+				LOWER(media_type) LIKE '%pdf%' OR LOWER(media_type) LIKE '%epub%' OR LOWER(media_type) LIKE '%djvu%' OR
+				LOWER(title) LIKE '%.pdf%' OR LOWER(title) LIKE '%.epub%' OR LOWER(title) LIKE '%.djvu%' OR
+				LOWER(caption) LIKE '%.pdf%' OR LOWER(caption) LIKE '%.epub%' OR LOWER(caption) LIKE '%.djvu%'
+			)
+			ORDER BY file_id, created_at DESC
+		) sub
+		WHERE 1=1
 	`
 	params := []interface{}{}
 	if query != "" {
