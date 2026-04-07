@@ -186,7 +186,6 @@ const openOriginal = async (item: any) => {
     content: item.content || '' 
   };
   
-  // If it's a remark, fetch nested items
   if (item.type === 'remark') {
     try {
       const data = await apiService.getRemarks();
@@ -288,27 +287,17 @@ const saveItemEdit = async () => {
       </div>
     </div>
 
-    <!-- Shelves Area (Bottom Rail) -->
+    <!-- Shelves Area -->
     <div class="shelves-rail shadow-lg">
       <div class="rail-header">
         <span class="rail-title">📚 My Shelves</span>
         <span class="rail-hint">Drag items below to store</span>
       </div>
-      
       <div class="shelves-container">
-        <!-- Main Desktop Entry -->
-        <div 
-          class="shelf-card desktop-link" 
-          :class="{ active: activeShelfId === null, 'drag-over': dragOverShelfId === 'desktop' }"
-          @click="switchShelf(null)"
-          @dragover.prevent="onDragOverShelf('desktop')"
-          @dragleave="onDragOverShelf(null)"
-          @drop="onDropOnShelf(null)"
-        >
+        <div class="shelf-card desktop-link" :class="{ active: activeShelfId === null, 'drag-over': dragOverShelfId === 'desktop' }" @click="switchShelf(null)" @dragover.prevent="onDragOverShelf('desktop')" @dragleave="onDragOverShelf(null)" @drop="onDropOnShelf(null)">
           <span class="s-icon">{{ dragOverShelfId === 'desktop' ? '📥' : '🏠' }}</span>
           <span class="s-name">Desktop</span>
         </div>
-
         <div v-for="s in shelves" :key="s.id" class="shelf-card" :class="{ active: activeShelfId === s.id, 'drag-over': dragOverShelfId === s.id }" @click="switchShelf(s.id)" @dragover.prevent="onDragOverShelf(s.id)" @dragleave="onDragOverShelf(null)" @drop="onDropOnShelf(s.id)">
           <div class="shelf-top">
             <span class="s-icon">{{ dragOverShelfId === s.id ? '📥' : '📁' }}</span>
@@ -329,8 +318,8 @@ const saveItemEdit = async () => {
         <h3>{{ showRenameModal ? 'Rename Shelf' : 'Create New Shelf' }}</h3>
         <input v-model="newShelfName" placeholder="Shelf Name..." @keyup.enter="showRenameModal ? handleRenameShelf() : handleAddShelf()" autoFocus />
         <div class="modal-actions">
-          <button @click="showAddShelfModal = showRenameModal = false">Cancel</button>
-          <button @click="showRenameModal ? handleRenameShelf() : handleAddShelf()" class="confirm-btn">{{ showRenameModal ? 'Rename' : 'Create' }}</button>
+           <button @click="showAddShelfModal = showRenameModal = false">Cancel</button>
+           <button @click="showRenameModal ? handleRenameShelf() : handleAddShelf()" class="confirm-btn">Confirm</button>
         </div>
       </div>
     </div>
@@ -341,20 +330,14 @@ const saveItemEdit = async () => {
         <div class="editor-pane shadow-2xl">
           <div class="editor-header">
             <div class="type-badge">{{ editingItem?.type.toUpperCase() }} EDITOR</div>
-            <div class="editor-modes" v-if="editingItem?.type === 'snippet'">
-              <button :class="{ active: editMode === 'edit' }" @click="editMode = 'edit'">EDIT</button>
-              <button :class="{ active: editMode === 'preview' }" @click="editMode = 'preview'">PREVIEW</button>
-            </div>
             <button @click="showEditModal = false" class="close-x">✕</button>
           </div>
 
           <div class="editor-body custom-scrollbar">
-            <!-- Media Preview -->
             <div v-if="editingItem?.type === 'media'" class="media-large-preview">
               <img :src="getThumbnail(editingItem, true) || ''" />
             </div>
 
-            <!-- Title & Basic Info -->
             <div class="field">
               <label>Title</label>
               <input v-model="editBuffer.title" placeholder="Item Name..." />
@@ -362,20 +345,24 @@ const saveItemEdit = async () => {
 
             <div class="field fill">
               <label>Notes / Description</label>
-              <div v-if="editingItem?.type === 'snippet' && editMode === 'preview'" class="markdown-preview-pane" v-html="marked.parse(editBuffer.content || '')"></div>
-              <textarea v-else v-model="editBuffer.content" placeholder="Type something here..."></textarea>
+              <textarea v-model="editBuffer.content" placeholder="Summary..."></textarea>
             </div>
 
-            <!-- RENDER REMARK ITEMS -->
+            <!-- RENDER REMARK ITEMS AS GRID CARDS -->
             <div v-if="editingItem?.type === 'remark' && remarkDetails" class="nested-remark-items">
               <label class="section-label">📚 Quoted Items (引用項目)</label>
-              <div class="items-scroller">
-                <div v-for="item in (remarkDetails.items || [])" :key="item.id" class="nested-item-card">
-                  <header class="nested-tag">{{ item.log.platform }} - {{ item.log.senderName }}</header>
-                  <div v-if="item.log?.mediaId && (item.log?.msgType === 'image' || item.log?.content.includes('[Image]'))" class="nested-thumb" @click="zoomedImageUrl = getStorehouseUrl(item.log.mediaId, item.log.platform)">
+              <div class="nested-items-grid">
+                <div v-for="item in (remarkDetails.items || [])" :key="item.id" class="nested-card">
+                  <div class="nested-cap">
+                    <span class="tag-p">{{ item.log.platform }}</span>
+                    <span class="tag-s">{{ item.log.senderName }}</span>
+                  </div>
+                  <div v-if="item.log?.mediaId && (item.log?.msgType === 'image' || item.log?.content.includes('[Image]'))" class="nested-img" @click="zoomedImageUrl = getStorehouseUrl(item.log.mediaId, item.log.platform)">
                     <img :src="getStorehouseUrl(item.log.mediaId, item.log.platform)" />
                   </div>
-                  <p v-else class="nested-text">{{ item.log.content }}</p>
+                  <div v-else class="nested-txt">
+                    <p>{{ item.log.content }}</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -388,13 +375,12 @@ const saveItemEdit = async () => {
           <div class="editor-footer">
             <button @click="showEditModal = false" class="cancel-btn">Discard</button>
             <button @click="saveItemEdit" class="save-btn" :disabled="saving">
-              {{ saving ? 'Saving...' : '✅ Save Changes' }}
+              Save Changes
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Image Zoom for nested items -->
       <div v-if="zoomedImageUrl" class="global-zoom" @click="zoomedImageUrl = ''">
          <img :src="zoomedImageUrl" />
          <span class="close-zoom">✕</span>
@@ -409,56 +395,49 @@ const saveItemEdit = async () => {
 .title-group h1 { margin: 0; font-size: 1.8rem; color: var(--primary-color); }
 .subtitle { margin: 0; opacity: 0.7; font-size: 0.9rem; }
 .actions { display: flex; gap: 0.8rem; }
-.add-shelf-btn, .back-btn { padding: 0.6rem 1.2rem; border-radius: 10px; font-weight: 700; cursor: pointer; }
-.add-shelf-btn { background: var(--primary-color); color: white; border: none; }
-.back-btn { background: rgba(var(--primary-rgb), 0.1); border: 1px solid var(--primary-color); color: var(--primary-color); }
+.add-shelf-btn { background: var(--primary-color); color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 10px; font-weight: 700; cursor: pointer; }
+.back-btn { background: rgba(var(--primary-rgb), 0.1); border: 1px solid var(--primary-color); color: var(--primary-color); padding: 0.6rem 1.2rem; border-radius: 10px; cursor: pointer; }
 
 .desktop-canvas { flex: 1; background: rgba(var(--primary-rgb), 0.03); border: 2px dashed rgba(var(--primary-rgb), 0.1); border-radius: 20px; overflow-y: auto; padding: 2rem; }
-.desk-loader, .empty-desk { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0.6; }
 .items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1.5rem; }
 
-.desk-tile { background: var(--card-bg); border: 1px solid rgba(var(--primary-rgb), 0.2); border-radius: 16px; padding: 1.2rem; display: flex; flex-direction: column; align-items: center; gap: 0.8rem; cursor: grab; position: relative; transition: all 0.2s; backdrop-filter: blur(10px); }
-.desk-tile:hover { transform: translateY(-5px); border-color: var(--primary-color); box-shadow: 0 8px 25px rgba(0,0,0,0.2); }
+.desk-tile { background: var(--card-bg); border: 1px solid rgba(var(--primary-rgb), 0.2); border-radius: 16px; padding: 1.2rem; display: flex; flex-direction: column; align-items: center; gap: 0.8rem; cursor: grab; position: relative; transition: all 0.2s; }
 .tile-preview { width: 100%; height: 100px; border-radius: 12px; overflow: hidden; background: rgba(0,0,0,0.2); }
 .tile-preview img { width: 100%; height: 100%; object-fit: cover; }
-.tile-title { font-weight: 700; font-size: 0.95rem; text-align: center; width: 100%; overflow: hidden; text-overflow: ellipsis; }
-.tile-meta { font-size: 0.7rem; opacity: 0.5; font-weight: 800; }
-.remove-btn { position: absolute; top: 5px; right: 5px; background: none; border: none; color: #ff5f5f; font-size: 1.2rem; cursor: pointer; opacity: 0; }
-.desk-tile:hover .remove-btn { opacity: 1; }
+.tile-title { font-weight: 700; font-size: 0.9rem; text-align: center; width: 100%; overflow: hidden; text-overflow: ellipsis; overflow-wrap: anywhere; }
 
-.shelves-rail { background: rgba(var(--primary-rgb), 0.1); backdrop-filter: blur(20px); border-radius: 20px; padding: 1rem; display: flex; flex-direction: column; gap: 1rem; }
+.shelves-rail { background: rgba(var(--primary-rgb), 0.1); backdrop-filter: blur(20px); border-radius: 20px; padding: 1rem; margin-bottom: 2rem; }
 .shelves-container { display: flex; gap: 1rem; overflow-x: auto; padding: 0.5rem; }
-.shelf-card { min-width: 120px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 15px; padding: 0.8rem; display: flex; flex-direction: column; align-items: center; cursor: pointer; }
-.shelf-card.active { background: var(--primary-color); box-shadow: 0 0 20px rgba(var(--primary-rgb), 0.4); }
+.shelf-card { min-width: 120px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 15px; padding: 0.8rem; display: flex; flex-direction: column; align-items: center; }
+.shelf-card.active { background: var(--primary-color); }
 
 /* Editor Modal Styles */
-.editor-pane { background: var(--card-bg); width: 800px; max-width: 95vw; max-height: 90vh; border-radius: 24px; border: 1px solid rgba(var(--primary-rgb), 0.3); display: flex; flex-direction: column; overflow: hidden; }
-.editor-header { padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); }
+.editor-pane { background: var(--card-bg); width: 850px; max-width: 95vw; max-height: 90vh; border-radius: 24px; display: flex; flex-direction: column; overflow: hidden; }
+.editor-header { padding: 1rem 1.5rem; display: flex; justify-content: space-between; background: rgba(255,255,255,0.03); }
 .editor-body { flex: 1; overflow-y: auto; padding: 2rem; display: flex; flex-direction: column; gap: 1.5rem; }
-.field { display: flex; flex-direction: column; gap: 0.5rem; }
-.field input, .field textarea { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 1rem; color: white; width: 100%; border: 1px solid rgba(255,255,255,0.1); }
-.field textarea { height: 150px; resize: none; }
+.field { display: flex; flex-direction: column; gap: 0.4rem; }
+.field input, .field textarea { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 1rem; color: #fff; width: 100%; }
+.field textarea { height: 120px; resize: none; }
 
-/* Nested Items in Remark Editor */
-.nested-remark-items { border-top: 2px solid rgba(255,255,255,0.05); padding-top: 1.5rem; }
-.section-label { display: block; font-size: 0.8rem; font-weight: 800; color: var(--primary-color); margin-bottom: 1rem; }
-.items-scroller { display: flex; flex-direction: column; gap: 1rem; }
-.nested-item-card { background: rgba(0,0,0,0.2); border-radius: 12px; padding: 1rem; border: 1px solid rgba(255,255,255,0.05); }
-.nested-tag { font-size: 0.7rem; opacity: 0.5; font-weight: 700; margin-bottom: 0.5rem; }
-.nested-thumb { width: 120px; height: 120px; border-radius: 8px; overflow: hidden; cursor: pointer; }
-.nested-thumb img { width: 100%; height: 100%; object-fit: cover; }
-.nested-text { font-size: 0.95rem; line-height: 1.5; color: #eee; }
+/* Nested Items Grid */
+.nested-remark-items { border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1.5rem; }
+.section-label { font-size: 0.8rem; font-weight: 800; color: var(--primary-color); margin-bottom: 1rem; display: block; }
+.nested-items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; }
+.nested-card { background: rgba(255,255,255,0.03); border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; }
+.nested-cap { padding: 0.6rem; display: flex; gap: 5px; font-size: 0.65rem; background: rgba(0,0,0,0.2); }
+.tag-p { color: var(--primary-color); font-weight: 800; text-transform: uppercase; }
+.tag-s { opacity: 0.6; }
+.nested-img { width: 100%; height: 150px; cursor: zoom-in; }
+.nested-img img { width: 100%; height: 100%; object-fit: cover; }
+.nested-txt { padding: 1rem; font-size: 0.9rem; color: #ccc; line-height: 1.4; flex: 1; max-height: 200px; overflow-y: auto; }
 
-.editor-footer { padding: 1.5rem 2rem; display: flex; justify-content: flex-end; gap: 1rem; background: rgba(255,255,255,0.02); }
-.save-btn { background: var(--primary-color); color: white; border: none; padding: 0.8rem 1.5rem; border-radius: 12px; font-weight: 700; cursor: pointer; }
+.editor-footer { padding: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem; background: rgba(0,0,0,0.2); }
+.save-btn { background: var(--primary-color); color: #fff; padding: 0.8rem 1.5rem; border-radius: 10px; border: none; font-weight: 700; cursor: pointer; }
 
-/* Custom Scrollbar for Modal Body */
+.global-zoom { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 3000; display: flex; align-items: center; justify-content: center; }
+.global-zoom img { max-width: 90vw; max-height: 90vh; }
+.close-zoom { position: absolute; top: 20px; right: 20px; color: #fff; font-size: 2rem; cursor: pointer; }
+
 .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(var(--primary-rgb), 0.3); border-radius: 10px; }
-
-.global-zoom { position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.9); z-index: 3000; display: flex; align-items: center; justify-content: center; }
-.global-zoom img { max-width: 90vw; max-height: 90vh; border-radius: 12px; }
-.close-zoom { position: absolute; top: 20px; right: 20px; color: white; font-size: 2rem; cursor: pointer; }
-
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
 </style>
