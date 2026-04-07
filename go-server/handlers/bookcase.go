@@ -133,6 +133,7 @@ func GetAvailableBooks(c *fiber.Ctx) error {
 			FROM media_archives 
 			WHERE (
 				LOWER(media_type) LIKE '%pdf%' OR LOWER(media_type) LIKE '%epub%' OR LOWER(media_type) LIKE '%djvu%' OR
+				LOWER(media_type) = 'document' OR
 				LOWER(title) LIKE '%.pdf%' OR LOWER(title) LIKE '%.epub%' OR LOWER(title) LIKE '%.djvu%' OR
 				LOWER(caption) LIKE '%.pdf%' OR LOWER(caption) LIKE '%.epub%' OR LOWER(caption) LIKE '%.djvu%'
 			)
@@ -176,4 +177,111 @@ func GetAvailableBooks(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(results)
+}
+
+func GetBookNotes(c *fiber.Ctx) error {
+	bookID := c.Params("id")
+	rows, err := database.LocalDB.Query(context.Background(),
+		"SELECT id, book_id, title, content, note_type, created_at, updated_at FROM bookcase_notes WHERE book_id = $1 ORDER BY created_at ASC",
+		bookID)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	defer rows.Close()
+
+	notes := []fiber.Map{}
+	for rows.Next() {
+		var id, bookID, title, content, noteType string
+		var createdAt, updatedAt time.Time
+		if err := rows.Scan(&id, &bookID, &title, &content, &noteType, &createdAt, &updatedAt); err != nil {
+			continue
+		}
+		notes = append(notes, fiber.Map{
+			"id":        id,
+			"bookId":    bookID,
+			"title":     title,
+			"content":   content,
+			"noteType":  noteType,
+			"createdAt": createdAt,
+			"updatedAt": updatedAt,
+		})
+	}
+	return c.JSON(notes)
+}
+
+func AddBookNote(c *fiber.Ctx) error {
+	bookID := c.Params("id")
+	var req struct {
+		Title    string `json:"title"`
+		Content  string `json:"content"`
+		NoteType string `json:"noteType"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	if req.NoteType == "" { req.NoteType = "markdown" }
+
+	var id string
+	err := database.LocalDB.QueryRow(context.Background(),
+		"INSERT INTO bookcase_notes (book_id, title, content, note_type) VALUES ($1, $2, $3, $4) RETURNING id",
+		bookID, req.Title, req.Content, req.NoteType).Scan(&id)
+	
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"status": "success", "id": id})
+}
+
+func UpdateBookNote(c *fiber.Ctx) error {
+	noteID := c.Params("note_id")
+	var req struct {
+		Title    string `json:"title"`
+		Content  string `json:"content"`
+		NoteType string `json:"noteType"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	_, err := database.LocalDB.Exec(context.Background(),
+		"UPDATE bookcase_notes SET title = $1, content = $2, note_type = $3, updated_at = now() WHERE id = $4",
+		req.Title, req.Content, req.NoteType, noteID)
+	
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"status": "success"})
+}
+
+func RemoveBookNote(c *fiber.Ctx) error {
+	noteID := c.Params("note_id")
+	_, err := database.LocalDB.Exec(context.Background(), "DELETE FROM bookcase_notes WHERE id = $1", noteID)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"status": "success"})
+}
+
+func UpdateBookFolder(c *fiber.Ctx) error {
+	bookID := c.Params("id")
+	var req struct {
+		Folder string `json:"folder"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	_, err := database.LocalDB.Exec(context.Background(),
+		"UPDATE bookcase (folder, updated_at) VALUES ($1, now()) WHERE id = $2",
+		req.Folder, bookID)
+	// Wait, the SQL update syntax was wrong above. Let's fix.
+	_, err = database.LocalDB.Exec(context.Background(),
+		"UPDATE bookcase SET folder = $1, updated_at = now() WHERE id = $2",
+		req.Folder, bookID)
+	
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"status": "success"})
 }

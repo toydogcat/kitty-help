@@ -156,9 +156,16 @@ func main() {
 	// 📚 BOOKCASE (Digital Library)
 	protected.Get("/bookcase", handlers.GetBookcase)
 	protected.Post("/bookcase", handlers.AddBookToBookcase)
-	protected.Put("/bookcase/:id/notes", handlers.UpdateBookNotes)
+	protected.Put("/bookcase/:id/legacy-notes", handlers.UpdateBookNotes) // Legacy single-note endpoint
 	protected.Delete("/bookcase/:id", handlers.RemoveBook)
 	protected.Get("/bookcase/available", handlers.GetAvailableBooks)
+	protected.Put("/bookcase/:id/folder", handlers.UpdateBookFolder)
+	
+	// Bookcase Notes (One book, multiple notes)
+	protected.Get("/bookcase/:id/notes", handlers.GetBookNotes)
+	protected.Post("/bookcase/:id/notes", handlers.AddBookNote)
+	protected.Put("/bookcase/notes/:note_id", handlers.UpdateBookNote)
+	protected.Delete("/bookcase/notes/:note_id", handlers.RemoveBookNote)
 
 	// 🖥️ DESK (Work Desk & Shelves)
 	protected.Get("/desk/shelves", handlers.GetShelves)

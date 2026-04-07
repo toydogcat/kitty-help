@@ -164,6 +164,7 @@ func GetDeskItems(c *fiber.Ctx) error {
 	query := `
 		SELECT di.id, di.user_id, di.shelf_id, di.type, di.ref_id, di.sort_order, di.created_at,
 		COALESCE(
+			(SELECT title FROM bookcase_notes WHERE id::text = di.ref_id::text),
 			(SELECT title FROM bookmarks WHERE id::text = di.ref_id::text),
 			(SELECT name FROM snippets WHERE id::text = di.ref_id::text),
 			(SELECT title FROM media_archives WHERE id::text = di.ref_id::text),
@@ -172,6 +173,7 @@ func GetDeskItems(c *fiber.Ctx) error {
 			'Untitled Item'
 		) as title,
 		COALESCE(
+			(SELECT content FROM bookcase_notes WHERE id::text = di.ref_id::text),
 			(SELECT content FROM snippets WHERE id::text = di.ref_id::text),
 			(SELECT notes FROM media_archives WHERE id::text = di.ref_id::text),
 			(SELECT content FROM remark_containers WHERE id::text = di.ref_id::text),

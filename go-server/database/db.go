@@ -330,10 +330,20 @@ func EnsureTables() {
 			store_id UUID NOT NULL,
 			title TEXT NOT NULL,
 			category TEXT DEFAULT 'Book',
-			notes TEXT DEFAULT '',
+			folder TEXT DEFAULT '', -- Grouping for books
+			notes TEXT DEFAULT '', -- Legacy/Single note fallback
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(user_id, store_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS bookcase_notes (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			book_id UUID REFERENCES bookcase(id) ON DELETE CASCADE,
+			title TEXT NOT NULL,
+			content TEXT DEFAULT '',
+			note_type TEXT DEFAULT 'markdown', -- markdown or txt
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
 	}
 
@@ -383,6 +393,17 @@ func EnsureTables() {
 			`ALTER TABLE impression_edges ADD COLUMN IF NOT EXISTS kg_name TEXT DEFAULT 'default'`,
 			`CREATE INDEX IF NOT EXISTS idx_impression_nodes_kg ON impression_nodes(kg_name)`,
 			`CREATE INDEX IF NOT EXISTS idx_impression_edges_kg ON impression_edges(kg_name)`,
+			// --- Bookcase 2.0 ---
+			`ALTER TABLE bookcase ADD COLUMN IF NOT EXISTS folder TEXT DEFAULT ''`,
+			`CREATE TABLE IF NOT EXISTS bookcase_notes (
+				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				book_id UUID REFERENCES bookcase(id) ON DELETE CASCADE,
+				title TEXT NOT NULL,
+				content TEXT DEFAULT '',
+				note_type TEXT DEFAULT 'markdown',
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			)`,
 		}
 		for _, m := range migrations {
 			LocalDB.Exec(ctx, m)

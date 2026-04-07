@@ -472,7 +472,7 @@ export const apiService = {
     return res.data;
   },
   async updateBookNotes(id: string, notes: string) {
-    const res = await axios.put(`${API_BASE}/bookcase/${id}/notes`, { notes });
+    const res = await axios.put(`${API_BASE}/bookcase/${id}/legacy-notes`, { notes });
     return res.data;
   },
   async removeBook(id: string) {
@@ -481,6 +481,27 @@ export const apiService = {
   },
   async getAvailableBooks(query: string = '') {
     const res = await axios.get(`${API_BASE}/bookcase/available`, { params: { q: query } });
+    return res.data;
+  },
+  async updateBookFolder(id: string, folder: string) {
+    const res = await axios.put(`${API_BASE}/bookcase/${id}/folder`, { folder });
+    return res.data;
+  },
+  // Bookcase Notes (One book, multiple notes)
+  async getBookNotes(bookId: string) {
+    const res = await axios.get(`${API_BASE}/bookcase/${bookId}/notes`);
+    return res.data;
+  },
+  async addBookNote(bookId: string, data: { title: string; content: string; noteType?: string }) {
+    const res = await axios.post(`${API_BASE}/bookcase/${bookId}/notes`, data);
+    return res.data;
+  },
+  async updateBookNote(noteId: string, data: { title: string; content: string; noteType: string }) {
+    const res = await axios.put(`${API_BASE}/bookcase/notes/${noteId}`, data);
+    return res.data;
+  },
+  async removeBookNote(noteId: string) {
+    const res = await axios.delete(`${API_BASE}/bookcase/notes/${noteId}`);
     return res.data;
   }
 };

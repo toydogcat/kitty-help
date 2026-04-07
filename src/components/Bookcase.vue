@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { apiService } from '../services/api';
 import { marked } from 'marked';
 import { usePin } from '../composables/usePin';
@@ -10,22 +10,30 @@ const props = defineProps<{
 
 const { pinToDesk } = usePin();
 
+// --- Core Data ---
 const books = ref<any[]>([]);
 const availableResources = ref<any[]>([]);
+const activeBook = ref<any>(null);
+const bookNotes = ref<any[]>([]);
+const activeNote = ref<any>(null);
+
+// --- UI States ---
 const isLoading = ref(false);
 const isSearching = ref(false);
 const searchQuery = ref('');
 const showAddModal = ref(false);
+const isSaving = ref(false);
+const viewMode = ref<'preview' | 'mixed' | 'notes'>('mixed');
+const searchTerm = ref(''); // Filter books in sidebar
 
-const activeBook = ref<any>(null);
-const showNoteModal = ref(false);
-const noteEditorContent = ref('');
-const isSavingNote = ref(false);
-
+// --- Library Management ---
 const fetchBookcase = async () => {
   isLoading.value = true;
   try {
     books.value = await apiService.getBookcase();
+    if (books.value.length > 0 && !activeBook.value) {
+      selectBook(books.value[0]);
+    }
   } catch (err) {
     console.error('Failed to fetch bookcase:', err);
   } finally {
@@ -33,6 +41,82 @@ const fetchBookcase = async () => {
   }
 };
 
+const selectBook = async (book: any) => {
+  activeBook.value = book;
+  activeNote.value = null;
+  bookNotes.value = [];
+  try {
+    bookNotes.value = await apiService.getBookNotes(book.id);
+    if (bookNotes.value.length > 0) {
+      activeNote.value = { ...bookNotes.value[0] };
+    } else {
+      createNewNote();
+    }
+  } catch (err) {
+    console.error('Failed to fetch notes:', err);
+  }
+};
+
+const createNewNote = () => {
+  activeNote.value = {
+    id: 'temp-' + Date.now(),
+    title: 'New Study Note',
+    content: '',
+    noteType: 'markdown'
+  };
+};
+
+const selectNote = (note: any) => {
+  activeNote.value = { ...note };
+};
+
+const saveCurrentNote = async () => {
+  if (!activeBook.value || !activeNote.value) return;
+  isSaving.value = true;
+  try {
+    if (activeNote.value.id.startsWith('temp-')) {
+      const res = await apiService.addBookNote(activeBook.value.id, {
+        title: activeNote.value.title,
+        content: activeNote.value.content,
+        noteType: activeNote.value.noteType
+      });
+      activeNote.value.id = res.id;
+    } else {
+      await apiService.updateBookNote(activeNote.value.id, {
+        title: activeNote.value.title,
+        content: activeNote.value.content,
+        noteType: activeNote.value.noteType
+      });
+    }
+    // Refresh notes list
+    bookNotes.value = await apiService.getBookNotes(activeBook.value.id);
+  } catch (err) {
+    alert('Failed to save note');
+  } finally {
+    isSaving.value = false;
+  }
+};
+
+const deleteNote = async (id: string) => {
+  if (id.startsWith('temp-')) {
+    activeNote.value = null;
+    return;
+  }
+  if (!confirm('Delete this note?')) return;
+  try {
+    await apiService.removeBookNote(id);
+    bookNotes.value = await apiService.getBookNotes(activeBook.value.id);
+    if (bookNotes.value.length > 0) {
+      selectNote(bookNotes.value[0]);
+    } else {
+      createNewNote();
+    }
+  } catch (err) {
+    alert('Delete failed');
+  }
+};
+
+// --- Store Discovery ---
 const searchAvailable = async () => {
   isSearching.value = true;
   try {
@@ -44,148 +128,190 @@ const searchAvailable = async () => {
   }
 };
 
-const addBook = async (res: any) => {
+const importBook = async (res: any) => {
   try {
     await apiService.addBookToBookcase({
       storeId: res.id,
       title: res.title || res.caption || 'Untitled Book',
-      category: res.mediaType?.toUpperCase() || 'BOOK'
+      category: res.mediaType?.toUpperCase() || 'DOCUMENT'
     });
     showAddModal.value = false;
     fetchBookcase();
   } catch (err) {
-    alert('Failed to add book');
+    alert('Import failed');
   }
 };
 
-const removeBook = async (id: string) => {
-  if (confirm('Remove this book from your bookcase?')) {
-    try {
-      await apiService.removeBook(id);
-      fetchBookcase();
-    } catch (err) {
-      console.error('Remove failed:', err);
-    }
-  }
-};
-
-const openNotes = (book: any) => {
-  activeBook.value = book;
-  noteEditorContent.value = book.notes || '';
-  showNoteModal.value = true;
-};
-
-const saveNote = async () => {
-  if (!activeBook.value) return;
-  isSavingNote.value = true;
+const removeBookStatus = async (id: string) => {
+  if (!confirm('Unlink this book from your library?')) return;
   try {
-    await apiService.updateBookNotes(activeBook.value.id, noteEditorContent.value);
-    activeBook.value.notes = noteEditorContent.value;
-    showNoteModal.value = false;
+    await apiService.removeBook(id);
+    activeBook.value = null;
     fetchBookcase();
   } catch (err) {
-    alert('Failed to save notes');
-  } finally {
-    isSavingNote.value = false;
+    alert('Unlink failed');
   }
 };
 
-const pinBookToDesk = async (book: any) => {
-  try {
-    await pinToDesk('book', book.id);
-    alert(`Pinned ${book.title} notes to Desk!`);
-  } catch (err) {
-    console.error('Pin failed:', err);
-  }
-};
-
-onMounted(() => {
-  fetchBookcase();
+// --- Helpers ---
+const filteredBooks = computed(() => {
+  if (!searchTerm.value) return books.value;
+  return books.value.filter(b => 
+    b.title?.toLowerCase().includes(searchTerm.value.toLowerCase()) ||
+    b.folder?.toLowerCase().includes(searchTerm.value.toLowerCase())
+  );
 });
+
+const getFileUrl = (book: any) => {
+  if (!book || !book.storeId) return '';
+  return `${import.meta.env.VITE_API_URL}/api/storehouse/file/${book.storeId}`;
+};
+
+onMounted(fetchBookcase);
 </script>
 
 <template>
-  <div class="bookcase-container">
-    <div class="section-header">
-      <div class="title-area">
-        <h1>📚 Digital Bookcase</h1>
-        <p>Manage your PDF, EPUB, and DJVU collections</p>
+  <div class="bookcase-v2">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="search-wrap">
+          <input v-model="searchTerm" placeholder="Filter library..." />
+        </div>
+        <button @click="showAddModal = true; searchAvailable()" class="icon-btn add-book-btn" title="Add Book from Store">
+          <span>+</span>
+        </button>
       </div>
-      <button @click="showAddModal = true; searchAvailable()" class="add-btn">+ Add Book</button>
-    </div>
 
-    <!-- Book Grid -->
-    <div v-if="isLoading" class="loader">Loading your library...</div>
-    <div v-else-if="books.length === 0" class="empty-state">
-      <div class="icon">📖</div>
-      <p>Your bookcase is empty. Add some books from your store!</p>
-    </div>
-    <div v-else class="book-grid">
-      <div v-for="book in books" :key="book.id" class="book-card">
-        <div class="book-type-badge">{{ book.category }}</div>
-        <div class="book-info">
-          <h3 class="book-title">{{ book.title }}</h3>
-          <p class="book-meta">Added on {{ new Date(book.createdAt).toLocaleDateString() }}</p>
-        </div>
-        <div class="book-actions">
-          <button @click="openNotes(book)" class="action-btn note-btn">📝 Notes</button>
-          <button @click="pinBookToDesk(book)" class="action-btn pin-btn">📌 Pin</button>
-          <button @click="removeBook(book.id)" class="action-btn delete-btn">🗑️</button>
+      <div class="book-list">
+        <div v-if="isLoading" class="list-loader">Syncing...</div>
+        <div 
+          v-for="book in filteredBooks" 
+          :key="book.id"
+          class="book-item"
+          :class="{ active: activeBook?.id === book.id }"
+          @click="selectBook(book)"
+        >
+          <div class="item-icon">📚</div>
+          <div class="item-info">
+            <div class="item-title">{{ book.title }}</div>
+            <div class="item-meta">{{ book.category }}</div>
+          </div>
         </div>
       </div>
-    </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <main v-if="activeBook" class="workspace">
+      <!-- Workspace Toolbar -->
+      <header class="ws-header">
+        <div class="active-book-info">
+          <h2>{{ activeBook.title }}</h2>
+          <span class="badge">{{ activeBook.category }}</span>
+        </div>
+        <div class="ws-controls">
+          <div class="mode-toggle">
+            <button @click="viewMode = 'preview'" :class="{ active: viewMode === 'preview' }">📖 Read</button>
+            <button @click="viewMode = 'mixed'" :class="{ active: viewMode === 'mixed' }">🌗 Split</button>
+            <button @click="viewMode = 'notes'" :class="{ active: viewMode === 'notes' }">📝 Notes</button>
+          </div>
+          <button @click="removeBookStatus(activeBook.id)" class="icon-btn delete-item-btn">🗑️</button>
+        </div>
+      </header>
+
+      <div class="ws-body" :class="'mode-' + viewMode">
+        <!-- Left: Preview Pane -->
+        <div v-if="viewMode !== 'notes'" class="preview-pane">
+          <div v-if="activeBook.category === 'PDF' || activeBook.title.toLowerCase().endsWith('.pdf')" class="pdf-viewer">
+            <iframe :src="getFileUrl(activeBook)" frameborder="0"></iframe>
+          </div>
+          <div v-else class="placeholder-viewer">
+            <div class="msg">
+              <div class="icon">🔍</div>
+              <p>Preview for {{ activeBook.category }} coming soon.</p>
+              <a :href="getFileUrl(activeBook)" target="_blank" class="download-link">Open Original File</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Notes Pane -->
+        <div v-if="viewMode !== 'preview'" class="notes-pane">
+          <div class="note-tabs">
+            <div 
+              v-for="note in bookNotes" 
+              :key="note.id"
+              class="note-tab"
+              :class="{ active: activeNote?.id === note.id }"
+              @click="selectNote(note)"
+            >
+              {{ note.title }}
+            </div>
+            <button @click="createNewNote" class="new-note-tab">+ New</button>
+          </div>
+
+          <div v-if="activeNote" class="note-editor-container">
+            <div class="editor-header">
+              <input v-model="activeNote.title" class="note-title-input" placeholder="Note title..." />
+              <div class="editor-actions">
+                <button @click="activeNote.noteType = activeNote.noteType === 'markdown' ? 'txt' : 'markdown'" class="toggle-btn">
+                  {{ activeNote.noteType === 'markdown' ? 'Markdown' : 'Plain Text' }}
+                </button>
+                <button @click="saveCurrentNote" :disabled="isSaving" class="save-btn">
+                  {{ isSaving ? '...' : 'Save' }}
+                </button>
+                <button v-if="activeNote && !activeNote.id.startsWith('temp-')" @click="pinToDesk('note', activeNote.id)" class="pin-note-btn" title="Pin note to Desk">📌</button>
+                <button v-if="activeNote && !activeNote.id.startsWith('temp-')" @click="deleteNote(activeNote.id)" class="delete-note-btn">🗑️</button>
+              </div>
+            </div>
+
+            <div class="editor-main">
+              <textarea 
+                v-model="activeNote.content" 
+                class="note-textarea"
+                placeholder="Start your study session..."
+              ></textarea>
+              <div 
+                v-if="activeNote.noteType === 'markdown'" 
+                class="note-preview markdown-body" 
+                v-html="marked(activeNote.content || '')"
+              ></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Empty State -->
+    <main v-else class="workspace empty-ws">
+      <div class="welcome">
+        <div class="hero-icon">🏛️</div>
+        <h1>Your Knowledge Library</h1>
+        <p>Select a book from the sidebar to start reading and mapping notes.</p>
+        <button @click="showAddModal = true; searchAvailable()" class="cta-btn">Add My First Book</button>
+      </div>
+    </main>
 
     <!-- Add Book Modal -->
     <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
       <div class="modal-content add-book-modal">
         <div class="modal-header">
-          <h2>Select Book from Store</h2>
+          <h2>Select from Media Storehouse</h2>
           <button @click="showAddModal = false" class="close-btn">&times;</button>
         </div>
         <div class="search-bar">
-          <input 
-            v-model="searchQuery" 
-            placeholder="Search by title..." 
-            @input="searchAvailable"
-          />
+          <input v-model="searchQuery" placeholder="Search by filename or content..." @input="searchAvailable" />
         </div>
         <div class="available-list">
-          <div v-if="isSearching" class="mini-loader">Searching...</div>
-          <div v-else-if="availableResources.length === 0" class="no-results">No documents found.</div>
+          <div v-if="isSearching" class="mini-loader">Syncing...</div>
           <div 
             v-for="res in availableResources" 
             :key="res.id" 
             class="resource-item"
-            @click="addBook(res)"
+            @click="importBook(res)"
           >
             <span class="res-type">[{{ res.mediaType }}]</span>
-            <span class="res-title">{{ res.title || res.caption || 'Scan Item' }}</span>
-            <span class="res-date">{{ new Date(res.createdAt).toLocaleDateString() }}</span>
+            <span class="res-title">{{ res.title || res.caption || 'Untitled Resource' }}</span>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Notes Editor Modal -->
-    <div v-if="showNoteModal" class="modal-overlay" @click.self="showNoteModal = false">
-      <div class="modal-content note-modal">
-        <div class="modal-header">
-          <h2>Notes: {{ activeBook?.title }}</h2>
-          <button @click="showNoteModal = false" class="close-btn">&times;</button>
-        </div>
-        <div class="editor-layout">
-          <div class="editor-pane">
-            <textarea 
-              v-model="noteEditorContent" 
-              placeholder="Write your study notes in Markdown..."
-            ></textarea>
-          </div>
-          <div class="preview-pane markdown-body" v-html="marked(noteEditorContent)"></div>
-        </div>
-        <div class="modal-footer">
-          <button @click="saveNote" :disabled="isSavingNote" class="save-btn">
-            {{ isSavingNote ? 'Saving...' : 'Save & Close' }}
-          </button>
         </div>
       </div>
     </div>
@@ -193,279 +319,225 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.bookcase-container {
+.bookcase-v2 {
   display: flex;
-  flex-direction: column;
-  height: 100%;
+  height: 100vh;
+  background: #0f172a;
+  color: #e2e8f0;
 }
 
-.section-header {
+/* Sidebar */
+.sidebar {
+  width: 280px;
+  background: rgba(0, 0, 0, 0.2);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+}
+
+.sidebar-header {
+  padding: 1.25rem;
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.search-wrap { flex: 1; }
+.search-wrap input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: white;
+  font-size: 0.9rem;
+}
+
+.add-book-btn {
+  width: 34px;
+  background: #d97706;
+  border: none;
+  border-radius: 6px;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.book-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+
+.book-item {
+  padding: 0.75rem;
+  border-radius: 8px;
+  display: flex;
+  gap: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 2px;
+}
+
+.book-item:hover { background: rgba(255, 255, 255, 0.05); }
+.book-item.active { background: rgba(217, 119, 6, 0.15); border: 1px solid rgba(217, 119, 6, 0.3); }
+
+.item-icon { font-size: 1.2rem; }
+.item-title { font-size: 0.9rem; font-weight: 500; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.item-meta { font-size: 0.7rem; opacity: 0.4; text-transform: uppercase; margin-top: 2px; }
+
+/* Workspace */
+.workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ws-header {
+  height: 64px;
+  padding: 0 1.5rem;
+  display: flex;
   align-items: center;
-  padding: 1.5rem 2rem;
+  justify-content: space-between;
   background: rgba(255, 255, 255, 0.02);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.title-area h1 {
-  margin: 0;
-  font-size: 1.8rem;
-  background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
+.active-book-info { display: flex; align-items: center; gap: 1rem; }
+.active-book-info h2 { font-size: 1.1rem; margin: 0; }
+.badge { background: rgba(217, 119, 6, 0.2); color: #fbbf24; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.7rem; font-weight: bold; }
 
-.title-area p {
-  margin: 0.2rem 0 0;
-  opacity: 0.5;
-  font-size: 0.9rem;
-}
-
-.add-btn {
-  padding: 0.6rem 1.2rem;
-  background: #d97706;
+.mode-toggle { display: flex; background: rgba(255, 255, 255, 0.05); border-radius: 8px; padding: 2px; }
+.mode-toggle button {
+  padding: 0.4rem 1rem;
   border: none;
-  border-radius: 8px;
-  color: white;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.add-btn:hover {
-  background: #fbbf24;
-  transform: translateY(-2px);
-}
-
-.book-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 1.5rem;
-  padding: 2rem;
-  overflow-y: auto;
-}
-
-.book-card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 16px;
-  padding: 1.25rem;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  transition: all 0.3s;
-}
-
-.book-card:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: #d97706;
-}
-
-.book-type-badge {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  background: rgba(217, 119, 6, 0.2);
-  color: #fbbf24;
-  padding: 0.2rem 0.6rem;
-  border-radius: 6px;
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.05rem;
-}
-
-.book-info {
-  margin-bottom: 1.5rem;
-  text-align: left;
-}
-
-.book-title {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 600;
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.book-meta {
-  margin: 0.4rem 0 0;
-  font-size: 0.8rem;
-  opacity: 0.4;
-}
-
-.book-actions {
-  display: flex;
-  gap: 0.6rem;
-}
-
-.action-btn {
-  flex: 1;
-  padding: 0.5rem;
-  border: none;
-  border-radius: 8px;
+  background: transparent;
+  color: #94a3b8;
   font-size: 0.85rem;
-  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  border-radius: 6px;
+}
+.mode-toggle button.active { background: rgba(255, 255, 255, 0.1); color: white; }
+
+.ws-body { flex: 1; display: flex; overflow: hidden; }
+
+/* Panes */
+.preview-pane { flex: 1.2; border-right: 1px solid rgba(255, 255, 255, 0.05); background: #1e293b; position: relative; }
+.pdf-viewer iframe { width: 100%; height: 100%; position: absolute; }
+
+.placeholder-viewer {
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+  text-align: center;
+  padding: 2rem;
 }
+.placeholder-viewer .icon { font-size: 3rem; opacity: 0.2; margin-bottom: 1rem; }
+.download-link { color: #fbbf24; text-decoration: underline; font-size: 0.9rem; margin-top: 1rem; display: inline-block; }
 
-.note-btn { background: rgba(var(--primary-rgb), 0.1); color: var(--primary-color); }
-.pin-btn { background: rgba(255, 255, 255, 0.05); color: white; }
-.delete-btn { width: 40px; flex: none; background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+.notes-pane { flex: 1; display: flex; flex-direction: column; background: #0f172a; }
 
-.action-btn:hover { transform: scale(1.05); }
-
-/* Modals */
-.modal-overlay {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
+.note-tabs {
+  padding: 0.75rem 1rem 0;
   display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
+  gap: 0.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  overflow-x: auto;
 }
 
-.modal-content {
-  background: #1a1a1a;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
-  display: flex;
-  flex-direction: column;
+.note-tab {
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-bottom: none;
+}
+.note-tab.active { background: #334155; color: white; border-color: rgba(255, 255, 255, 0.1); }
+.new-note-tab {
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  background: transparent;
+  border: none;
+  color: #fbbf24;
+  cursor: pointer;
 }
 
-.add-book-modal {
-  width: 500px;
-  max-height: 80vh;
-}
+.note-editor-container { flex: 1; display: flex; flex-direction: column; }
 
-.note-modal {
-  width: 90vw;
-  height: 90vh;
-}
-
-.modal-header {
-  padding: 1.5rem;
+.editor-header {
+  padding: 1rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.modal-header h2 { margin: 0; font-size: 1.3rem; }
-
-.close-btn {
-  background: none;
-  border: none;
-  color: white;
-  font-size: 1.5rem;
-  cursor: pointer;
-  opacity: 0.5;
-}
-
-.search-bar { padding: 1rem 1.5rem; }
-.search-bar input {
-  width: 100%;
-  padding: 0.8rem 1rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  color: white;
-}
-
-.available-list {
+.note-title-input {
   flex: 1;
-  overflow-y: auto;
-  padding: 0 1rem 1rem;
-}
-
-.resource-item {
-  padding: 0.8rem 1rem;
-  margin-bottom: 0.5rem;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 10px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-  transition: all 0.2s;
-  text-align: left;
-}
-
-.resource-item:hover {
-  background: rgba(217, 119, 6, 0.1);
-  transform: translateX(5px);
-}
-
-.res-type { color: #fbbf24; font-size: 0.7rem; font-weight: 800; min-width: 60px; }
-.res-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.res-date { font-size: 0.75rem; opacity: 0.3; }
-
-.editor-layout {
-  flex: 1;
-  display: flex;
-  overflow: hidden;
-}
-
-.editor-pane {
-  flex: 1;
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.editor-pane textarea {
-  width: 100%;
-  height: 100%;
-  padding: 2rem;
   background: transparent;
   border: none;
-  color: #e5e7eb;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 1.1rem;
-  line-height: 1.6;
-  resize: none;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
   outline: none;
 }
 
-.preview-pane {
+.editor-actions { display: flex; gap: 0.5rem; }
+.toggle-btn { padding: 0.4rem 0.75rem; border: 1px solid rgba(255, 255, 255, 0.1); background: transparent; color: #94a3b8; border-radius: 6px; font-size: 0.75rem; cursor: pointer; }
+.save-btn { padding: 0.4rem 1.25rem; background: #d97706; border: none; color: white; border-radius: 6px; font-size: 0.85rem; font-weight: bold; cursor: pointer; }
+.pin-note-btn { background: rgba(var(--primary-rgb), 0.1); border: 1px solid rgba(var(--primary-rgb), 0.2); color: var(--primary-color); border-radius: 6px; padding: 0.4rem 0.6rem; cursor: pointer; font-size: 0.8rem; }
+.delete-note-btn { background: rgba(239, 68, 68, 0.1); border: none; color: #ef4444; border-radius: 6px; padding: 0.4rem 0.6rem; cursor: pointer; }
+
+.editor-main { flex: 1; display: flex; overflow: hidden; }
+
+.note-textarea {
   flex: 1;
-  padding: 2rem;
+  padding: 1.5rem;
+  background: transparent;
+  border: none;
+  color: #cbd5e1;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1rem;
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+  border-right: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.note-preview {
+  flex: 1;
+  padding: 1.5rem;
   overflow-y: auto;
   text-align: left;
 }
 
-.modal-footer {
-  padding: 1.5rem;
-  display: flex;
-  justify-content: flex-end;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-}
+/* Modal Styling */
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 2000; display: flex; justify-content: center; align-items: center; }
+.modal-content { background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; width: 600px; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
+.modal-header { padding: 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; }
+.close-btn { background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer; }
+.search-bar { padding: 1rem; }
+.search-bar input { width: 100%; padding: 0.75rem; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; }
+.available-list { flex: 1; overflow-y: auto; padding: 1rem; }
+.resource-item { padding: 0.75rem; background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 0.5rem; cursor: pointer; display: flex; align-items: center; gap: 0.75rem; }
+.res-type { font-size: 0.7rem; color: #fbbf24; font-weight: bold; min-width: 80px; }
 
-.save-btn {
-  padding: 0.8rem 2rem;
-  background: #d97706;
-  border: none;
-  border-radius: 10px;
-  color: white;
-  font-weight: 700;
-  cursor: pointer;
-}
+/* Layout adjustments */
+.mode-preview .notes-pane { display: none; }
+.mode-notes .preview-pane { display: none; }
 
-.save-btn:hover { background: #fbbf24; }
-.save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Empty States */
+.empty-ws { align-items: center; justify-content: center; background: #0f172a; text-align: center; }
+.hero-icon { font-size: 5rem; margin-bottom: 1.5rem; opacity: 0.3; }
+.cta-btn { margin-top: 1.5rem; padding: 1rem 2.5rem; background: #d97706; border: none; color: white; border-radius: 12px; font-weight: bold; cursor: pointer; transition: transform 0.2s; }
+.cta-btn:hover { transform: scale(1.05); background: #fbbf24; }
 
-.loader, .empty-state, .no-results, .mini-loader {
-  padding: 4rem;
-  text-align: center;
-  opacity: 0.5;
-}
-
-.empty-state .icon { font-size: 4rem; margin-bottom: 1rem; }
+/* Generic Loader */
+.list-loader { padding: 2rem; opacity: 0.5; font-size: 0.9rem; text-align: center; }
 </style>
