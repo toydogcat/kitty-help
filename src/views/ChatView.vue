@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch, nextTick } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { apiService, socket } from '../services/api';
 import { marked } from 'marked';
 

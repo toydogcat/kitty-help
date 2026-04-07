@@ -384,6 +384,16 @@ export const apiService = {
     return response.data;
   },
 
+  // 📸 Added for ChatView
+  async getRecentMessages(limit: number = 50) {
+    const response = await axios.get(`${API_BASE}/chat/logs?limit=${limit}`);
+    return response.data;
+  },
+  async getRecentPhotos(page: number = 1, limit: number = 20) {
+    const response = await axios.get(`${API_BASE}/chat/photos?page=${page}&limit=${limit}`);
+    return response.data;
+  },
+
   // 📝 Integrated Remarks
   async getRemarks() {
     const res = await axios.get(`${API_BASE}/chat/remarks`);
@@ -393,7 +403,7 @@ export const apiService = {
     const res = await axios.post(`${API_BASE}/chat/remarks`, data);
     return res.data;
   },
-  async updateRemark(id: string, data: { name: string; content?: string; isPinned?: boolean }) {
+  async updateRemark(id: string, data: { name?: string; content?: string; isPinned?: boolean }) {
     const res = await axios.put(`${API_BASE}/chat/remarks/${id}`, data);
     return res.data;
   },
@@ -403,6 +413,10 @@ export const apiService = {
   },
   async toggleIntegration(logId: string | number) {
     const res = await axios.post(`${API_BASE}/chat/remarks/toggle`, { logId });
+    return res.data;
+  },
+  async addRemarkItem(data: { containerId: string; logId: string | number }) {
+    const res = await axios.post(`${API_BASE}/chat/remarks/items`, data);
     return res.data;
   },
   async moveRemarkItem(itemId: string, containerId: string | null, sortOrder: number = 0) {
