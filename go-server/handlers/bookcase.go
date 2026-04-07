@@ -17,6 +17,7 @@ type BookcaseItem struct {
 	Title     string    `json:"title"`
 	Category  string    `json:"category"`
 	Notes     string    `json:"notes"`
+	Folder    string    `json:"folder"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -31,7 +32,7 @@ func GetBookcase(c *fiber.Ctx) error {
 	}
 
 	rows, err := database.LocalDB.Query(context.Background(), 
-		"SELECT id, user_id, store_id, title, category, notes, created_at, updated_at FROM bookcase WHERE user_id = $1 ORDER BY updated_at DESC", 
+		"SELECT id, user_id, store_id, title, category, notes, folder, created_at, updated_at FROM bookcase WHERE user_id = $1 ORDER BY updated_at DESC", 
 		userId)
 	if err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
@@ -41,7 +42,7 @@ func GetBookcase(c *fiber.Ctx) error {
 	items := []BookcaseItem{}
 	for rows.Next() {
 		var it BookcaseItem
-		err := rows.Scan(&it.ID, &it.UserID, &it.StoreID, &it.Title, &it.Category, &it.Notes, &it.CreatedAt, &it.UpdatedAt)
+		err := rows.Scan(&it.ID, &it.UserID, &it.StoreID, &it.Title, &it.Category, &it.Notes, &it.Folder, &it.CreatedAt, &it.UpdatedAt)
 		if err != nil {
 			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -264,6 +265,11 @@ func RemoveBookNote(c *fiber.Ctx) error {
 }
 
 func UpdateBookFolder(c *fiber.Ctx) error {
+	userClaims := c.Locals("user").(*Claims)
+	
+	var userId string
+	_ = database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&userId)
+	
 	bookID := c.Params("id")
 	var req struct {
 		Folder string `json:"folder"`
@@ -273,8 +279,8 @@ func UpdateBookFolder(c *fiber.Ctx) error {
 	}
 
 	_, err := database.LocalDB.Exec(context.Background(),
-		"UPDATE bookcase SET folder = $1, updated_at = now() WHERE id = $2",
-		req.Folder, bookID)
+		"UPDATE bookcase SET folder = $1, updated_at = now() WHERE id = $2 AND user_id = $3",
+		req.Folder, bookID, userId)
 	
 	if err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})

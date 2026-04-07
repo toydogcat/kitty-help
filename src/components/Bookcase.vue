@@ -43,12 +43,15 @@ const fetchBookcase = async () => {
     const data = await apiService.getBookcase();
     books.value = data || [];
     
-    // Sync custom folders from books
+    // Merge folders from books and localStorage
+    const saved = localStorage.getItem('kb_custom_folders');
+    const localFolders = saved ? JSON.parse(saved) : [];
+    
+    const combined = new Set([...localFolders]);
     books.value.forEach(b => {
-      if (b.folder && !customFolders.value.includes(b.folder)) {
-        customFolders.value.push(b.folder);
-      }
+      if (b.folder) combined.add(b.folder);
     });
+    customFolders.value = Array.from(combined);
 
     if (books.value.length > 0 && !activeBook.value) {
       selectBook(books.value[0]);
@@ -97,20 +100,25 @@ const cleanupEpub = () => {
   isEpubLoading.value = false;
 };
 
-const initEpubReader = () => {
+const initEpubReader = async () => {
   if (!activeBook.value || !isEPUB(activeBook.value) || !epubViewerRef.value) return;
   
-  // @ts-ignore (Load from CDN fallback)
+  // @ts-ignore
   if (typeof ePub === 'undefined') {
-    epubError.value = "Librairies still loading...";
+    epubError.value = "Library still loading...";
     setTimeout(initEpubReader, 1000);
     return;
   }
 
   const url = getFileUrl(activeBook.value);
   try {
+    // Fetch as BLOB to avoid relative path 403 errors in epub.js
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("File fetch failed");
+    const buffer = await response.arrayBuffer();
+
     // @ts-ignore
-    epubBook.value = ePub(url);
+    epubBook.value = ePub(buffer);
     
     epubRendition.value = epubBook.value.renderTo(epubViewerRef.value, {
       width: "100%",
@@ -125,17 +133,17 @@ const initEpubReader = () => {
       // Dark theme for epub.js
       epubRendition.value.themes.register("dark", {
          "body": { "color": "#cbd5e1 !important", "background": "#1e293b !important" },
-         "p": { "color": "#cbd5e1" }
+         "p": { "color": "#cbd5e1 !important" }
       });
       epubRendition.value.themes.select("dark");
     }).catch((err: any) => {
       console.error('EPUB display error:', err);
-      epubError.value = "Failed to render book content.";
+      epubError.value = "Failed to render book content. The file might be corrupted.";
       isEpubLoading.value = false;
     });
   } catch (e) {
     console.error('Reader init error:', e);
-    epubError.value = "Incompatible file format or CORS issue.";
+    epubError.value = "Incompatible file format or Network error.";
     isEpubLoading.value = false;
   }
 };
@@ -272,18 +280,17 @@ const onDropIntoFolder = async (event: DragEvent, folderName: string) => {
   event.preventDefault();
   dragOverFolder.value = null;
   const bookId = event.dataTransfer?.getData('bookId');
-  
   if (!bookId) return;
 
   const targetFolder = folderName === 'Uncategorized' ? '' : folderName;
   try {
     await apiService.updateBookFolder(bookId, targetFolder);
-    // Optimistic Update
+    // Sync state immediately
     const b = books.value.find(bk => bk.id === bookId);
     if (b) b.folder = targetFolder;
   } catch (err) {
     console.error('Book move failed:', err);
-    fetchBookcase(); // Rollback
+    fetchBookcase(); 
   }
 };
 
@@ -295,6 +302,11 @@ const createFolder = () => {
   }
   newFolderName.value = '';
 };
+
+// Persistence for empty folders
+watch(customFolders, (newVal) => {
+  localStorage.setItem('kb_custom_folders', JSON.stringify(newVal));
+}, { deep: true });
 
 // --- Helpers ---
 const getFileUrl = (book: any) => {
@@ -326,20 +338,18 @@ watch(viewMode, (newVal) => {
 onMounted(() => {
   fetchBookcase();
   
-  // Inject script correctly with fallbacks
-  const loadScript = (id: string, src: string) => {
-    if (document.getElementById(id)) return;
-    const s = document.createElement('script');
-    s.id = id;
-    s.src = src;
-    s.async = true;
-    s.onerror = () => { console.error(`Failed to load script: ${src}`); };
-    document.head.appendChild(s);
-  };
-
-  // Try UNPKG instead of cdnjs as fallback
-  loadScript('jszip-js', 'https://unpkg.com/jszip/dist/jszip.min.js');
-  loadScript('epub-js', 'https://unpkg.com/epubjs/dist/epub.min.js');
+  if (!document.getElementById('epub-js')) {
+    const script = document.createElement('script');
+    script.id = 'epub-js';
+    script.src = 'https://unpkg.com/epubjs/dist/epub.min.js';
+    script.async = true;
+    document.head.appendChild(script);
+    
+    const jszip = document.createElement('script');
+    jszip.src = 'https://unpkg.com/jszip/dist/jszip.min.js';
+    jszip.async = true;
+    document.head.appendChild(jszip);
+  }
 });
 </script>
 
@@ -347,12 +357,12 @@ onMounted(() => {
   <div class="bookcase-v2">
     <aside class="sidebar">
       <div class="sidebar-header">
-        <div class="search-wrap"><input v-model="searchTerm" placeholder="Filter library..." /></div>
+        <div class="search-wrap"><input v-model="searchTerm" placeholder="Filter research..." /></div>
         <button @click="showAddModal = true; searchAvailable()" class="icon-btn add-book-btn"><span>+</span></button>
       </div>
 
       <div class="folder-list">
-        <div v-if="isLoading" class="list-loader">Syncing...</div>
+        <div v-if="isLoading" class="list-loader">Syncing library...</div>
         <div 
           v-for="(folderBooks, folderName) in folders" :key="folderName"
           class="folder-group" :class="{ 'drop-target': dragOverFolder === folderName }"
@@ -406,13 +416,13 @@ onMounted(() => {
              
              <div v-if="isEpubLoading" class="reader-overlay">
                 <div class="spinner"></div>
-                <span>Warming up EPUB Reader...</span>
+                <span>Parsing book content...</span>
              </div>
              
              <div v-if="epubError" class="reader-overlay error">
                 <div class="icon">⚠️</div>
                 <span>{{ epubError }}</span>
-                <a :href="getFileUrl(activeBook)" target="_blank" class="download-link">Try Single Tab Tab</a>
+                <a :href="getFileUrl(activeBook)" target="_blank" class="download-link">Open Original File</a>
              </div>
 
              <div v-if="epubRendition" class="epub-nav">
@@ -421,7 +431,7 @@ onMounted(() => {
              </div>
           </div>
           <div v-else class="placeholder-viewer">
-             <div class="msg"><div class="icon">🔍</div><p>Preview coming soon.</p></div>
+             <div class="msg"><div class="icon">🔍</div><p>Online preview for <b>{{ activeBook.category }}</b> soon.</p></div>
           </div>
         </div>
 
@@ -436,7 +446,7 @@ onMounted(() => {
           </div>
           <div v-if="activeNote" class="note-editor-container">
             <div class="editor-header">
-              <input v-model="activeNote.title" class="note-title-input" placeholder="Note title..." />
+              <input v-model="activeNote.title" class="note-title-input" placeholder="Title..." />
               <div class="editor-actions">
                 <button @click="activeNote.noteType = activeNote.noteType === 'markdown' ? 'txt' : 'markdown'" class="toggle-btn">{{ activeNote.noteType === 'markdown' ? 'MD' : 'TXT' }}</button>
                 <button @click="saveCurrentNote" :disabled="isSaving" class="save-btn">{{ isSaving ? '...' : 'Save' }}</button>
@@ -445,7 +455,7 @@ onMounted(() => {
               </div>
             </div>
             <div class="editor-main">
-              <textarea v-model="activeNote.content" class="note-textarea" placeholder="Notes..." />
+              <textarea v-model="activeNote.content" class="note-textarea" placeholder="Start typing..." />
               <div v-if="activeNote.noteType === 'markdown'" class="note-preview markdown-body" v-html="marked(activeNote.content || '')" />
             </div>
           </div>
@@ -453,12 +463,12 @@ onMounted(() => {
       </div>
     </main>
     <main v-else class="workspace empty-ws">
-       <div class="welcome"><h1>Ready to Study?</h1><p>Select a book to start your professional workspace.</p></div>
+       <div class="welcome"><h1>Research Workspace</h1><p>Select a volume to begin your study session.</p></div>
     </main>
 
     <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
       <div class="modal-content add-book-modal">
-        <div class="modal-header"><h2>Store Explorer</h2><button @click="showAddModal = false" class="close-btn">&times;</button></div>
+        <div class="modal-header"><h2>Library Store</h2><button @click="showAddModal = false" class="close-btn">&times;</button></div>
         <div class="search-bar"><input v-model="searchQuery" placeholder="Search..." @input="searchAvailable" /></div>
         <div class="available-list">
           <div v-for="res in availableResources" :key="res.id" class="resource-item" @click="importBook(res)">
@@ -471,7 +481,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.bookcase-v2 { display: flex; height: 100vh; background: #0f172a; color: #e2e8f0; font-family: 'Inter', sans-serif;}
+.bookcase-v2 { display: flex; height: 100vh; background: #0f172a; color: #e2e8f0; font-family: 'Outfit', sans-serif;}
 .sidebar { width: 300px; background: rgba(0, 0, 0, 0.25); border-right: 1px solid rgba(255, 255, 255, 0.05); display: flex; flex-direction: column; }
 .sidebar-header { padding: 1.25rem; display: flex; gap: 0.5rem; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
 .search-wrap { flex: 1; }
