@@ -401,8 +401,8 @@ export const apiService = {
     const res = await axios.delete(`${API_BASE}/chat/remarks/${id}`);
     return res.data;
   },
-  async toggleIntegration(logId: number) {
-    const res = await axios.post(`${API_BASE}/chat/remarks/toggle`, { logId: Number(logId) });
+  async toggleIntegration(logId: string | number) {
+    const res = await axios.post(`${API_BASE}/chat/remarks/toggle`, { logId });
     return res.data;
   },
   async moveRemarkItem(itemId: string, containerId: string | null, sortOrder: number = 0) {
