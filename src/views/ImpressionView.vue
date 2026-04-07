@@ -309,10 +309,14 @@ const executeCommand = async () => {
             const typeFilter = args[0]?.toLowerCase();
             if (typeFilter === 'kg' || typeFilter === 'kgs') {
                 await fetchKGs();
+                let combined = [...availableKGsList.value];
+                if (!combined.includes('default')) combined.push('default');
+                if (!combined.includes(kgName.value)) combined.push(kgName.value);
+                
                 const q = args.slice(1).join(' ').toLowerCase();
-                let filtered = availableKGsList.value;
+                let filtered = combined;
                 if (q) {
-                    filtered = availableKGsList.value.filter(n => n.toLowerCase().includes(q));
+                    filtered = combined.filter(n => n.toLowerCase().includes(q));
                 }
                 commandResults.value = filtered.map(name => ({
                     id: name, title: name, resultType: 'kg', kgName: name
