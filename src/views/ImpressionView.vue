@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import { Network } from 'vis-network';
 import { DataSet } from 'vis-data';
 import { apiService } from '../services/api';
@@ -514,6 +514,20 @@ const selectMediaStoreItem = (item: any) => {
     showMediaStore.value = false;
 };
 
+const allNodesInKG = computed(() => {
+    return nodes.get().filter((n: any) => n.id !== selectedNodeDetails.value?.id).map((n: any) => ({
+        id: n.id,
+        title: n.label,
+        raw: n.raw
+    }));
+});
+
+const onNodeSelectChange = (e: Event) => {
+    const val = (e.target as HTMLSelectElement).value;
+    const node = nodes.get(val) as any;
+    if (node) selectTarget(node.raw);
+};
+
 const selectTarget = (node: any) => { targetNode.value = node; searchQ2.value = node.title; searchResults2.value = []; };
 
 onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
@@ -625,8 +639,14 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
                     <h3>Weave Connection</h3>
                     <div class="in-field"><label>Label</label><input v-model="linkLabel" placeholder="Name the bond..." /></div>
                     <div class="in-field">
-                        <label>Target</label>
-                        <input type="text" v-model="searchQ2" placeholder="Type node title..." @input="debouncedSearch2" class="m-input" />
+                        <label>Target Node</label>
+                        <div class="select-search-combo">
+                            <select :value="targetNode?.id || ''" @change="onNodeSelectChange" class="premium-select target-sel">
+                                <option value="" disabled>-- Quick Jump to Node --</option>
+                                <option v-for="n in allNodesInKG" :key="n.id" :value="n.id">{{ n.title }}</option>
+                            </select>
+                            <input type="text" v-model="searchQ2" placeholder="...or Search title" @input="debouncedSearch2" class="m-input" />
+                        </div>
                         <div v-if="searchResults2.length" class="inline-results glass">
                             <div v-for="r in searchResults2" :key="r.id" class="res-item" @click="selectTarget(r)">{{ r.title }}</div>
                         </div>
@@ -818,6 +838,9 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
 .ms-item:hover { transform: scale(1.05); border-color: #22d3ee; }
 .ms-item img { width: 100%; height: 100%; object-fit: cover; }
 .ms-loader { flex: 1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.9rem; }
+
+.select-search-combo { display: flex; flex-direction: column; gap: 8px; }
+.target-sel { width: 100%; }
 
 .shelf-snapshot { margin-top: 15px; background: rgba(0,0,0,0.25); border-radius: 16px; padding: 15px; flex: 1; overflow-y: auto; }
 .mini-shelf-item { display: flex; align-items: center; gap: 10px; padding: 8px; background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 6px; font-size: 0.8rem; }
