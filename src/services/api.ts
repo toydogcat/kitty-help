@@ -335,6 +335,16 @@ export const apiService = {
     return res.data;
   },
 
+  // Legacy Security (Device Based)
+  async requestSecurityChallenge(userId: string, deviceId: string) {
+    const response = await axios.post(`${API_BASE}/security/challenge`, { userId, deviceId });
+    return response.data;
+  },
+  async getSecurityStatus(userId: string, deviceId: string, token: string = '') {
+    const response = await axios.get(`${API_BASE}/security/status`, { params: { userId, deviceId, token } });
+    return response.data;
+  },
+
   // Auth
   async verifyToken(idToken: string) {
     const response = await axios.post(`${API_BASE}/auth/verify`, { idToken });

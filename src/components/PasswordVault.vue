@@ -1,3 +1,4 @@
+<script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted } from 'vue';
 import { apiService } from '../services/api';
 import { usePin } from '../composables/usePin';
@@ -6,7 +7,7 @@ const props = defineProps<{
   userId: string;
 }>();
 
-const { pinToDesk, isPinning: pinningGlobal } = usePin();
+const { pinToDesk } = usePin();
 
 const passwords = ref<any[]>([]);
 const isLoading = ref(false);
