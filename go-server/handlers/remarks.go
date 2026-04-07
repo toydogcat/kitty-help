@@ -28,7 +28,10 @@ func GetRemarks(c *fiber.Ctx) error {
 		defer rows.Close()
 		for rows.Next() {
 			var rc models.RemarkContainer
-			rows.Scan(&rc.ID, &rc.UserID, &rc.Name, &rc.Content, &rc.CreatedAt, &rc.UpdatedAt)
+			if err := rows.Scan(&rc.ID, &rc.UserID, &rc.Name, &rc.Content, &rc.IsPinned, &rc.CreatedAt, &rc.UpdatedAt); err != nil {
+				fmt.Printf("[DB SCAN ERROR] Containers: %v\n", err)
+				continue
+			}
 			containers = append(containers, rc)
 		}
 	}
