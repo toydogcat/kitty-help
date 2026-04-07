@@ -251,7 +251,7 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
     <div class="desk-header">
       <div class="title-group">
         <h1>🖥️ Desk Explorer</h1>
-        <p class="subtitle">Current Context: <strong>{{ activeShelfName }}</strong></p>
+        <p class="subtitle">Current Context: <strong>{{ activeShelfName }}</strong> <span v-if="desktopItems.length" class="count-tag">({{ desktopItems.length }} items)</span></p>
       </div>
       <div class="actions">
         <button v-if="activeShelfId" @click="switchShelf(null)" class="back-btn">⬅ Back to Desktop</button>

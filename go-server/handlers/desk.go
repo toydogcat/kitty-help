@@ -163,31 +163,25 @@ func GetDeskItems(c *fiber.Ctx) error {
 
 	query := `
 		SELECT di.id, di.user_id, di.shelf_id, di.type, di.ref_id, di.sort_order, di.created_at,
-		CASE 
-			WHEN di.type = 'bookmark' THEN (SELECT COALESCE(title, 'Untitled Bookmark') FROM bookmarks WHERE id::text = di.ref_id::text)
-			WHEN di.type = 'snippet' THEN (SELECT COALESCE(name, 'Untitled Snippet') FROM snippets WHERE id::text = di.ref_id::text)
-			WHEN di.type = 'media' THEN (SELECT COALESCE(title, 'Untitled Media') FROM media_archives WHERE id::text = di.ref_id::text)
-			WHEN di.type = 'remark' THEN (SELECT COALESCE(name, 'Untitled Remark') FROM remark_containers WHERE id::text = di.ref_id::text)
-			ELSE 'Unknown Item'
-		END as title,
-		CASE 
-			WHEN di.type = 'snippet' THEN (SELECT COALESCE(content, '') FROM snippets WHERE id::text = di.ref_id::text)
-			WHEN di.type = 'media' THEN (SELECT COALESCE(notes, '') FROM media_archives WHERE id::text = di.ref_id::text)
-			WHEN di.type = 'remark' THEN (SELECT COALESCE(content, '') FROM remark_containers WHERE id::text = di.ref_id::text)
-			ELSE ''
-		END as content,
-		CASE 
-			WHEN di.type = 'bookmark' THEN (SELECT COALESCE(url, '') FROM bookmarks WHERE id::text = di.ref_id::text)
-			ELSE ''
-		END as url,
-		CASE 
-			WHEN di.type = 'media' THEN (SELECT COALESCE(file_id, '') FROM media_archives WHERE id = di.ref_id)
-			ELSE ''
-		END as file_id,
-		CASE 
-			WHEN di.type = 'media' THEN (SELECT COALESCE(source_platform, 'telegram') FROM media_archives WHERE id = di.ref_id)
-			ELSE ''
-		END as source
+		COALESCE(
+			(SELECT title FROM bookmarks WHERE id::text = di.ref_id::text),
+			(SELECT name FROM snippets WHERE id::text = di.ref_id::text),
+			(SELECT title FROM media_archives WHERE id::text = di.ref_id::text),
+			(SELECT name FROM remark_containers WHERE id::text = di.ref_id::text),
+			'Untitled Item'
+		) as title,
+		COALESCE(
+			(SELECT content FROM snippets WHERE id::text = di.ref_id::text),
+			(SELECT notes FROM media_archives WHERE id::text = di.ref_id::text),
+			(SELECT content FROM remark_containers WHERE id::text = di.ref_id::text),
+			''
+		) as content,
+		COALESCE(
+			(SELECT url FROM bookmarks WHERE id::text = di.ref_id::text),
+			''
+		) as url,
+		COALESCE((SELECT file_id FROM media_archives WHERE id::text = di.ref_id::text), '') as file_id,
+		COALESCE((SELECT source_platform FROM media_archives WHERE id::text = di.ref_id::text), '') as source
 		FROM desk_items di
 		WHERE di.user_id = $1
 	`
