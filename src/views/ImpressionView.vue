@@ -687,7 +687,11 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
 .close-help { position: absolute; top: 15px; right: 20px; background: none; border: none; color: #475569; font-size: 24px; cursor: pointer; }
 
 /* Node Explorer Card */
-.node-explorer-card { position: absolute; bottom: 35px; left: 25px; right: 25px; margin: 0 auto; width: auto; max-width: 1200px; height: 600px; z-index: 500; overflow: hidden; }
+.node-explorer-card { 
+    position: absolute; bottom: 25px; left: 25px; right: 25px; margin: 0 auto; width: auto; max-width: 1400px; 
+    max-height: calc(100vh - 120px); z-index: 1500; overflow: hidden; display: flex; flex-direction: column;
+    box-shadow: 0 25px 70px rgba(0,0,0,0.8);
+}
 .card-flex { display: flex; height: 100%; }
 .card-identity { flex: 1; min-width: 400px; display: flex; flex-direction: column; border-right: 1px solid rgba(255,255,255,0.05); }
 .image-area { height: 300px; position: relative; }
@@ -702,16 +706,21 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
 .g-btn.active { background: #22d3ee; color: #0f172a; border-color: #22d3ee; }
 .del-b { flex: 0 0 50px; color: #f43f5e; border-color: rgba(244, 63, 94, 0.2); }
 
-.card-link-engine { flex: 1; min-width: 400px; padding: 50px; background: rgba(0,0,0,0.2); display: flex; flex-direction: column; }
-.card-close { position: absolute; top: 20px; right: 25px; background: none; border: none; color: #475569; font-size: 32px; cursor: pointer; z-index: 10; }
+.card-link-engine { flex: 1.5; min-width: 400px; padding: 40px; background: rgba(0,0,0,0.2); display: flex; flex-direction: column; overflow-y: auto; }
+.card-close { position: absolute; top: 15px; right: 20px; background: none; border: none; color: #475569; font-size: 28px; cursor: pointer; z-index: 10; }
 
-.studio-toolbox { position: absolute; bottom: 35px; right: 25px; display: flex; padding: 10px 25px; align-items: center; z-index: 1000; }
-.tool-btn { display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; padding: 12px 15px; border-radius: 16px; transition: 0.3s; }
-.tool-btn:hover { background: rgba(255,255,255,0.05); }
-.tool-btn.on .t-icon { filter: grayscale(0); color: #22d3ee; }
-.t-sep { width: 1px; height: 25px; background: rgba(255,255,255,0.1); margin: 0 10px; }
+.studio-toolbox { 
+    position: absolute; top: 25px; right: 25px; display: flex; padding: 4px 15px; align-items: center; z-index: 2100; 
+    background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(255,255,255,0.05); border-radius: 20px;
+}
+.tool-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; padding: 8px 12px; border-radius: 12px; transition: 0.3s; opacity: 0.6; }
+.tool-btn:hover { background: rgba(255,255,255,0.1); opacity: 1; transform: translateY(-2px); }
+.tool-btn.on { opacity: 1; color: #22d3ee; }
+.tool-btn .t-icon { font-size: 1.1rem; }
+.t-label { font-size: 0.55rem; font-weight: 800; text-transform: uppercase; }
+.t-sep { width: 1px; height: 18px; background: rgba(255,255,255,0.1); margin: 0 8px; }
 
-.snapshot-panel { position: absolute; bottom: 120px; right: 25px; width: 250px; padding: 20px; }
+.snapshot-panel { position: absolute; top: 85px; right: 25px; width: 250px; padding: 20px; z-index: 2200; }
 .color-picker-grid { display: flex; gap: 10px; margin-bottom: 15px; }
 .c-dot { width: 30px; height: 30px; border-radius: 50%; cursor: pointer; }
 
