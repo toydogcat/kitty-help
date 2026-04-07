@@ -393,7 +393,7 @@ export const apiService = {
     const res = await axios.post(`${API_BASE}/chat/remarks`, data);
     return res.data;
   },
-  async updateRemark(id: string, data: { name: string; content?: string }) {
+  async updateRemark(id: string, data: { name: string; content?: string; isPinned?: boolean }) {
     const res = await axios.put(`${API_BASE}/chat/remarks/${id}`, data);
     return res.data;
   },
