@@ -15,6 +15,7 @@ type ImpressionNode struct {
 	ImageURL        string    `json:"imageUrl,omitempty"`
 	FileID          *string   `json:"fileId,omitempty"`
 	SourcePlatform  *string   `json:"sourcePlatform,omitempty"`
+	KGName          string    `json:"kgName"`
 }
 
 type ImpressionEdge struct {
@@ -23,6 +24,7 @@ type ImpressionEdge struct {
 	SourceID  string    `json:"sourceId"`
 	TargetID  string    `json:"targetId"`
 	Label     string    `json:"label"`
+	KGName    string    `json:"kgName"`
 	CreatedAt time.Time `json:"createdAt"`
 }
 

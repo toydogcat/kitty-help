@@ -363,6 +363,11 @@ func EnsureTables() {
 			`CREATE INDEX IF NOT EXISTS idx_desk_items_user ON desk_items(user_id)`,
 			`CREATE INDEX IF NOT EXISTS idx_desk_items_shelf ON desk_items(shelf_id)`,
 			`CREATE INDEX IF NOT EXISTS idx_desk_shelves_user ON desk_shelves(user_id)`,
+			// --- 🚀 Multi-KG & Advanced Partitioning ---
+			`ALTER TABLE impression_nodes ADD COLUMN IF NOT EXISTS kg_name TEXT DEFAULT 'default'`,
+			`ALTER TABLE impression_edges ADD COLUMN IF NOT EXISTS kg_name TEXT DEFAULT 'default'`,
+			`CREATE INDEX IF NOT EXISTS idx_impression_nodes_kg ON impression_nodes(kg_name)`,
+			`CREATE INDEX IF NOT EXISTS idx_impression_edges_kg ON impression_edges(kg_name)`,
 		}
 		for _, m := range migrations {
 			LocalDB.Exec(ctx, m)

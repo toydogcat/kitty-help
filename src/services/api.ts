@@ -247,19 +247,23 @@ export const apiService = {
     const response = await axios.get(`${API_BASE}/impression/temp`);
     return response.data;
   },
-  async getImpressionGraph(centerId?: string) {
-    const response = await axios.get(`${API_BASE}/impression/graph`, { params: { centerId: centerId || '' } });
+  async getImpressionGraph(centerId?: string, kgName?: string) {
+    const params: any = { centerId: centerId || '' };
+    if (kgName) params.kgName = kgName;
+    const response = await axios.get(`${API_BASE}/impression/graph`, { params });
     return response.data;
   },
-  async searchImpressionNodes(query: string) {
-    const response = await axios.get(`${API_BASE}/impression/search`, { params: { q: query } });
+  async searchImpression(query: string, kgName?: string) {
+    const params: any = { q: query };
+    if (kgName) params.kgName = kgName;
+    const response = await axios.get(`${API_BASE}/impression/search`, { params });
     return response.data;
   },
-  async createImpressionNode(data: { mediaId?: string; title: string; content: string; nodeType: string }) {
+  async createImpressionNode(data: { mediaId?: string; title: string; content: string; nodeType: string; kgName?: string }) {
     const response = await axios.post(`${API_BASE}/impression/nodes`, data);
     return response.data;
   },
-  async createImpressionLink(data: { sourceId: string; targetId: string; label: string }) {
+  async createImpressionLink(data: { sourceId: string; targetId: string; label: string; kgName?: string }) {
     const response = await axios.post(`${API_BASE}/impression/links`, data);
     return response.data;
   },
@@ -296,6 +300,10 @@ export const apiService = {
   },
   async importImpressionGraph(data: any) {
     const response = await axios.post(`${API_BASE}/impression/import`, data);
+    return response.data;
+  },
+  async getKnowledgeGraphs() {
+    const response = await axios.get(`${API_BASE}/impression/kgs`);
     return response.data;
   },
 

@@ -121,10 +121,11 @@ func main() {
 	protected := authShared.Group("/", handlers.DeviceCheckMiddleware)
 	// 🧠 IMPRESSION GRAPH
 	protected.Get("/impression/graph", handlers.GetImpressionGraph)
+	protected.Get("/impression/kgs", handlers.GetKnowledgeGraphs)
 	protected.Get("/impression/export", handlers.ExportImpressionGraph)
 	protected.Post("/impression/import", handlers.ImportImpressionGraph)
 	protected.Get("/impression/temp", handlers.GetImpressionTemp)
-	protected.Get("/impression/search", handlers.SearchImpressionNodes)
+	protected.Get("/impression/search", handlers.SearchImpression)
 	protected.Get("/impression/random", handlers.GetRandomImpressionNodeID)
 	
 	protected.Post("/impression/nodes", handlers.CreateImpressionNode)
