@@ -2,7 +2,6 @@
 import { ref, onMounted, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import { apiService } from '../services/api';
-import { marked } from 'marked';
 
 const props = defineProps<{
   userRole: string;
@@ -28,9 +27,8 @@ const renamingShelfId = ref<string | null>(null);
 const showEditModal = ref(false);
 const editingItem = ref<any>(null);
 const editBuffer = ref({ title: '', content: '' });
-const editMode = ref<'edit' | 'preview'>('edit');
 const saving = ref(false);
-const remarkDetails = ref<any>(null); // To store nested remark items
+const remarkDetails = ref<any>(null); 
 
 // Zoom Overlay for Remark items inside modal
 const zoomedImageUrl = ref('');
@@ -179,7 +177,6 @@ const openOriginal = async (item: any) => {
     return;
   }
   
-  // Open Internal Editor
   editingItem.value = item;
   editBuffer.value = { 
     title: item.title, 
@@ -366,17 +363,11 @@ const saveItemEdit = async () => {
                 </div>
               </div>
             </div>
-            
-            <div v-if="editingItem?.type === 'bookmark'" class="bookmark-info">
-              <p>URL: <a :href="editingItem.url" target="_blank">{{ editingItem.url }}</a></p>
-            </div>
           </div>
 
           <div class="editor-footer">
             <button @click="showEditModal = false" class="cancel-btn">Discard</button>
-            <button @click="saveItemEdit" class="save-btn" :disabled="saving">
-              Save Changes
-            </button>
+            <button @click="saveItemEdit" class="save-btn" :disabled="saving">Save Changes</button>
           </div>
         </div>
       </div>
@@ -419,7 +410,7 @@ const saveItemEdit = async () => {
 .field input, .field textarea { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 1rem; color: #fff; width: 100%; }
 .field textarea { height: 120px; resize: none; }
 
-/* Nested Items Grid */
+/* Nested Items */
 .nested-remark-items { border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1.5rem; }
 .section-label { font-size: 0.8rem; font-weight: 800; color: var(--primary-color); margin-bottom: 1rem; display: block; }
 .nested-items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; }
