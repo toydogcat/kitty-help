@@ -316,14 +316,22 @@ export const apiService = {
   },
 
   // Security 2FA
-  async requestSecurityChallenge(_id: string, _deviceId?: string) {
-    const res = await axios.post(`${API_BASE}/security/challenge`, { id: _id, deviceId: _deviceId });
+  async getTOTPStatus() {
+    const res = await axios.get(`${API_BASE}/auth/2fa/status`);
     return res.data;
   },
-  async getSecurityStatus(_id: string, _deviceId?: string, token?: string) {
-    const res = await axios.get(`${API_BASE}/security/status`, {
-      params: { id: _id, deviceId: _deviceId, token }
-    });
+  async setupTOTP() {
+    const res = await axios.post(`${API_BASE}/auth/2fa/setup`);
+    return res.data;
+  },
+  async enableTOTP(code: string) {
+    const res = await axios.post(`${API_BASE}/auth/2fa/enable`, { code });
+    if (res.data.token) setAuthToken(res.data.token);
+    return res.data;
+  },
+  async verifyTOTP(code: string) {
+    const res = await axios.post(`${API_BASE}/auth/2fa/verify`, { code });
+    if (res.data.token) setAuthToken(res.data.token);
     return res.data;
   },
 

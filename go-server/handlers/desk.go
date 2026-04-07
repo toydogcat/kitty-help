@@ -168,12 +168,14 @@ func GetDeskItems(c *fiber.Ctx) error {
 			(SELECT name FROM snippets WHERE id::text = di.ref_id::text),
 			(SELECT title FROM media_archives WHERE id::text = di.ref_id::text),
 			(SELECT name FROM remark_containers WHERE id::text = di.ref_id::text),
+			(SELECT site_name FROM passwords WHERE id::text = di.ref_id::text),
 			'Untitled Item'
 		) as title,
 		COALESCE(
 			(SELECT content FROM snippets WHERE id::text = di.ref_id::text),
 			(SELECT notes FROM media_archives WHERE id::text = di.ref_id::text),
 			(SELECT content FROM remark_containers WHERE id::text = di.ref_id::text),
+			(SELECT account FROM passwords WHERE id::text = di.ref_id::text),
 			''
 		) as content,
 		COALESCE(

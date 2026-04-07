@@ -183,9 +183,19 @@ func main() {
 	toby.Post("/bot/approve", handlers.ApproveBotRequest)
 	toby.Get("/bot/users", handlers.GetAuthorizedBotUsers)
 	toby.Post("/bot/users/delete", handlers.DeleteAuthorizedBotUser)
-	toby.Get("/passwords", handlers.GetPasswords)
-	toby.Post("/passwords", handlers.AddPassword)
 	toby.Delete("/passwords/:id", handlers.DeletePassword)
+
+	// --- 6. 🔐 2FA / TOTP Management ---
+	authShared.Get("/auth/2fa/status", handlers.GetTOTPStatus)
+	authShared.Post("/auth/2fa/setup", handlers.SetupTOTP)
+	authShared.Post("/auth/2fa/enable", handlers.VerifyAndEnableTOTP)
+	authShared.Post("/auth/2fa/verify", handlers.AuthenticateTOTP)
+
+	// 📑 PASSWORD VAULT (Protected by 2FA)
+	passVault := protected.Group("/passwords", handlers.TOTPCheckMiddleware)
+	passVault.Get("", handlers.GetPasswords)
+	passVault.Post("", handlers.AddPassword)
+	passVault.Delete("/:id", handlers.DeletePassword)
 
 	app.All("/socket.io/*", adaptor.HTTPHandler(sockets.Server))
 	migrateBotAdmins()

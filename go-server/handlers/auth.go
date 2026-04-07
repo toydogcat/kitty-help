@@ -21,10 +21,11 @@ func getJWTSecret() []byte {
 }
 
 type Claims struct {
-	ID       string `json:"id"`
-	Email    string `json:"email"`
-	Role     string `json:"role"`
-	DeviceID string `json:"deviceId,omitempty"`
+	ID             string `json:"id"`
+	Email          string `json:"email"`
+	Role           string `json:"role"`
+	DeviceID       string `json:"deviceId,omitempty"`
+	TOTPVerifiedAt int64  `json:"totpVerifiedAt,omitempty"` // Unix timestamp
 	jwt.RegisteredClaims
 }
 

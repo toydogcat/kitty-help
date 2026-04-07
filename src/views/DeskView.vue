@@ -49,6 +49,49 @@ const activeShelfName = computed(() => {
   return s ? s.name : 'Unknown Shelf';
 });
 
+// --- 🔐 2FA Security Logic ---
+const is2FAVerified = ref(false);
+const show2FAModal = ref(false);
+const totpCode = ref('');
+const totpError = ref('');
+const pendingAction = ref<(() => void) | null>(null);
+
+const check2FA = async () => {
+  try {
+    const status = await apiService.getTOTPStatus();
+    is2FAVerified.value = status.enabled && status.verified;
+    return is2FAVerified.value;
+  } catch {
+    return false;
+  }
+};
+
+const handleSensitiveAction = async (action: () => void) => {
+  const verified = await check2FA();
+  if (verified) {
+    action();
+  } else {
+    show2FAModal.value = true;
+    pendingAction.value = action;
+  }
+};
+
+const verifyTOTP = async () => {
+  totpError.value = '';
+  try {
+    await apiService.verifyTOTP(totpCode.value);
+    totpCode.value = '';
+    show2FAModal.value = false;
+    is2FAVerified.value = true;
+    if (pendingAction.value) {
+      pendingAction.value();
+      pendingAction.value = null;
+    }
+  } catch (err: any) {
+    totpError.value = err.response?.data?.error || 'Verification failed';
+  }
+};
+
 onMounted(() => {
   const shelf = route.query.shelfId as string;
   if (shelf) activeShelfId.value = shelf;
@@ -147,12 +190,20 @@ const onDropOnShelf = async (shelfId: string | null) => {
   }
 };
 
-const removeItem = async (id: string) => {
-  try {
-    await unpinFromDesk(id);
-    await fetchData();
-  } catch (err) {
-    alert("Remove failed");
+const removeItem = async (id: string, type: string = '') => {
+  const performDelete = async () => {
+    try {
+      await unpinFromDesk(id);
+      await fetchData();
+    } catch (err) {
+      alert("Remove failed");
+    }
+  };
+
+  if (type === 'password') {
+    handleSensitiveAction(performDelete);
+  } else {
+    performDelete();
   }
 };
 
@@ -162,6 +213,7 @@ const getIcon = (type: string) => {
     case 'snippet': return '📄';
     case 'media': return '🖼️';
     case 'remark': return '📚';
+    case 'password': return '🔑';
     default: return '📦';
   }
 };
@@ -177,36 +229,44 @@ const getThumbnail = (item: any, large = false) => {
 // Helper removed because it is now handled inside UnifiedRemarkModal component
 
 const openOriginal = async (item: any) => {
-  if (item.type === 'bookmark' && item.url) {
-    if (item.url.startsWith('/') && !item.url.startsWith('//')) {
-      router.push(item.url);
-    } else {
-      window.open(item.url, '_blank');
+  const performOpen = async () => {
+    if (item.type === 'bookmark' && item.url) {
+      if (item.url.startsWith('/') && !item.url.startsWith('//')) {
+        router.push(item.url);
+      } else {
+        window.open(item.url, '_blank');
+      }
+      return;
     }
-    return;
-  }
-  
-  editingItem.value = item;
-  editBuffer.value = { 
-    title: item.title, 
-    content: item.content || '' 
-  };
-  editMode.value = 'preview'; 
-  showEditModal.value = true;
-  isFullScreen.value = false;
-  remarkDetails.value = null;
+    
+    editingItem.value = item;
+    editBuffer.value = { 
+      title: item.title, 
+      content: item.content || '' 
+    };
+    editMode.value = 'preview'; 
+    showEditModal.value = true;
+    isFullScreen.value = false;
+    remarkDetails.value = null;
 
-  if (item.type === 'remark') {
-    modalLoading.value = true;
-    try {
-      const data = await apiService.getRemarks();
-      const container = data.containers?.find((c: any) => c.id === item.refId);
-      remarkDetails.value = container || null;
-    } catch (err) {
-      console.error("Failed to load remark details:", err);
-    } finally {
-      modalLoading.value = false;
+    if (item.type === 'remark') {
+      modalLoading.value = true;
+      try {
+        const data = await apiService.getRemarks();
+        const container = data.containers?.find((c: any) => c.id === item.refId);
+        remarkDetails.value = container || null;
+      } catch (err) {
+        console.error("Failed to load remark details:", err);
+      } finally {
+        modalLoading.value = false;
+      }
     }
+  };
+
+  if (item.type === 'password') {
+    handleSensitiveAction(performOpen);
+  } else {
+    performOpen();
   }
 };
 
@@ -293,7 +353,7 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
               <span class="badge" :class="it.type">{{ it.type.toUpperCase() }}</span>
             </div>
           </div>
-          <button @click.stop="removeItem(it.id)" class="remove-btn" title="Unlink from desk">×</button>
+          <button @click.stop="removeItem(it.id, it.type)" class="remove-btn" title="Unlink from desk">×</button>
         </div>
       </div>
     </div>
@@ -352,6 +412,28 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
          <span class="close-zoom">✕</span>
       </div>
     </Teleport>
+
+    <!-- 🔐 GLOBAL 2FA VERIFY MODAL FOR DESK SENSITIVE ACTIONS -->
+    <div v-if="show2FAModal" class="modal-overlay" @click.self="show2FAModal = false">
+      <div class="modal-content card glow auth-verify">
+        <div class="modal-header center">
+          <div class="icon-circle">🔑</div>
+          <h3>Security Verification</h3>
+          <p>This action requires a 2FA challenge.</p>
+        </div>
+        
+        <div class="form-group center">
+          <label>Google Authenticator Code</label>
+          <input v-model="totpCode" class="otp-input" placeholder="000 000" maxlength="6" autofocus @keyup.enter="verifyTOTP" />
+          <p v-if="totpError" class="error-msg">{{ totpError }}</p>
+        </div>
+
+        <div class="modal-actions full">
+          <button class="btn-confirm big" @click="verifyTOTP">Confirm Action</button>
+          <button class="btn-cancel" @click="show2FAModal = false">Cancel</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -388,6 +470,7 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
 .badge.bookmark { background: #4a90e2; color: #fff; }
 .badge.remark { background: #9013fe; color: #fff; }
 .badge.media { background: #2ecc71; color: #fff; }
+.badge.password { background: #f1c40f; color: #000; }
 .badge.snippet { background: #f1c40f; color: #000; }
 
 .remove-btn { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 50%; width: 24px; height: 24px; opacity: 0; transition: all 0.2s; display: flex; align-items: center; justify-content: center; z-index: 5; }
@@ -456,4 +539,16 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
 .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(var(--primary-rgb), 0.2); border-radius: 10px; }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--primary-color); }
+
+/* 🔐 2FA Modal Styles (Synced with PasswordVault) */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; z-index: 2500; }
+.modal-content { width: 90%; max-width: 450px; padding: 2.5rem; background: #1e1e24; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 24px; text-align: center; }
+.center { text-align: center; }
+.icon-circle { font-size: 2.5rem; background: rgba(var(--primary-rgb), 0.1); width: 70px; height: 70px; display: flex; align-items: center; justify-content: center; border-radius: 50%; margin: 0 auto 1.5rem; }
+.otp-input { font-size: 2.2rem !important; text-align: center !important; letter-spacing: 1rem; padding: 1.2rem !important; font-weight: 800; color: var(--primary-color) !important; background: rgba(0,0,0,0.3) !important; border: 2px solid var(--border-color) !important; width: 100%; border-radius: 12px; margin-top: 1rem; }
+.modal-actions.full { display: flex; flex-direction: column; gap: 1rem; margin-top: 2rem; }
+.btn-confirm.big { background: var(--primary-color); color: white; border: none; padding: 1.2rem; border-radius: 12px; font-size: 1.1rem; font-weight: 800; cursor: pointer; transition: all 0.3s; }
+.btn-confirm.big:hover { filter: brightness(1.2); transform: translateY(-2px); box-shadow: 0 4px 15px rgba(var(--primary-rgb), 0.4); }
+.btn-cancel { background: transparent; color: white; border: 1px solid rgba(255,255,255,0.1); padding: 0.8rem; border-radius: 10px; cursor: pointer; }
+.error-msg { color: #f87171; font-size: 0.85rem; margin-top: 0.8rem; font-weight: bold; }
 </style>

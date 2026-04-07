@@ -145,8 +145,12 @@ func EnsureTables() {
 			discord_id TEXT,
 			line_id TEXT,
 			telegram_id TEXT,
+			totp_secret TEXT,
+			totp_enabled BOOLEAN DEFAULT FALSE,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT FALSE`,
 		`CREATE TABLE IF NOT EXISTS devices (
 			id TEXT PRIMARY KEY,
 			status TEXT DEFAULT 'pending',
