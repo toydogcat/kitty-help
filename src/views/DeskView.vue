@@ -8,7 +8,7 @@ import { usePin } from '../composables/usePin';
 const route = useRoute();
 const router = useRouter();
 
-const { unpinFromDesk, isPinning } = usePin();
+const { unpinFromDesk } = usePin();
 
 const props = defineProps<{
   userRole: string;
@@ -42,8 +42,6 @@ const remarkDetails = ref<any>(null);
 
 // Zoom Overlay for Remark items inside modal
 const zoomedImageUrl = ref('');
-
-const route = useRoute();
 
 onMounted(() => {
   const shelf = route.query.shelfId as string;

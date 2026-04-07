@@ -50,7 +50,7 @@ watch(() => route.query.kg, (newVal) => {
     }
 });
 
-const { pinUniverseToDesk, isPinning: pinningUniverse } = usePin();
+const { pinUniverseToDesk } = usePin();
 
 // Desk Linkage
 const isEditingDeskLink = ref(false);

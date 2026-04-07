@@ -27,7 +27,7 @@ const remarkEditBuffer = ref({ title: '', content: '' });
 const remarkModalEditMode = ref<'preview' | 'edit'>('preview');
 const remarkModalFullScreen = ref(false);
 const savingRemark = ref(false);
-const { toggleRemarkSidebarPin, pinToDesk, isPinning } = usePin();
+const { toggleRemarkSidebarPin, pinToDesk } = usePin();
 const remarkModalDetails = ref<any>(null); // For Quoted Items
 const zoomedImageUrl = ref('');
 
