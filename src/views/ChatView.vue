@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, defineAsyncComponent } from 'vue';
 import { apiService, socket } from '../services/api';
+const UnifiedRemarkModal = defineAsyncComponent(() => import('../components/UnifiedRemarkModal.vue'));
 import { usePin } from '../composables/usePin';
-import UnifiedRemarkModal from '../components/UnifiedRemarkModal.vue';
 import { marked } from 'marked';
 
 // Search & Filters

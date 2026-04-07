@@ -1,11 +1,11 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import HomeView from '../views/HomeView.vue';
-import PersonalView from '../views/PersonalView.vue';
-import AdminView from '../views/AdminView.vue';
-import StorehouseView from '../views/StorehouseView.vue';
-import ChatView from '../views/ChatView.vue';
-import ImpressionView from '../views/ImpressionView.vue';
-import DeskView from '../views/DeskView.vue';
+const HomeView = () => import('../views/HomeView.vue');
+const PersonalView = () => import('../views/PersonalView.vue');
+const AdminView = () => import('../views/AdminView.vue');
+const StorehouseView = () => import('../views/StorehouseView.vue');
+const ChatView = () => import('../views/ChatView.vue');
+const ImpressionView = () => import('../views/ImpressionView.vue');
+const DeskView = () => import('../views/DeskView.vue');
 
 const routes = [
   { 

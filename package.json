@@ -13,7 +13,7 @@
     "firebase": "^12.11.0",
     "js-cookie": "^3.0.5",
     "marked": "^17.0.5",
-    "socket.io-client": "^2.3.1",
+    "socket.io-client": "^4.8.3",
     "uuid": "^9.0.1",
     "vis-data": "^8.0.3",
     "vis-network": "^10.0.2",

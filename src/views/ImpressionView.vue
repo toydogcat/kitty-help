@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, computed } from 'vue';
-import { Network } from 'vis-network';
-import { DataSet } from 'vis-data';
 import { apiService } from '../services/api';
 import { useAuth } from '../composables/useAuth';
 import { useRoute } from 'vue-router';
@@ -10,7 +8,9 @@ import { usePin } from '../composables/usePin';
 const route = useRoute();
 const { } = useAuth();
 const canvas = ref<HTMLElement | null>(null);
-const network = ref<Network | null>(null);
+const network = ref<any>(null);
+const nodes = ref<any>(null);
+const edges = ref<any>(null);
 const importFileRef = ref<HTMLInputElement | null>(null);
 
 // Data
@@ -63,9 +63,6 @@ const exportBgColor = ref('#0f172a');
 const exportBgImage = ref<string | null>(null);
 const showExportPanel = ref(false);
 
-const nodes = new DataSet<any>([]);
-const edges = new DataSet<any>([]);
-
 const options = {
   nodes: {
     shape: 'dot', size: 30,
@@ -95,9 +92,18 @@ const saveViewState = () => {
     localStorage.setItem('impression_view_state', JSON.stringify({ x: pos.x, y: pos.y, scale }));
 };
 
-const initGraph = () => {
+const initGraph = async () => {
   if (!canvas.value) return;
-  network.value = new Network(canvas.value, { nodes, edges }, options);
+
+  const [visNetwork, visData] = await Promise.all([
+      import('vis-network'),
+      import('vis-data')
+  ]);
+
+  if (!nodes.value) nodes.value = new visData.DataSet<any>([]);
+  if (!edges.value) edges.value = new visData.DataSet<any>([]);
+
+  network.value = new visNetwork.Network(canvas.value, { nodes: nodes.value, edges: edges.value }, options);
   
   const savedState = localStorage.getItem('impression_view_state');
   if (savedState) {
@@ -105,7 +111,7 @@ const initGraph = () => {
       network.value.moveTo({ position: { x, y }, scale, animation: false });
   }
 
-  network.value.on('click', (params) => {
+  network.value.on('click', (params: any) => {
     if (interactionMode.value === 'view') {
         isLinkingMode.value = false;
         isEditingNode.value = false;
@@ -120,7 +126,7 @@ const initGraph = () => {
             const nodeId = params.nodes[0];
             if (!selectedSourceNodeId.value) {
                 selectedSourceNodeId.value = nodeId;
-                nodes.update({ id: nodeId, borderWidth: 6, color: { border: '#22d3ee' } });
+                nodes.value.update({ id: nodeId, borderWidth: 6, color: { border: '#22d3ee' } });
             } else {
                 if (selectedSourceNodeId.value === nodeId) {
                     resetSelection();
@@ -134,7 +140,7 @@ const initGraph = () => {
     }
   });
 
-  network.value.on('hold', async (params) => {
+  network.value.on('hold', async (params: any) => {
     if (interactionMode.value === 'view') {
         if (params.nodes.length > 0) {
             handleNodeClick(params.nodes[0]);
@@ -143,7 +149,7 @@ const initGraph = () => {
         // Edit Mode: Delete logic
         if (params.nodes.length > 0) {
             const nodeId = params.nodes[0] as string;
-            const nodeData = nodes.get(nodeId) as any;
+            const nodeData = nodes.value.get(nodeId) as any;
             const nodeName = nodeData?.label || nodeId;
             if (confirm(`⚠️ CRITICAL: Are you ABSOLUTELY sure you want to permanently destroy "${nodeName}"? This action cannot be undone.`)) {
                 await apiService.deleteImpressionNode(nodeId);
@@ -165,7 +171,7 @@ const initGraph = () => {
     }
   });
 
-  network.value.on('doubleClick', async (params) => {
+  network.value.on('doubleClick', async (params: any) => {
     if (interactionMode.value === 'edit' && params.nodes.length > 0) {
         const nodeId = params.nodes[0];
         try {
@@ -198,10 +204,10 @@ const linkShelf = async (shelfId: string | null) => {
         const updated = { ...selectedNodeDetails.value, deskShelfId: shelfId };
         await apiService.updateImpressionNode(selectedNodeDetails.value.id, updated);
         selectedNodeDetails.value.deskShelfId = shelfId;
-        const existingNode = nodes.get(selectedNodeDetails.value.id) as any;
+        const existingNode = nodes.value.get(selectedNodeDetails.value.id) as any;
         if (existingNode && existingNode.raw) {
             existingNode.raw.deskShelfId = shelfId;
-            nodes.update(existingNode);
+            nodes.value.update(existingNode);
         }
         if (shelfId) loadShelfPreview(shelfId);
         else selectedShelfItems.value = [];
@@ -216,8 +222,8 @@ const jumpToDesk = (shelfId: string) => {
 
 const resetSelection = () => {
     if (selectedSourceNodeId.value) {
-        const node = nodes.get(selectedSourceNodeId.value);
-        if (node) nodes.update({ id: selectedSourceNodeId.value, borderWidth: 3, color: { border: undefined } });
+        const node = nodes.value.get(selectedSourceNodeId.value);
+        if (node) nodes.value.update({ id: selectedSourceNodeId.value, borderWidth: 3, color: { border: undefined } });
         selectedSourceNodeId.value = null;
     }
 };
@@ -235,7 +241,7 @@ watch(isPhysicsEnabled, (newVal) => {
 });
 
 const handleNodeClick = (nodeId: string) => {
-  const node = nodes.get(nodeId);
+  const node = nodes.value.get(nodeId);
   if (node) {
       selectedNodeDetails.value = node.raw;
       editForm.value = { ...node.raw };
@@ -297,22 +303,22 @@ const loadGraph = async (nodeId?: string) => {
         };
     }));
 
-    nodes.clear();
-    nodes.add(visNodes);
-    edges.clear();
-    edges.add(data.edges.map((e: any) => ({ 
+    nodes.value.clear();
+    nodes.value.add(visNodes);
+    edges.value.clear();
+    edges.value.add(data.edges.map((e: any) => ({ 
         id: e.id, from: e.sourceId, to: e.targetId, label: e.label,
         font: { color: kgName.value === 'default' ? '#94a3b8' : '#22d3ee' }
     })));
     
-    if (nodeId && network.value && nodes.length > 0) {
+    if (nodeId && network.value && nodes.value.length > 0) {
         setTimeout(() => {
-            if (network.value && nodes.get(nodeId)) {
+            if (network.value && nodes.value.get(nodeId)) {
                 network.value.fit({ nodes: [nodeId], animation: true });
                 // NEW: Sync selectedNodeDetails with the newly loaded data
-                const fresh = nodes.get(nodeId) as any;
+                const fresh = nodes.value.get(nodeId) as any;
                 if (fresh) selectedNodeDetails.value = fresh.raw;
-            } else if (network.value && nodes.length > 0) {
+            } else if (network.value && nodes.value.length > 0) {
                 network.value.fit({ animation: true });
             }
             centerNodeId.value = nodeId;
@@ -321,7 +327,7 @@ const loadGraph = async (nodeId?: string) => {
     } else if (localStorage.getItem('impression_view_state') && network.value) {
         const { x, y, scale } = JSON.parse(localStorage.getItem('impression_view_state')!);
         network.value.moveTo({ position: { x, y }, scale, animation: false });
-    } else if (network.value && nodes.length > 0) {
+    } else if (network.value && nodes.value.length > 0) {
         setTimeout(() => network.value?.fit({ animation: true }), 300);
     }
   } catch (e) { console.error(e); } finally { isLoading.value = false; }
@@ -486,11 +492,11 @@ const importGraphData = async (event: any) => {
 
 const goToRandomNode = async () => {
     try {
-        const all = nodes.getIds();
+        const all = nodes.value.getIds();
         if (all.length > 0) {
              const rid = all[Math.floor(Math.random() * all.length)] as string;
              if (network.value) network.value.focus(rid, { animation: true, scale: 1.0 });
-             const fresh = nodes.get(rid) as any;
+             const fresh = nodes.value.get(rid) as any;
              if (fresh) selectedNodeDetails.value = fresh.raw;
         } else {
              const res = await apiService.getImpressionRandom();
@@ -620,7 +626,8 @@ const selectMediaStoreItem = (item: any) => {
 };
 
 const allNodesInKG = computed(() => {
-    return nodes.get().filter((n: any) => n.id !== selectedNodeDetails.value?.id).map((n: any) => ({
+    if (!nodes.value) return [];
+    return nodes.value.get().filter((n: any) => n.id !== selectedNodeDetails.value?.id).map((n: any) => ({
         id: n.id,
         title: n.label,
         raw: n.raw
@@ -629,7 +636,7 @@ const allNodesInKG = computed(() => {
 
 const onNodeSelectChange = (e: Event) => {
     const val = (e.target as HTMLSelectElement).value;
-    const node = nodes.get(val) as any;
+    const node = nodes.value.get(val) as any;
     if (node) selectTarget(node.raw);
 };
 

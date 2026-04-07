@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
-import BookmarkGrid from '../components/BookmarkGrid.vue';
-import PasswordVault from '../components/PasswordVault.vue';
-import SecurityTimer from '../components/SecurityTimer.vue';
-import SecurityModal from '../components/SecurityModal.vue';
-import ClipBoard from '../components/ClipBoard.vue';
-import Bookcase from '../components/Bookcase.vue';
+import { ref, onMounted, watch, defineAsyncComponent } from 'vue';
+const BookmarkGrid = defineAsyncComponent(() => import('../components/BookmarkGrid.vue'));
+const PasswordVault = defineAsyncComponent(() => import('../components/PasswordVault.vue'));
+const SecurityTimer = defineAsyncComponent(() => import('../components/SecurityTimer.vue'));
+const SecurityModal = defineAsyncComponent(() => import('../components/SecurityModal.vue'));
+const ClipBoard = defineAsyncComponent(() => import('../components/ClipBoard.vue'));
+const Bookcase = defineAsyncComponent(() => import('../components/Bookcase.vue'));
 import { auth } from '../firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 import { apiService } from '../services/api';
