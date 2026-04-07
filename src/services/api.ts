@@ -460,6 +460,28 @@ export const apiService = {
   async removeRemarkItem(id: string) {
     const res = await axios.delete(`${API_BASE}/chat/remarks/items/${id}`);
     return res.data;
+  },
+
+  // 📚 Bookcase
+  async getBookcase() {
+    const res = await axios.get(`${API_BASE}/bookcase`);
+    return res.data;
+  },
+  async addBookToBookcase(data: { storeId: string; title: string; category?: string }) {
+    const res = await axios.post(`${API_BASE}/bookcase`, data);
+    return res.data;
+  },
+  async updateBookNotes(id: string, notes: string) {
+    const res = await axios.put(`${API_BASE}/bookcase/${id}/notes`, { notes });
+    return res.data;
+  },
+  async removeBook(id: string) {
+    const res = await axios.delete(`${API_BASE}/bookcase/${id}`);
+    return res.data;
+  },
+  async getAvailableBooks(query: string = '') {
+    const res = await axios.get(`${API_BASE}/bookcase/available`, { params: { q: query } });
+    return res.data;
   }
 };
 

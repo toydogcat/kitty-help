@@ -324,6 +324,17 @@ func EnsureTables() {
 			sort_order INT DEFAULT 0,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE IF NOT EXISTS bookcase (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			store_id UUID NOT NULL,
+			title TEXT NOT NULL,
+			category TEXT DEFAULT 'Book',
+			notes TEXT DEFAULT '',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(user_id, store_id)
+		)`,
 	}
 
 	if LocalDB != nil {

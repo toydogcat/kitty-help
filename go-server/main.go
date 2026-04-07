@@ -153,6 +153,13 @@ func main() {
 	protected.Put("/bookmarks/:id", handlers.UpdateBookmark)
 	protected.Delete("/bookmarks/:id", handlers.DeleteBookmark)
 
+	// 📚 BOOKCASE (Digital Library)
+	protected.Get("/bookcase", handlers.GetBookcase)
+	protected.Post("/bookcase", handlers.AddBookToBookcase)
+	protected.Put("/bookcase/:id/notes", handlers.UpdateBookNotes)
+	protected.Delete("/bookcase/:id", handlers.RemoveBook)
+	protected.Get("/bookcase/available", handlers.GetAvailableBooks)
+
 	// 🖥️ DESK (Work Desk & Shelves)
 	protected.Get("/desk/shelves", handlers.GetShelves)
 	protected.Post("/desk/shelves", handlers.CreateShelf)

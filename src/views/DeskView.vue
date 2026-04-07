@@ -212,8 +212,9 @@ const getIcon = (type: string) => {
     case 'bookmark': return '🔖';
     case 'snippet': return '📄';
     case 'media': return '🖼️';
-    case 'remark': return '📚';
+    case 'remark': return '💬';
     case 'password': return '🔑';
+    case 'book': return '📚';
     default: return '📦';
   }
 };
@@ -242,7 +243,7 @@ const openOriginal = async (item: any) => {
     editingItem.value = item;
     editBuffer.value = { 
       title: item.title, 
-      content: item.content || '' 
+      content: item.notes || item.content || '' 
     };
     editMode.value = 'preview'; 
     showEditModal.value = true;
@@ -257,6 +258,20 @@ const openOriginal = async (item: any) => {
         remarkDetails.value = container || null;
       } catch (err) {
         console.error("Failed to load remark details:", err);
+      } finally {
+        modalLoading.value = false;
+      }
+    } else if (item.type === 'book') {
+      modalLoading.value = true;
+      try {
+        const books = await apiService.getBookcase();
+        const b = books.find((x: any) => x.id === item.refId);
+        if (b) {
+          editBuffer.value.content = b.notes || '';
+          editBuffer.value.title = b.title;
+        }
+      } catch (err) {
+        console.error("Failed to load book details:", err);
       } finally {
         modalLoading.value = false;
       }
@@ -294,6 +309,8 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
         content: updatedData.content,
         isPinned: remarkDetails.value?.isPinned || false
       });
+    } else if (editingItem.value.type === 'book') {
+      await apiService.updateBookNotes(editingItem.value.refId, updatedData.content);
     }
     
     showEditModal.value = false;
