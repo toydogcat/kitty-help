@@ -219,3 +219,24 @@ func RemoveRemarkItem(c *fiber.Ctx) error {
 	}
 	return c.SendStatus(200)
 }
+
+// AddRemarkItem adds a log directly to a container
+func AddRemarkItem(c *fiber.Ctx) error {
+	user := c.Locals("user").(*Claims)
+	if user.ID == "" { return c.Status(401).JSON(fiber.Map{"error": "Unauthorized"}) }
+	var body struct {
+		ContainerId string `json:"containerId"`
+		LogId       string `json:"logId"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid body"})
+	}
+
+	_, err := database.LocalDB.Exec(context.Background(), 
+		"INSERT INTO remark_items (user_id, container_id, log_id) VALUES ($1, $2, $3)", 
+		user.ID, body.ContainerId, body.LogId)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"status": "added"})
+}
