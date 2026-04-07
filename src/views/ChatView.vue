@@ -335,7 +335,7 @@ const removeItem = async (itemId: string) => {
                 </div>
                 <button @click="removeItem(item.id)" class="remove-item">✕</button>
               </div>
-              <div v-if="stagedItems.length === 0" class="empty-staged">
+              <div v-if="(stagedItems || []).length === 0" class="empty-staged">
                 No items staged. Start integrating cards from other tabs!
               </div>
             </div>
@@ -365,16 +365,16 @@ const removeItem = async (itemId: string) => {
 
                 <div class="container-items">
                   <div 
-                    v-for="item in c.items" 
+                    v-for="item in (c.items || [])" 
                     :key="item.id" 
                     class="mini-item-card"
                     draggable="true"
                     @dragstart="handleDragStart($event, 'item', item.id)"
                   >
-                    <p>{{ item.log.content.substring(0, 60) }}...</p>
+                    <p>{{ item.log?.content ? (item.log.content.substring(0, 60) + '...') : 'No Content' }}</p>
                     <button @click="removeItem(item.id)" class="mini-remove">✕</button>
                   </div>
-                  <div v-if="c.items.length === 0" class="drop-hint">Drop items here</div>
+                  <div v-if="!(c.items && c.items.length > 0)" class="drop-hint">Drop items here</div>
                 </div>
 
                 <div class="container-footer">
