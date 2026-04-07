@@ -46,16 +46,17 @@ export function usePin() {
         isPinning.value = true;
         try {
             // 1. Create Internal Bookmark
-            const bookmark = await apiService.addBookmark({
+            const res = await apiService.addBookmark({
                 title: `Universe: ${kgName}`,
                 url: `/impression?kg=${kgName}`,
                 category: 'Impression'
             });
+            const bId = res.id || res.ID;
 
             // 2. Add as Desk Item
             await apiService.addDeskItem({
                 type: 'bookmark',
-                refId: bookmark.id,
+                refId: bId,
                 shelfId: null
             });
             return true;

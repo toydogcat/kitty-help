@@ -16,7 +16,7 @@ func GetShelves(c *fiber.Ctx) error {
 	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
 
 	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
@@ -46,7 +46,7 @@ func CreateShelf(c *fiber.Ctx) error {
 	}
 
 	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
@@ -71,7 +71,7 @@ func UpdateShelf(c *fiber.Ctx) error {
 	}
 
 	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
@@ -90,7 +90,7 @@ func DuplicateShelf(c *fiber.Ctx) error {
 	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
 
 	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
@@ -156,7 +156,7 @@ func GetDeskItems(c *fiber.Ctx) error {
 	shelfId := c.Query("shelfId") // Can be empty for desktop items
 
 	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
@@ -233,7 +233,7 @@ func AddDeskItem(c *fiber.Ctx) error {
 	}
 
 	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
