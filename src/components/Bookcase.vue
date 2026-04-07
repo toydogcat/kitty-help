@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch, nextTick } from 'vue';
 import { apiService } from '../services/api';
 import { marked } from 'marked';
 import { usePin } from '../composables/usePin';
@@ -24,19 +24,22 @@ const searchQuery = ref('');
 const showAddModal = ref(false);
 const isSaving = ref(false);
 const viewMode = ref<'preview' | 'mixed' | 'notes'>('mixed');
-const searchTerm = ref(''); // Filter books in sidebar
+const searchTerm = ref(''); 
 const newFolderName = ref('');
-const customFolders = ref<string[]>([]); // To allow empty folders in UI
+const customFolders = ref<string[]>([]);
+const dragOverFolder = ref<string | null>(null);
+
+// EPUB Reader State
+const epubRendition = ref<any>(null);
+const epubBook = ref<any>(null);
+const epubViewerRef = ref<HTMLElement | null>(null);
 
 // --- Library Management ---
 const fetchBookcase = async () => {
   isLoading.value = true;
   try {
-    books.value = await apiService.getBookcase();
-    // Re-check categories is handled by backend.
-    if (books.value.length > 0 && !activeBook.value) {
-      selectBook(books.value[0]);
-    }
+    const data = await apiService.getBookcase();
+    books.value = data;
     
     // Sync custom folders from books
     books.value.forEach(b => {
@@ -44,6 +47,10 @@ const fetchBookcase = async () => {
         customFolders.value.push(b.folder);
       }
     });
+
+    if (books.value.length > 0 && !activeBook.value) {
+      selectBook(books.value[0]);
+    }
   } catch (err) {
     console.error('Failed to fetch bookcase:', err);
   } finally {
@@ -52,9 +59,15 @@ const fetchBookcase = async () => {
 };
 
 const selectBook = async (book: any) => {
+  if (epubRendition.value) {
+    epubRendition.value.destroy();
+    epubRendition.value = null;
+  }
+  
   activeBook.value = book;
   activeNote.value = null;
   bookNotes.value = [];
+  
   try {
     bookNotes.value = await apiService.getBookNotes(book.id);
     if (bookNotes.value.length > 0) {
@@ -62,9 +75,35 @@ const selectBook = async (book: any) => {
     } else {
       createNewNote();
     }
+    
+    if (isEPUB(book) && viewMode.value !== 'notes') {
+      nextTick(() => initEpubReader());
+    }
   } catch (err) {
     console.error('Failed to fetch notes:', err);
   }
+};
+
+const initEpubReader = () => {
+  if (!activeBook.value || !isEPUB(activeBook.value) || !epubViewerRef.value) return;
+  
+  // @ts-ignore (ePub is globally loaded via CDN)
+  if (typeof ePub === 'undefined') {
+    setTimeout(initEpubReader, 500); // Wait for script to load
+    return;
+  }
+
+  const url = getFileUrl(activeBook.value);
+  // @ts-ignore
+  epubBook.value = ePub(url);
+  epubRendition.value = epubBook.value.renderTo(epubViewerRef.value, {
+    width: "100%",
+    height: "100%",
+    flow: "scrolled",
+    manager: "default"
+  });
+  
+  epubRendition.value.display();
 };
 
 const createNewNote = () => {
@@ -162,11 +201,11 @@ const removeBookStatus = async (id: string) => {
   }
 };
 
-// --- Folder & DND ---
-const combinedFolders = computed(() => {
+// --- Folder & Drag and Drop Logic ---
+const folders = computed(() => {
   const groups: Record<string, any[]> = { 'Uncategorized': [] };
   
-  // Initialize from custom folders list (including empty ones)
+  // Add custom placeholders
   customFolders.value.forEach(f => {
     if (!groups[f]) groups[f] = [];
   });
@@ -181,20 +220,40 @@ const combinedFolders = computed(() => {
 
 const onDragStart = (event: DragEvent, bookId: string) => {
   if (event.dataTransfer) {
-    event.dataTransfer.setData('bookId', bookId);
+    event.dataTransfer.setData('text/plain', bookId);
     event.dataTransfer.effectAllowed = 'move';
+    // Small timeout to allow ghost image to be created
+    setTimeout(() => {
+       const el = document.querySelector(`[data-id="${bookId}"]`);
+       if (el) (el as HTMLElement).style.opacity = '0.3';
+    }, 0);
   }
 };
 
-const onDrop = async (event: DragEvent, folderName: string) => {
+const onDragEnd = (bookId: string) => {
+  const el = document.querySelector(`[data-id="${bookId}"]`);
+  if (el) (el as HTMLElement).style.opacity = '1';
+  dragOverFolder.value = null;
+};
+
+const onDropIntoFolder = async (event: DragEvent, folderName: string) => {
   event.preventDefault();
-  const bookId = event.dataTransfer?.getData('bookId');
+  dragOverFolder.value = null;
+  const bookId = event.dataTransfer?.getData('text/plain');
+  
   if (bookId) {
+    const targetFolder = folderName === 'Uncategorized' ? '' : folderName;
     try {
-      await apiService.updateBookFolder(bookId, folderName === 'Uncategorized' ? '' : folderName);
+      await apiService.updateBookFolder(bookId, targetFolder);
+      // Optimistic Update
+      const bookIdx = books.value.findIndex(b => b.id === bookId);
+      if (bookIdx !== -1) {
+        books.value[bookIdx].folder = targetFolder;
+      }
+      // Re-fetch to be safe
       fetchBookcase();
     } catch (err) {
-      console.error('Move failed:', err);
+      console.error('Book move failed:', err);
     }
   }
 };
@@ -212,14 +271,13 @@ const createFolder = () => {
 const filteredBooks = computed(() => {
   if (!searchTerm.value) return books.value;
   return books.value.filter(b => 
-    b.title?.toLowerCase().includes(searchTerm.value.toLowerCase()) ||
-    b.folder?.toLowerCase().includes(searchTerm.value.toLowerCase())
+    (b.title || '').toLowerCase().includes(searchTerm.value.toLowerCase()) ||
+    (b.folder || '').toLowerCase().includes(searchTerm.value.toLowerCase())
   );
 });
 
 const getFileUrl = (book: any) => {
   if (!book || !book.storeId) return '';
-  // Proxy will now serve with Content-Disposition: inline and correct MIME
   return `${import.meta.env.VITE_API_URL}/api/storehouse/file/${book.storeId}`;
 };
 
@@ -236,7 +294,28 @@ const isEPUB = (book: any) => {
   return title.endsWith('.epub');
 };
 
-onMounted(fetchBookcase);
+// Watch for view mode changes to re-init EPUB if needed
+watch(viewMode, (newVal) => {
+  if (newVal !== 'notes' && isEPUB(activeBook.value)) {
+    nextTick(() => initEpubReader());
+  }
+});
+
+onMounted(() => {
+  fetchBookcase();
+  
+  // Inject epub.js CDN if not existing
+  if (!document.getElementById('epub-js')) {
+    const script = document.createElement('script');
+    script.id = 'epub-js';
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/epub.js/0.3.88/epub.min.js';
+    document.head.appendChild(script);
+    
+    const jszip = document.createElement('script');
+    jszip.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js';
+    document.head.appendChild(jszip);
+  }
+});
 </script>
 
 <template>
@@ -256,11 +335,13 @@ onMounted(fetchBookcase);
         <div v-if="isLoading" class="list-loader">Syncing...</div>
         
         <div 
-          v-for="(folderBooks, folderName) in combinedFolders" 
+          v-for="(folderBooks, folderName) in folders" 
           :key="folderName"
           class="folder-group"
-          @dragover.prevent
-          @drop="onDrop($event, folderName)"
+          :class="{ 'drop-target': dragOverFolder === folderName }"
+          @dragover.prevent="dragOverFolder = folderName"
+          @dragleave="dragOverFolder = null"
+          @drop="onDropIntoFolder($event, folderName)"
         >
           <div class="folder-header">
             <span class="folder-icon">📂</span>
@@ -272,10 +353,12 @@ onMounted(fetchBookcase);
             <div 
               v-for="book in folderBooks" 
               :key="book.id"
+              :data-id="book.id"
               class="book-item"
               :class="{ active: activeBook?.id === book.id }"
               draggable="true"
               @dragstart="onDragStart($event, book.id)"
+              @dragend="onDragEnd(book.id)"
               @click="selectBook(book)"
             >
               <div class="item-icon">🔖</div>
@@ -321,22 +404,20 @@ onMounted(fetchBookcase);
           <div v-if="isPDF(activeBook)" class="pdf-viewer">
             <iframe :src="getFileUrl(activeBook)" frameborder="0"></iframe>
           </div>
-          <div v-else-if="isEPUB(activeBook)" class="epub-viewer">
-             <!-- Using an external epub reader frame as a polyfill since browsers don't do native EPUB -->
-             <div class="epub-placeholder">
-               <div class="icon">📖</div>
-               <h3>EPUB Reader Integration</h3>
-               <p>Browsers don't support EPUB rendering natively yet.</p>
-               <div class="actions">
-                 <a :href="getFileUrl(activeBook)" target="_blank" class="preview-link">Open in Browser Tab</a>
-                 <span class="alt-msg">If it downloads, try an EPUB extension or external reader.</span>
-               </div>
+          <div v-else-if="isEPUB(activeBook)" class="epub-viewer-container">
+             <div ref="epubViewerRef" class="epub-canvas"></div>
+             <div v-if="!epubRendition" class="reader-loader">Loading EPUB Reader...</div>
+             
+             <!-- Navigation Controls (floating) -->
+             <div v-if="epubRendition" class="epub-nav">
+                <button @click="epubRendition.prev()" class="nav-btn">⬅️ Prev</button>
+                <button @click="epubRendition.next()" class="nav-btn">Next ➡️</button>
              </div>
           </div>
           <div v-else class="placeholder-viewer">
             <div class="msg">
               <div class="icon">🔍</div>
-              <p>Direct preview for <b>{{ activeBook.category }}</b> is coming soon.</p>
+              <p>Preview for <b>{{ activeBook.category }}</b> is coming soon.</p>
               <div class="actions">
                 <a :href="getFileUrl(activeBook)" target="_blank" class="download-link">Open Original File</a>
               </div>
@@ -436,7 +517,7 @@ onMounted(fetchBookcase);
   color: #e2e8f0;
 }
 
-/* Sidebar */
+/* Sidebar & Folders */
 .sidebar {
   width: 300px;
   background: rgba(0, 0, 0, 0.25);
@@ -481,6 +562,15 @@ onMounted(fetchBookcase);
 
 .folder-group {
   margin-bottom: 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.folder-group.drop-target {
+  background: rgba(217, 119, 6, 0.1);
+  border-color: rgba(217, 119, 6, 0.5);
+  transform: scale(1.02);
 }
 
 .folder-header {
@@ -504,6 +594,7 @@ onMounted(fetchBookcase);
 
 .folder-content {
   padding-left: 0.5rem;
+  min-height: 10px; /* Area for drops */
 }
 
 .book-item {
@@ -515,32 +606,27 @@ onMounted(fetchBookcase);
   transition: all 0.2s;
   margin-bottom: 2px;
   user-select: none;
+  background: transparent;
 }
 
 .book-item:hover { background: rgba(255, 255, 255, 0.05); }
 .book-item.active { background: rgba(217, 119, 6, 0.15); border: 1px solid rgba(217, 119, 6, 0.3); }
 
 .item-icon { font-size: 1.1rem; opacity: 0.6; }
+.item-info { flex: 1; overflow: hidden; }
 .item-title { font-size: 0.85rem; font-weight: 500; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; text-align: left; }
 .item-meta { font-size: 0.65rem; opacity: 0.4; text-transform: uppercase; margin-top: 2px; text-align: left; }
 
-.new-folder-area {
-  padding: 1rem;
-}
+.new-folder-area { padding: 1rem; }
 .new-folder-area input {
   width: 100%;
-  padding: 0.45rem 0.8rem;
+  padding: 0.5rem 1rem;
   background: rgba(255, 255, 255, 0.03);
   border: 1px dashed rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
+  border-radius: 10px;
   color: #94a3b8;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   transition: all 0.2s;
-}
-.new-folder-area input:focus {
-  border-color: #d97706;
-  background: rgba(255, 255, 255, 0.05);
-  outline: none;
 }
 
 /* Workspace */
@@ -562,7 +648,7 @@ onMounted(fetchBookcase);
 }
 
 .active-book-info { display: flex; align-items: center; gap: 1rem; max-width: 60%; }
-.active-book-info h2 { font-size: 1rem; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.active-book-info h2 { font-size: 1rem; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 .badge { background: rgba(217, 119, 6, 0.2); color: #fbbf24; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.7rem; font-weight: bold; flex-shrink: 0; }
 
 .mode-toggle { display: flex; background: rgba(255, 255, 255, 0.05); border-radius: 8px; padding: 2px; }
@@ -579,36 +665,47 @@ onMounted(fetchBookcase);
 
 .ws-body { flex: 1; display: flex; overflow: hidden; }
 
-/* Panes */
+/* Preview Panes */
 .preview-pane { flex: 1.2; border-right: 1px solid rgba(255, 255, 255, 0.05); background: #1e293b; position: relative; }
 .pdf-viewer iframe { width: 100%; height: 100%; position: absolute; }
 
-.epub-viewer {
+.epub-viewer-container {
+  width: 100%;
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background: #1e293b;
+  position: relative;
+  background: #f8fafc; /* Reader-like clean background */
 }
+.epub-canvas { width: 100%; height: 100%; }
 
-.epub-placeholder {
-  text-align: center;
-  padding: 3rem;
-  max-width: 400px;
+.epub-nav {
+  position: absolute;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 1rem;
+  z-index: 100;
 }
-.epub-placeholder .icon { font-size: 4rem; opacity: 0.2; margin-bottom: 1rem; }
-.preview-link { 
-  display: inline-block;
-  padding: 0.8rem 2rem;
-  background: #d97706;
+.nav-btn {
+  padding: 0.6rem 1.5rem;
+  background: rgba(15, 23, 42, 0.85);
   color: white;
-  border-radius: 8px;
-  font-weight: bold;
-  text-decoration: none;
-  margin-bottom: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  backdrop-filter: blur(8px);
 }
-.alt-msg { display: block; font-size: 0.8rem; opacity: 0.4; line-height: 1.5; }
+.nav-btn:hover { background: #d97706; }
+
+.reader-loader {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #64748b;
+  font-style: italic;
+}
 
 .placeholder-viewer {
   height: 100%;
@@ -621,6 +718,7 @@ onMounted(fetchBookcase);
 .placeholder-viewer .icon { font-size: 3rem; opacity: 0.15; margin-bottom: 1rem; }
 .download-link { color: #fbbf24; text-decoration: underline; font-size: 0.9rem; margin-top: 1.5rem; display: inline-block; }
 
+/* Notes Pane */
 .notes-pane { flex: 1; display: flex; flex-direction: column; background: #0f172a; }
 
 .note-tabs {
@@ -668,7 +766,7 @@ onMounted(fetchBookcase);
   flex: 1;
   background: transparent;
   border: none;
-  font-size: 1rem;
+  font-size: 1.1rem;
   font-weight: 600;
   color: white;
   outline: none;
@@ -703,7 +801,7 @@ onMounted(fetchBookcase);
   text-align: left;
 }
 
-/* Modal Styling */
+/* Add Book Modal */
 .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 2000; display: flex; justify-content: center; align-items: center; }
 .modal-content { background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; width: 600px; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
 .modal-header { padding: 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; }
@@ -724,7 +822,4 @@ onMounted(fetchBookcase);
 .hero-icon { font-size: 5rem; margin-bottom: 1.5rem; opacity: 0.2; }
 .cta-btn { margin-top: 1.5rem; padding: 1rem 2.5rem; background: #d97706; border: none; color: white; border-radius: 12px; font-weight: bold; cursor: pointer; transition: transform 0.2s; }
 .cta-btn:hover { transform: scale(1.05); background: #fbbf24; }
-
-/* Generic Loader */
-.list-loader { padding: 2rem; opacity: 0.5; font-size: 0.9rem; text-align: center; }
 </style>
