@@ -23,7 +23,11 @@ const linkLabel = ref('');
 
 const selectedNodeDetails = ref<any>(null);
 const isEditingNode = ref(false);
-const editForm = ref({ title: '', content: '', nodeType: 'general' });
+const editForm = ref({ title: '', content: '', nodeType: 'general', mediaId: null as string | null });
+const mediaSearchQuery = ref('');
+const mediaSearchResults = ref<any[]>([]);
+const isMediaSearching = ref(false);
+const showMediaStore = ref(false);
 
 const isLinkingMode = ref(false);
 
@@ -146,6 +150,8 @@ const handleNodeClick = (nodeId: string) => {
       selectedNodeDetails.value = node.raw;
       editForm.value = { ...node.raw };
       isEditingDeskLink.value = false;
+      showMediaStore.value = false;
+      mediaSearchResults.value = [];
       if (node.raw.deskShelfId) {
           loadShelfPreview(node.raw.deskShelfId);
       } else {
@@ -477,6 +483,32 @@ const debouncedSearch2 = () => {
     searchTimer2 = setTimeout(performSearch2, 300);
 };
 
+const searchMediaStore = async () => {
+    isMediaSearching.value = true;
+    try {
+        const res = await apiService.getRecentPhotos(1, 24);
+        mediaSearchResults.value = res.map((m: any) => ({
+            ...m,
+            thumbUrl: apiService.getStorehouseUrl(m.fileId, m.sourcePlatform) + '&w=200'
+        }));
+        if (mediaSearchQuery.value) {
+            // Simple client-side title filter for demo since backend search might not be ready
+            mediaSearchResults.value = mediaSearchResults.value.filter((m: any) => 
+                (m.originalName || '').toLowerCase().includes(mediaSearchQuery.value.toLowerCase())
+            );
+        }
+    } catch (e) { console.error(e); } finally { isMediaSearching.value = false; }
+};
+
+const selectMediaStoreItem = (item: any) => {
+    editForm.value.mediaId = item.id;
+    // Immediate preview update
+    if (selectedNodeDetails.value) {
+        selectedNodeDetails.value.imageUrl = apiService.getAbsoluteUrl(apiService.getStorehouseUrl(item.fileId, item.sourcePlatform));
+    }
+    showMediaStore.value = false;
+};
+
 const selectTarget = (node: any) => { targetNode.value = node; searchQ2.value = node.title; searchResults2.value = []; };
 
 onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
@@ -608,7 +640,32 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
                             <option value="place">Location</option>
                         </select>
                     </div>
-                    <div class="in-field"><label>Content</label><textarea v-model="editForm.content" class="premium-textarea"></textarea></div>
+                    <div class="in-field">
+                        <label>Content</label>
+                        <textarea v-model="editForm.content" class="premium-textarea" placeholder="Describe this memory..."></textarea>
+                    </div>
+
+                    <div class="in-field">
+                        <label>Image Resource</label>
+                        <div class="media-picker-trigger glass" @click="showMediaStore = !showMediaStore; if(showMediaStore) searchMediaStore()">
+                            <span v-if="editForm.mediaId" class="m-status">✅ Resource Linked</span>
+                            <span v-else class="m-status">🔍 Search Storehouse...</span>
+                        </div>
+                        
+                        <div v-if="showMediaStore" class="media-store-explorer glass">
+                            <div class="ms-head">
+                                <input v-model="mediaSearchQuery" @input="searchMediaStore" placeholder="Filter images..." />
+                                <button @click="showMediaStore = false">×</button>
+                            </div>
+                            <div class="ms-grid" v-if="!isMediaSearching">
+                                <div v-for="m in mediaSearchResults" :key="m.id" class="ms-item" @click="selectMediaStoreItem(m)">
+                                    <img :src="m.thumbUrl" />
+                                </div>
+                            </div>
+                            <div v-else class="ms-loader">Scanning...</div>
+                        </div>
+                    </div>
+
                     <button class="confirm-link-btn" @click="saveNodeEdits">Save Refinement</button>
                 </div>
 
@@ -738,6 +795,24 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
 .spin { width: 40px; height: 40px; border: 3px solid rgba(34, 211, 238, 0.1); border-top-color: #22d3ee; border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .hidden { display: none; }
+
+/* Media Picker Styles */
+.media-picker-trigger { padding: 12px 20px; cursor: pointer; border-radius: 12px; border: 1px solid rgba(34, 211, 238, 0.2); transition: 0.3s; margin-top: 5px; }
+.media-picker-trigger:hover { background: rgba(34, 211, 238, 0.1); }
+.m-status { font-size: 0.8rem; font-weight: 700; color: #22d3ee; }
+
+.media-store-explorer { 
+    position: absolute; bottom: 85px; right: 20px; width: 380px; height: 450px; 
+    z-index: 2000; display: flex; flex-direction: column; overflow: hidden; padding: 20px;
+    border: 1px solid rgba(34, 211, 238, 0.3);
+}
+.ms-head { display: flex; gap: 10px; margin-bottom: 20px; }
+.ms-head input { flex: 1; background: rgba(0,0,0,0.5); border: none; padding: 10px; border-radius: 8px; color: white; outline: none; }
+.ms-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; overflow-y: auto; flex: 1; }
+.ms-item { aspect-ratio: 1; border-radius: 10px; overflow: hidden; cursor: pointer; border: 2px solid transparent; transition: 0.2s; }
+.ms-item:hover { transform: scale(1.05); border-color: #22d3ee; }
+.ms-item img { width: 100%; height: 100%; object-fit: cover; }
+.ms-loader { flex: 1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.9rem; }
 
 .shelf-snapshot { margin-top: 15px; background: rgba(0,0,0,0.25); border-radius: 16px; padding: 15px; flex: 1; overflow-y: auto; }
 .mini-shelf-item { display: flex; align-items: center; gap: 10px; padding: 8px; background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 6px; font-size: 0.8rem; }
