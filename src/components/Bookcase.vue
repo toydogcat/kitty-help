@@ -76,8 +76,8 @@ const waitForLibs = () => {
     const check = () => {
       // @ts-ignore
       if (typeof ePub !== 'undefined' && typeof JSZip !== 'undefined') resolve(true);
-      else if (attempts > 40) reject(new Error("Core engines (EPub/JSZip) timeout."));
-      else { attempts++; setTimeout(check, 250); }
+      else if (attempts > 50) reject(new Error("Core engines (EPub/JSZip) timeout."));
+      else { attempts++; setTimeout(check, 200); }
     };
     check();
   });
@@ -99,21 +99,40 @@ const initEpubReader = async () => {
        width: "100%", height: "100%", flow: "paginated", manager: "continuous"
     });
     
-    epubRendition.value.on("attached", () => {
-       const frames = epubViewerRef.value?.querySelectorAll('iframe');
-       frames?.forEach(f => {
-          f.setAttribute("sandbox", "allow-same-origin allow-scripts");
-          f.removeAttribute("sandbox");
+    // NUCLEAR FIX: Hook into content before it hits the iframe to strip scripts and fix fonts
+    epubRendition.value.hooks.content.register((contents: any) => {
+       // 1. Remove all scripts to satisfy the sandbox
+       const doc = contents.document;
+       const scripts = doc.querySelectorAll('script');
+       scripts.forEach((s: any) => s.remove());
+       
+       // 2. Clear out bad CSS that references local files (res:///)
+       const styles = doc.querySelectorAll('style, link[rel="stylesheet"]');
+       styles.forEach((style: any) => {
+          if (style.textContent?.includes('res://')) {
+             style.textContent = style.textContent.replace(/url\(["']?res:\/\/[^)]+\)/g, 'none');
+          }
+       });
+
+       // 3. Inject clean font styling
+       return contents.addStylesheetRules({
+          "body": { 
+             "font-family": "'Outfit', system-ui, -apple-system, sans-serif !important",
+             "color": "#cbd5e1 !important",
+             "background": "transparent !important"
+          }
        });
     });
 
-    epubRendition.value.themes.register("dark", {
-       "body": { "color": "#cbd5e1 !important", "background": "transparent !important" },
-       "p": { "color": "#cbd5e1 !important" }
+    epubRendition.value.on("attached", () => {
+       const frames = epubViewerRef.value?.querySelectorAll('iframe');
+       frames?.forEach(f => {
+          f.removeAttribute("sandbox");
+          f.setAttribute("sandbox", "allow-same-origin"); // No allow-scripts needed since we stripped them
+       });
     });
-    
+
     await epubRendition.value.display();
-    epubRendition.value.themes.select("dark");
     isEpubLoading.value = false;
     epubError.value = null;
   } catch (e: any) { 
@@ -151,7 +170,7 @@ const saveCurrentNote = async () => {
 
 const deleteNote = async (id: string) => {
   if (id.startsWith('temp-')) { activeNote.value = null; return; }
-  if (!confirm('Eliminate record?')) return;
+  if (!confirm('Eliminate data?')) return;
   try {
     await apiService.removeBookNote(id);
     bookNotes.value = await apiService.getBookNotes(activeBook.value.id);
@@ -161,7 +180,7 @@ const deleteNote = async (id: string) => {
 };
 
 const removeBookStatus = async (id: string) => {
-  if (!confirm('Detach from workspace?')) return;
+  if (!confirm('Detach?')) return;
   try { await apiService.removeBook(id); activeBook.value = null; fetchBookcase(); } catch (e) { alert('Operation fail'); }
 };
 
@@ -212,25 +231,18 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 <template>
   <div class="bookcase-v2">
     <aside class="sidebar">
-      <div class="sidebar-header">
-        <div class="search-wrap"><input v-model="searchTerm" placeholder="Filter Research..." /></div>
-        <button @click="showAddModal = true" class="add-btn">+</button>
-      </div>
-
+      <div class="sidebar-header"><input v-model="searchTerm" placeholder="Filter Research..." /><button @click="showAddModal = true" class="add-btn">+</button></div>
       <div class="folder-list">
         <div v-for="(folderBooks, folderName) in folders" :key="folderName" class="folder-group" 
-             :class="{ 'drop-target': dragOverFolder === folderName }"
-             @dragover.prevent="dragOverFolder = String(folderName)" @dragleave="dragOverFolder = null" @drop="onDropIntoFolder($event, String(folderName))">
+             :class="{ 'drop-target': dragOverFolder === folderName }" @dragover.prevent="dragOverFolder = String(folderName)" @dragleave="dragOverFolder = null" @drop="onDropIntoFolder($event, String(folderName))">
           <div class="folder-header" @click="collapsedFolders.has(String(folderName)) ? collapsedFolders.delete(String(folderName)) : collapsedFolders.add(String(folderName))">
             <span class="fold-arrow">{{ collapsedFolders.has(String(folderName)) ? '▶' : '▼' }}</span>
             <span class="folder-name">{{ folderName }}</span>
             <span class="count">{{ folderBooks.length }}</span>
           </div>
           <div v-show="!collapsedFolders.has(String(folderName))" class="folder-content">
-            <div v-for="book in folderBooks" :key="book.id" class="book-item" :class="{ active: activeBook?.id === book.id }"
-                 draggable="true" @dragstart="onDragStart($event, book.id)" @click="selectBook(book)">
-              <div class="item-icon">🔖</div>
-              <div class="item-info"><div class="item-title">{{ book.title }}</div><div class="item-meta">{{ book.category }}</div></div>
+            <div v-for="book in folderBooks" :key="book.id" class="book-item" :class="{ active: activeBook?.id === book.id }" draggable="true" @dragstart="onDragStart($event, book.id)" @click="selectBook(book)">
+              <div class="item-icon">🔖</div><div class="item-info"><div class="item-title">{{ book.title }}</div><div class="item-meta">{{ book.category }}</div></div>
             </div>
           </div>
         </div>
@@ -261,7 +273,6 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
                 <button @click="epubRendition.next()" class="nav-btn">➡️</button>
              </div>
           </div>
-          <div v-else class="fallback">UNSUPPORTED Intel Format</div>
         </div>
 
         <div v-if="viewMode !== 'preview'" class="notes-pane">
@@ -280,7 +291,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
               </div>
             </div>
             <div class="ed-body" :class="'v-' + activeNote.noteType">
-              <textarea v-if="activeNote.noteType !== 'md'" v-model="activeNote.content" placeholder="Data entry..." />
+              <textarea v-if="activeNote.noteType !== 'md'" v-model="activeNote.content" placeholder="Research logs..." />
               <div v-if="activeNote.noteType !== 'txt'" class="markdown-body" v-html="marked(activeNote.content || '')" />
             </div>
           </div>
@@ -289,12 +300,11 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
     </main>
     <main v-else class="empty-workspace">DEPLOY SYSTEM STANDBY.</main>
 
-    <!-- Modal Fix: Re-integrating intel repository -->
     <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
       <div class="modal">
         <header>INTEL REPOSITORY</header>
         <div class="m-content">
-          <input v-model="searchQuery" placeholder="Filter sources..." @input="apiService.getAvailableBooks(searchQuery).then(r => availableResources = r)" />
+          <input v-model="searchQuery" placeholder="Filter Sources..." @input="apiService.getAvailableBooks(searchQuery).then(r => availableResources = r)" />
           <div class="items">
             <div v-for="res in availableResources" :key="res.id" @click="importBook(res)"><span>[{{ res.mediaType }}]</span>{{ res.title || res.caption }}</div>
           </div>
@@ -308,11 +318,10 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 .bookcase-v2 { display: flex; height: 100vh; background: #0a0c10; color: #a0a8b1; font-family: 'Outfit', sans-serif;}
 .sidebar { width: 280px; background: #000; border-right: 1px solid #1a1e23; display: flex; flex-direction: column; }
 .sidebar-header { padding: 1.25rem; display: flex; gap: 0.5rem; }
-.search-wrap { flex: 1; }
-.search-wrap input { width: 100%; padding: 0.5rem; background: #11151a; border: 1px solid #222; border-radius: 4px; color: #fff; }
+.sidebar-header input { flex:1; padding: 0.5rem; background: #11151a; border: 1px solid #222; border-radius: 4px; color: #fff; font-size: 0.8rem; }
 .add-btn { width: 34px; background: #d97706; border: none; color: #fff; border-radius: 4px; cursor: pointer; font-weight: bold; }
 .folder-list { flex: 1; overflow-y: auto; padding: 0.5rem; }
-.folder-header { padding: 0.75rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; border-radius: 6px; font-weight: 700; color: #e2e8f0; }
+.folder-header { padding: 0.75rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; border-radius: 6px; font-weight: 700; color: #e2e8f0; font-size: 0.85rem; }
 .folder-header:hover { background: #11151a; }
 .count { margin-left: auto; font-size: 0.7rem; color: #fbbf24; background: #fbbf2411; padding: 2px 6px; border-radius: 4px; }
 .book-item { padding: 0.65rem 0.65rem 0.65rem 1.5rem; display: flex; gap: 0.6rem; cursor: pointer; border-radius: 6px; margin-bottom: 2px; }
@@ -321,26 +330,28 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 .item-meta { font-size: 0.6rem; opacity: 0.4; }
 .workspace { flex: 1; display: flex; flex-direction: column; }
 .ws-header { height: 64px; padding: 0 1.25rem; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #1a1e23; background: #000; }
+.badge { font-size: 0.6rem; background: #fbbf2422; color: #fbbf24; padding: 2px 6px; border-radius: 4px; font-weight: 800; }
 .tabs-nav { display: flex; gap: 4px; background: #11151a; padding: 4px; border-radius: 8px; }
 .tabs-nav button { padding: 0.4rem 1rem; border: none; background: transparent; color: #666; font-size: 0.75rem; font-weight: 700; border-radius: 6px; cursor: pointer; transition: all 0.2s; }
 .tabs-nav button.active { background: #d97706; color: #fff; }
 .ws-body { flex: 1; display: flex; overflow: hidden; }
 .preview-pane { flex: 1.4; position: relative; background: #121519; border-right: 1px solid #1a1e23; }
-.epub-reader { width:100%; height:100%; position:relative; }
+.epub-reader { width:100%; height:100%; position:relative; overflow:hidden;}
 .epub-canvas { width:100%; height:100%; min-height: 500px; }
-.reader-controls { position: absolute; bottom: 1.5rem; left: 50%; transform: translateX(-50%); display: flex; gap: 0.75rem; z-index: 100; }
-.nav-btn { background: #d97706DD; backdrop-filter: blur(4px); color: #fff; border: 1px solid #fbbf2444; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.7rem; font-weight: 900; }
+.reader-controls { position: absolute; bottom: 2rem; left: 50%; transform: translateX(-50%); display: flex; gap: 1rem; z-index: 1000; }
+.nav-btn { background: #d97706DD; backdrop-filter: blur(8px); color: #fff; border: 1px solid #fbbf2444; padding: 0.6rem 1.25rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; font-weight: 900; }
 .notes-pane { flex: 1; display: flex; flex-direction: column; background: #0a0c10; }
 .note-tabs { display: flex; padding: 0.6rem 1rem 0; border-bottom: 1px solid #1a1e23; overflow-x: auto; gap: 4px; }
 .note-tab { padding: 0.5rem 1.25rem; font-size: 0.8rem; background: #11151a; border-radius: 6px 6px 0 0; cursor: pointer; color: #666; }
 .note-tab.active { background: #1a1e23; color: #fbbf24; }
 .ed-toolbar { padding: 1rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1a1e23; }
 .title-in { flex: 1; background: transparent; border: none; color: #fff; font-size: 1.1rem; font-weight: 700; outline: none; }
-.cycle-btn { padding: 0.4rem 0.8rem; background: #222; border: 1px solid #333; color: #fbbf24; border-radius: 4px; font-size: 0.7rem; font-weight: 800; cursor: pointer; }
 .commit-btn { padding: 0.4rem 1rem; background: #d97706; border: none; color: #fff; border-radius: 4px; font-size: 0.75rem; font-weight: 900; cursor: pointer; }
 .ed-body { flex: 1; display: flex; overflow: hidden; }
 .ed-body textarea { flex: 1; background: transparent; border: none; padding: 1.5rem; color: #cbd5e1; font-family: monospace; font-size: 0.95rem; line-height: 1.7; resize: none; outline: none; border-right: 1px solid #1a1e23; }
 .markdown-body { flex: 1; padding: 1.5rem; overflow-y: auto; text-align: left; }
+.v-txt .markdown-body { display: none; }
+.v-md textarea { display: none; }
 .loader { position: absolute; top:0; left:0; width:100%; height:100%; background: #111; display: flex; align-items: center; justify-content: center; z-index: 50; }
 .spin { width: 32px; height: 32px; border: 3px solid #333; border-top-color: #d97706; border-radius: 50%; animation: rot 0.8s linear infinite; }
 @keyframes rot { to { transform: rotate(360deg); } }
