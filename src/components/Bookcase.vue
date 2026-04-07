@@ -95,13 +95,15 @@ const initEpubReader = async () => {
     if (!response.ok) throw new Error("Cloud stream retrieval failed");
     const buffer = await response.arrayBuffer();
 
-    // 1. Proactive Observer to neutralize iframes
+    // Kill any existing observer
+    if (observer) observer.disconnect();
     observer = new MutationObserver((mutations) => {
        mutations.forEach((m) => {
           m.addedNodes.forEach((node: any) => {
              if (node.tagName === 'IFRAME') {
                 node.removeAttribute('sandbox');
-                node.setAttribute('sandbox', 'allow-same-origin allow-scripts');
+                node.style.background = 'transparent';
+                node.allow = "autoplay; encrypted-media; fullscreen"; 
              }
           });
        });
@@ -111,16 +113,32 @@ const initEpubReader = async () => {
     // @ts-ignore
     epubBook.value = ePub(buffer);
     
-    // USAGE of method: 'blob' to bypass many sandbox/CORS issues
+    // We use default manager with scrolled if possible for better scrolling, but user likes paginated
     epubRendition.value = epubBook.value.renderTo(epubViewerRef.value, { 
-       width: "100%", height: "100%", flow: "paginated", manager: "default", method: "blob"
+       width: "100%", height: "100%", flow: "paginated"
     });
     
-    // DEEP CLEANSE HOOK
+    // DEEP CLEANSE HOOK: Critical for both normal and cleaned epubs
     epubRendition.value.hooks.content.register((contents: any) => {
        const doc = contents.document;
        
-       // a) Aggressive Script & Event Purge
+       // Force a global theme override directly in the iframe
+       const style = doc.createElement('style');
+       style.textContent = `
+          body { 
+             font-family: 'Outfit', system-ui, sans-serif !important;
+             color: #cbd5e1 !important;
+             background: transparent !important;
+             margin: 2rem !important;
+             line-height: 1.8 !important;
+          }
+          * { max-width: 100%; border-color: #334155 !important; }
+          a { color: #fbbf24 !important; }
+          @font-face { display: none !important; }
+       `;
+       doc.head.appendChild(style);
+
+       // Sanitization sweep
        doc.querySelectorAll('script').forEach((s: any) => s.remove());
        doc.querySelectorAll('*').forEach((el: any) => {
           for (let i = 0; i < el.attributes.length; i++) {
@@ -128,41 +146,19 @@ const initEpubReader = async () => {
              if (attr.name.startsWith('on')) { el.removeAttribute(attr.name); i--; }
           }
        });
-       
-       // b) Brutal CSS Desanitization: Remove all font-faces and res:/// references
-       try {
-          Array.from(doc.styleSheets).forEach((sheet: any) => {
-             try {
-                for (let i = sheet.cssRules.length - 1; i >= 0; i--) {
-                   const rule = sheet.cssRules[i];
-                   if (rule.cssText.includes('res://') || rule.type === 5 /* FONT_FACE_RULE */) {
-                      sheet.deleteRule(i);
-                   }
-                }
-             } catch(e) {}
-          });
-       } catch(e) {}
-
-       // c) Inject Clean Layout Styles
-       return contents.addStylesheetRules({
-          "body": { 
-             "font-family": "system-ui, -apple-system, sans-serif !important",
-             "color": "#cbd5e1 !important",
-             "background": "transparent !important",
-             "overflow": "hidden"
-          },
-          "img": { "max-width": "100% !important", "height": "auto !important" }
-       });
-    });
-
-    epubRendition.value.on("relocated", () => {
-       if(epubRendition.value) epubRendition.value.resize();
     });
 
     await epubRendition.value.display();
-    epubRendition.value.themes.select("dark");
+    
+    // Force first page visible and clear loader
     isEpubLoading.value = false;
     epubError.value = null;
+    
+    // Trigger one final resize to fix black screen artifacts
+    setTimeout(() => {
+       if(epubRendition.value) epubRendition.value.resize();
+    }, 500);
+
   } catch (e: any) { 
     console.error('Reader Intel Error:', e);
     epubError.value = e.message || "Engine hardware synchronization failure."; 
@@ -303,7 +299,6 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
                 <button @click="epubRendition.next()" class="nav-btn">➡️</button>
              </div>
           </div>
-          <div v-else class="fallback">UNSUPPORTED Intel Format</div>
         </div>
 
         <div v-if="viewMode !== 'preview'" class="notes-pane">
@@ -366,9 +361,10 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 .tabs-nav button { padding: 0.4rem 1rem; border: none; background: transparent; color: #666; font-size: 0.75rem; font-weight: 700; border-radius: 6px; cursor: pointer; transition: all 0.2s; }
 .tabs-nav button.active { background: #d97706; color: #fff; }
 .ws-body { flex: 1; display: flex; overflow: hidden; }
-.preview-pane { flex: 1.4; position: relative; background: #121519; border-right: 1px solid #1a1e23; }
-.epub-reader { width:100%; height:100%; position:relative; overflow:hidden;}
-.epub-canvas { width:100%; height:100%; min-height: 500px; }
+.preview-pane { flex: 1.4; position: relative; background: #121519; border-right: 1px solid #1a1e23; overflow: hidden; }
+.epub-reader { width:100%; height:100%; position:relative; background: #000; }
+.epub-canvas { width:100%; height:100%; position: absolute; top:0; left:0; }
+:deep(.epub-canvas iframe) { width: 100% !important; height: 100% !important; border: none !important; }
 .reader-controls { position: absolute; bottom: 2rem; left: 50%; transform: translateX(-50%); display: flex; gap: 1rem; z-index: 1000; }
 .nav-btn { background: #d97706DD; backdrop-filter: blur(8px); color: #fff; border: 1px solid #fbbf2444; padding: 0.6rem 1.25rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; font-weight: 900; }
 .notes-pane { flex: 1; display: flex; flex-direction: column; background: #0a0c10; }
