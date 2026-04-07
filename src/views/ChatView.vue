@@ -67,7 +67,7 @@ onMounted(() => {
   socket.on('messagesUpdate', fetchRecentMessages);
 });
 
-const onDragStart = (e: DragEvent, item: any, type: string = 'media') => {
+const onDragStart = (e: DragEvent, item: any, _type: string = 'media') => {
   e.dataTransfer?.setData('application/json', JSON.stringify({ type: 'media', data: item }));
 };
 
@@ -89,7 +89,7 @@ const handleDropOnRemark = async (e: DragEvent, containerId: string) => {
         containerId: containerId,
         logId: payload.data.id
       });
-      await fetchData();
+      await fetchRecentMessages();
     } catch (err) {
       alert("Failed to add to remark");
     }
@@ -101,7 +101,7 @@ const createNewRemark = async () => {
   if (!name) return;
   try {
     await apiService.createRemark({ name, content: "" });
-    await fetchData();
+    await fetchRecentMessages();
   } catch (err) {
     alert("Creation failed");
   }
@@ -110,7 +110,7 @@ const createNewRemark = async () => {
 const togglePin = async (c: any) => {
   try {
     await apiService.updateRemark(c.id, { isPinned: !c.isPinned });
-    await fetchData();
+    await fetchRecentMessages();
   } catch (err) {
     alert("Pin toggle failed");
   }
@@ -120,7 +120,7 @@ const deleteRemark = async (id: string) => {
   if (!confirm("Delete this group and all its links?")) return;
   try {
     await apiService.deleteRemark(id);
-    await fetchData();
+    await fetchRecentMessages();
   } catch (err) {
     alert("Delete failed");
   }
@@ -169,16 +169,12 @@ const saveRemarkEdit = async () => {
       content: remarkEditBuffer.value.content
     });
     showRemarkModal.value = false;
-    await fetchData();
+    await fetchRecentMessages();
   } catch (err) {
     alert("Save failed");
   } finally {
     savingRemark.value = false;
   }
-};
-
-const getStorehouseUrl = (mediaId: string, platform?: string) => {
-  return apiService.getStorehouseFileUrl(mediaId, platform || 'line');
 };
 
 const pinnedRemarks = computed(() => remarkContainers.value.filter(c => c.isPinned));
