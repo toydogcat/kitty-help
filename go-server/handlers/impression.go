@@ -470,26 +470,26 @@ func ExportImpressionGraph(c *fiber.Ctx) error {
 	err := db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
 	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User not found"}) }
 
-	rows, err := db.Query(context.Background(), "SELECT id, media_id, title, content, node_type, desk_shelf_id, created_at FROM impression_nodes WHERE user_id = $1", dbUserID)
+	rows, err := db.Query(context.Background(), "SELECT id, media_id, title, content, node_type, desk_shelf_id, created_at, kg_name FROM impression_nodes WHERE user_id = $1", dbUserID)
 	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
 	defer rows.Close()
 
 	nodes := []models.ImpressionNode{}
 	for rows.Next() {
 		var n models.ImpressionNode
-		if err := rows.Scan(&n.ID, &n.MediaID, &n.Title, &n.Content, &n.NodeType, &n.DeskShelfID, &n.CreatedAt); err == nil {
+		if err := rows.Scan(&n.ID, &n.MediaID, &n.Title, &n.Content, &n.NodeType, &n.DeskShelfID, &n.CreatedAt, &n.KGName); err == nil {
 			nodes = append(nodes, n)
 		}
 	}
 
-	eRows, err := db.Query(context.Background(), "SELECT id, source_id, target_id, label, created_at FROM impression_edges WHERE user_id = $1", dbUserID)
+	eRows, err := db.Query(context.Background(), "SELECT id, source_id, target_id, label, created_at, kg_name FROM impression_edges WHERE user_id = $1", dbUserID)
 	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
 	defer eRows.Close()
 
 	edges := []models.ImpressionEdge{}
 	for eRows.Next() {
 		var e models.ImpressionEdge
-		if err := eRows.Scan(&e.ID, &e.SourceID, &e.TargetID, &e.Label, &e.CreatedAt); err == nil {
+		if err := eRows.Scan(&e.ID, &e.SourceID, &e.TargetID, &e.Label, &e.CreatedAt, &e.KGName); err == nil {
 			edges = append(edges, e)
 		}
 	}
@@ -516,27 +516,36 @@ func ImportImpressionGraph(c *fiber.Ctx) error {
 	defer tx.Rollback(ctx)
 
 	for _, n := range graph.Nodes {
+		// Clean kg_name: if empty in JSON, set to 'default'
+		kg := n.KGName
+		if kg == "" { kg = "default" }
+
 		_, err = tx.Exec(ctx, `
-			INSERT INTO impression_nodes (id, user_id, media_id, title, content, node_type, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			INSERT INTO impression_nodes (id, user_id, media_id, title, content, node_type, created_at, kg_name)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 			ON CONFLICT (id) DO UPDATE SET
 				title = EXCLUDED.title,
 				content = EXCLUDED.content,
 				node_type = EXCLUDED.node_type,
-				media_id = EXCLUDED.media_id
-		`, n.ID, dbUserID, n.MediaID, n.Title, n.Content, n.NodeType, n.CreatedAt)
+				media_id = EXCLUDED.media_id,
+				kg_name = EXCLUDED.kg_name
+		`, n.ID, dbUserID, n.MediaID, n.Title, n.Content, n.NodeType, n.CreatedAt, kg)
 		if err != nil { return c.Status(500).JSON(fiber.Map{"error": "Node upsert failed: " + err.Error()}) }
 	}
 
 	for _, e := range graph.Edges {
+		kg := e.KGName
+		if kg == "" { kg = "default" }
+
 		_, err = tx.Exec(ctx, `
-			INSERT INTO impression_edges (id, user_id, source_id, target_id, label, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6)
+			INSERT INTO impression_edges (id, user_id, source_id, target_id, label, created_at, kg_name)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
 			ON CONFLICT (id) DO UPDATE SET
 				label = EXCLUDED.label,
 				source_id = EXCLUDED.source_id,
-				target_id = EXCLUDED.target_id
-		`, e.ID, dbUserID, e.SourceID, e.TargetID, e.Label, e.CreatedAt)
+				target_id = EXCLUDED.target_id,
+				kg_name = EXCLUDED.kg_name
+		`, e.ID, dbUserID, e.SourceID, e.TargetID, e.Label, e.CreatedAt, kg)
 		if err != nil { return c.Status(500).JSON(fiber.Map{"error": "Edge upsert failed: " + err.Error()}) }
 	}
 
