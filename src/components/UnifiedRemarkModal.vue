@@ -37,8 +37,14 @@ const handleSave = async () => {
   }
 };
 
+const brokenImages = ref<Record<string, boolean>>({});
+
 const getStorehouseUrl = (mediaId: string, platform?: string) => {
   return apiService.getStorehouseFileUrl(mediaId, platform || 'line');
+};
+
+const handleImgError = (id: string) => {
+  brokenImages.value[id] = true;
 };
 
 const getThumbnail = (item: any, large = false) => {
@@ -98,11 +104,12 @@ const getThumbnail = (item: any, large = false) => {
                   <span class="p-slug">{{ it.log?.platform }}</span>
                   <span class="p-user">{{ it.log?.senderName }}</span>
                 </div>
-                <div v-if="it.log?.mediaId && (['image', 'photo'].includes(it.log?.msgType) || it.log?.content?.includes('[Image]'))" class="item-img-box" @click="emit('zoom', getStorehouseUrl(it.log.mediaId, it.log.platform))">
-                  <img :src="getStorehouseUrl(it.log.mediaId, it.log.platform)" />
+                <!-- Better Image Detection for all platforms (Line: image, Tele: photo, Discord: attachment or any with mediaId) -->
+                <div v-if="it.log?.mediaId && (['image', 'photo', 'attachment'].includes(it.log?.msgType) || it.log?.content?.includes('[Image]') || it.log?.platform === 'discord') && !brokenImages[it.id]" class="item-img-box" @click="emit('zoom', getStorehouseUrl(it.log.mediaId, it.log.platform))">
+                  <img :src="getStorehouseUrl(it.log.mediaId, it.log.platform)" @error="handleImgError(it.id)" />
                 </div>
                 <div v-else class="item-text-box">
-                  <p>{{ it.log?.content }}</p>
+                  <p>{{ it.log?.content || '(Image unavailable / No content)' }}</p>
                 </div>
               </div>
             </div>

@@ -47,7 +47,8 @@ func (s *ResourceService) FetchAndCache(ctx context.Context, fileID string, init
 	}
 
 	// 2. Smart Redirection (e.g., Telegram Cloud Backup for expired LINE/Discord content)
-	if !strings.HasPrefix(fileID, "http") && (len(fileID) > 40 || strings.Contains(fileID, "AgAC")) && platform != "telegram" {
+	// If it's a non-URL ID from LINE/Discord, it's likely archived in Telegram Cloud
+	if !strings.HasPrefix(fileID, "http") && platform != "telegram" && (len(fileID) > 20 || strings.Contains(fileID, "AgAC")) {
 		log.Printf("☁️ [Service] Redirecting %s request to Telegram Cloud Backup for ID: %s", platform, fileID)
 		platform = "telegram"
 	}

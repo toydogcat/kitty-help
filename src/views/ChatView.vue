@@ -239,8 +239,8 @@ const otherRemarks = computed(() => remarkContainers.value.filter(c => !c.isPinn
 
               <!-- Media Context -->
               <div v-if="m.mediaId" class="msg-media-snippet">
-                <!-- If Image (Inclusive check for 'image' or 'photo' in msgType OR mediaType) -->
-                <div v-if="['image', 'photo'].includes((m.msgType || '').toLowerCase()) || ['image', 'photo'].includes((m.mediaType || '').toLowerCase()) || (m.content && m.content.includes('[Image]'))" class="inline-thumb" @click="zoomedImageUrl = getStorehouseUrl(m.mediaId, m.platform)">
+                <!-- If Image (Inclusive check for 'image', 'photo', 'attachment' OR ANY Discord with mediaId) -->
+                <div v-if="['image', 'photo', 'attachment'].includes((m.msgType || '').toLowerCase()) || ['image', 'photo', 'attachment'].includes((m.mediaType || '').toLowerCase()) || (m.content && m.content.includes('[Image]')) || m.platform === 'discord'" class="inline-thumb" @click="zoomedImageUrl = getStorehouseUrl(m.mediaId, m.platform)">
                    <img :src="getStorehouseUrl(m.mediaId, m.platform)" loading="lazy" />
                    <div class="zoom-overlay"><span class="icon">🔍</span></div>
                 </div>
