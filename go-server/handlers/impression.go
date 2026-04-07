@@ -93,22 +93,18 @@ func GetImpressionTemp(c *fiber.Ctx) error {
 	}
 	defer rows.Close()
 
+	// Get Base URL once outside loop
+	baseURL := os.Getenv("VITE_API_URL")
+	if baseURL == "" { baseURL = c.BaseURL() }
+
 	items := []fiber.Map{}
 	for rows.Next() {
 		var id, fileID, mediaType, sourcePlatform string
 		var createdAt time.Time
 		var title, caption, notes *string
 		err := rows.Scan(&id, &fileID, &mediaType, &title, &caption, &notes, &createdAt, &sourcePlatform)
-		if err != nil {
-			continue
-		}
+		if err != nil { continue }
 		
-		// Get Base URL for absolute images
-		baseURL := os.Getenv("VITE_API_URL")
-		if baseURL == "" {
-			baseURL = c.BaseURL()
-		}
-
 		items = append(items, fiber.Map{
 			"id":         id,
 			"file_id":    fileID,
@@ -133,13 +129,7 @@ func CreateImpressionNode(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
 	}
 
-	// Resolve internal DB User ID from email
-	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
-	if err != nil {
-		log.Printf("❌ Identity Fail: email %s not found in users table", userClaims.Email)
-		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
-	}
+	dbUserID := userClaims.ID // Bypassing redundant DB lookup
 
 	// 1. Check for UPSERT (same media_id)
 	if n.MediaID != nil && *n.MediaID != "" {
@@ -269,22 +259,27 @@ func GetImpressionGraph(c *fiber.Ctx) error {
 		}
 	}
 
-	// 3. Fetch all edges between these nodes
-	edgesQuery := "SELECT id::TEXT, user_id::TEXT, source_id::TEXT, target_id::TEXT, label, created_at FROM impression_edges WHERE user_id = $1"
-	rowsE, err := db.Query(context.Background(), edgesQuery, dbUserID)
+	// 3. Fetch all edges between these nodes ONLY
+	nodeIDs := make([]string, 0, len(nodeMap))
+	for id := range nodeMap { nodeIDs = append(nodeIDs, id) }
+
 	edges := []models.ImpressionEdge{}
-	if err != nil {
-		log.Printf("⚠️ GetGraph SQL Warning: %v", err)
-	} else {
-		defer rowsE.Close()
-		for rowsE.Next() {
-			var e models.ImpressionEdge
-			err := rowsE.Scan(&e.ID, &e.UserID, &e.SourceID, &e.TargetID, &e.Label, &e.CreatedAt)
-			if err == nil {
-				if _, sExists := nodeMap[e.SourceID]; sExists {
-					if _, tExists := nodeMap[e.TargetID]; tExists {
-						edges = append(edges, e)
-					}
+	if len(nodeIDs) > 0 {
+		edgesQuery := `
+			SELECT id::TEXT, user_id::TEXT, source_id::TEXT, target_id::TEXT, label, created_at 
+			FROM impression_edges 
+			WHERE user_id = $1 AND source_id = ANY($2::uuid[]) AND target_id = ANY($2::uuid[])
+		`
+		rowsE, err := db.Query(context.Background(), edgesQuery, dbUserID, nodeIDs)
+		if err != nil {
+			log.Printf("⚠️ GetGraph SQL Warning: %v", err)
+		} else {
+			defer rowsE.Close()
+			for rowsE.Next() {
+				var e models.ImpressionEdge
+				err := rowsE.Scan(&e.ID, &e.UserID, &e.SourceID, &e.TargetID, &e.Label, &e.CreatedAt)
+				if err == nil {
+					edges = append(edges, e)
 				}
 			}
 		}
@@ -356,9 +351,7 @@ func SearchImpressionNodes(c *fiber.Ctx) error {
 	if db == nil { db = database.CloudDB }
 	if db == nil { return c.Status(503).JSON(fiber.Map{"error": "Database not connected"}) }
 
-	var dbUserID string
-	err := db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
-	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User not found"}) }
+	dbUserID := userClaims.ID
 
 	nodesQuery := `
 	SELECT 
@@ -388,8 +381,8 @@ func SearchImpressionNodes(c *fiber.Ctx) error {
 				"nodeType": nodeType,
 			}
 			if fileID != nil && sourcePlatform != nil {
-				// Use consistent URL format with the rest of the app
-				nodeMap["imageUrl"] = "/api/storehouse/file/" + *fileID + "?platform=" + *sourcePlatform + "&t=" + fmt.Sprint(time.Now().UnixMilli())
+				// Use consistent URL format without cache-busting timestamp
+				nodeMap["imageUrl"] = "/api/storehouse/file/" + *fileID + "?platform=" + *sourcePlatform
 			}
 			nodes = append(nodes, nodeMap)
 		}

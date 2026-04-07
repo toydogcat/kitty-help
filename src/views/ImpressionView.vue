@@ -392,11 +392,8 @@ const createLink = async () => {
 };
 const performGlobalSearch = async () => {
     if (globalSearchQuery.value.length < 1) { 
-        // Show recent/top nodes if query is empty
-        const results = await apiService.searchImpressionNodes('');
-        globalSearchResults.value = results.slice(0, 10).map((r: any) => ({
-            ...r,
-            imageUrl: r.imageUrl?.startsWith('/') ? apiService.getAbsoluteUrl(r.imageUrl) : r.imageUrl
+        globalSearchResults.value = tempItems.value.map(it => ({
+            id: it.id, title: it.title || 'Untitled', nodeType: it.type || 'media', imageUrl: it.imageUrl
         }));
         return; 
     }
@@ -406,6 +403,13 @@ const performGlobalSearch = async () => {
         imageUrl: r.imageUrl?.startsWith('/') ? apiService.getAbsoluteUrl(r.imageUrl) : r.imageUrl
     }));
 };
+
+let searchTimer: any = null;
+const debouncedGlobalSearch = () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(performGlobalSearch, 300);
+};
+
 const performSearch2 = async () => {
     if (searchQ2.value.length < 1) { searchResults2.value = []; return; }
     const results = await apiService.searchImpressionNodes(searchQ2.value);
@@ -414,6 +418,13 @@ const performSearch2 = async () => {
         imageUrl: r.imageUrl?.startsWith('/') ? apiService.getAbsoluteUrl(r.imageUrl) : r.imageUrl
     }));
 };
+
+let searchTimer2: any = null;
+const debouncedSearch2 = () => {
+    clearTimeout(searchTimer2);
+    searchTimer2 = setTimeout(performSearch2, 300);
+};
+
 const selectTarget = (node: any) => { targetNode.value = node; searchQ2.value = node.title; searchResults2.value = []; };
 
 onMounted(() => { initGraph(); loadTempItems(); loadGraph(); });
@@ -500,7 +511,13 @@ onMounted(() => { initGraph(); loadTempItems(); loadGraph(); });
                     <div class="in-field"><label>Label</label><input v-model="linkLabel" placeholder="Name the bond..." /></div>
                     <div class="in-field">
                         <label>Target</label>
-                        <input v-model="searchQ2" placeholder="Search knowledge..." @input="performSearch2" />
+                        <input 
+                            type="text" 
+                            v-model="searchQ2" 
+                            placeholder="Type node title..." 
+                            @input="debouncedSearch2"
+                            class="m-input"
+                        />
                         <div v-if="searchResults2.length" class="inline-results glass">
                             <div v-for="r in searchResults2" :key="r.id" class="res-item" @click="selectTarget(r)">{{ r.title }}</div>
                         </div>
@@ -574,7 +591,14 @@ onMounted(() => { initGraph(); loadTempItems(); loadGraph(); });
 
         <div class="corner-search glass">
             <span class="s-icon">🔍</span>
-            <input v-model="globalSearchQuery" placeholder="Search universe..." @input="performGlobalSearch" @focus="performGlobalSearch" />
+            <input 
+                type="text" 
+                v-model="globalSearchQuery" 
+                placeholder="Search universe..." 
+                @input="debouncedGlobalSearch"
+                @focus="debouncedGlobalSearch"
+                class="search-input"
+            />
             <div v-if="globalSearchResults.length" class="search-drop glass">
                 <div v-for="r in globalSearchResults" :key="r.id" class="drop-item" @click="loadGraph(r.id); globalSearchResults = []">
                     <img v-if="r.imageUrl" :src="r.imageUrl" />

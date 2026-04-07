@@ -12,14 +12,16 @@ import (
 // --- Shelves Handlers ---
 
 func GetShelves(c *fiber.Ctx) error {
-	userClaims := c.Locals("user").(*Claims)
+	db, userClaims, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
+
 	var dbUserID string
-	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
 
-	rows, err := database.LocalDB.Query(context.Background(), "SELECT id, user_id, name, color, sort_order, created_at FROM desk_shelves WHERE user_id = $1 ORDER BY sort_order ASC", dbUserID)
+	rows, err := db.Query(context.Background(), "SELECT id, user_id, name, color, sort_order, created_at FROM desk_shelves WHERE user_id = $1 ORDER BY sort_order ASC", dbUserID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch shelves"})
 	}
@@ -35,20 +37,22 @@ func GetShelves(c *fiber.Ctx) error {
 }
 
 func CreateShelf(c *fiber.Ctx) error {
-	userClaims := c.Locals("user").(*Claims)
+	db, userClaims, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
+
 	var s models.DeskShelf
 	if err := c.BodyParser(&s); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
 	var dbUserID string
-	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
 
 	query := "INSERT INTO desk_shelves (user_id, name, color, sort_order) VALUES ($1, $2, $3, $4) RETURNING id, created_at"
-	err = database.LocalDB.QueryRow(context.Background(), query, dbUserID, s.Name, s.Color, s.SortOrder).Scan(&s.ID, &s.CreatedAt)
+	err = db.QueryRow(context.Background(), query, dbUserID, s.Name, s.Color, s.SortOrder).Scan(&s.ID, &s.CreatedAt)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to create shelf"})
 	}
@@ -58,20 +62,22 @@ func CreateShelf(c *fiber.Ctx) error {
 
 func UpdateShelf(c *fiber.Ctx) error {
 	id := c.Params("id")
-	userClaims := c.Locals("user").(*Claims)
+	db, userClaims, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
+
 	var s models.DeskShelf
 	if err := c.BodyParser(&s); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
 	var dbUserID string
-	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
 
 	query := "UPDATE desk_shelves SET name = $1, color = $2, sort_order = $3 WHERE id = $4 AND user_id = $5"
-	_, err = database.LocalDB.Exec(context.Background(), query, s.Name, s.Color, s.SortOrder, id, dbUserID)
+	_, err = db.Exec(context.Background(), query, s.Name, s.Color, s.SortOrder, id, dbUserID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Update failed"})
 	}
@@ -80,17 +86,18 @@ func UpdateShelf(c *fiber.Ctx) error {
 
 func DuplicateShelf(c *fiber.Ctx) error {
 	id := c.Params("id")
-	userClaims := c.Locals("user").(*Claims)
+	db, userClaims, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
 
 	var dbUserID string
-	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
 
 	// 1. Get original shelf info
 	var name, color string
-	err = database.LocalDB.QueryRow(context.Background(), "SELECT name, color FROM desk_shelves WHERE id = $1 AND user_id = $2", id, dbUserID).Scan(&name, &color)
+	err = db.QueryRow(context.Background(), "SELECT name, color FROM desk_shelves WHERE id = $1 AND user_id = $2", id, dbUserID).Scan(&name, &color)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Original shelf not found"})
 	}
@@ -118,11 +125,13 @@ func DuplicateShelf(c *fiber.Ctx) error {
 
 func DeleteShelf(c *fiber.Ctx) error {
 	id := c.Params("id")
-	// Note: We don't delete desk_items automatically here if we want them to stay as orphans on desktop,
-// but according to user "Shelf is 1 layer", let's move deleted shelf items to desktop (null shelf_id).
-	_, _ = database.LocalDB.Exec(context.Background(), "UPDATE desk_items SET shelf_id = NULL WHERE shelf_id = $1", id)
+	db, _, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
+
+	// Move deleted shelf items to desktop (null shelf_id).
+	_, _ = db.Exec(context.Background(), "UPDATE desk_items SET shelf_id = NULL WHERE shelf_id = $1", id)
 	
-	_, err := database.LocalDB.Exec(context.Background(), "DELETE FROM desk_shelves WHERE id = $1", id)
+	_, err = db.Exec(context.Background(), "DELETE FROM desk_shelves WHERE id = $1", id)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Delete failed"})
 	}
@@ -141,11 +150,13 @@ type DeskItemResponse struct {
 }
 
 func GetDeskItems(c *fiber.Ctx) error {
-	userClaims := c.Locals("user").(*Claims)
+	db, userClaims, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
+
 	shelfId := c.Query("shelfId") // Can be empty for desktop items
 
 	var dbUserID string
-	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
@@ -190,7 +201,7 @@ func GetDeskItems(c *fiber.Ctx) error {
 	}
 	query += " ORDER BY di.sort_order ASC"
 
-	rows, err := database.LocalDB.Query(context.Background(), query, args...)
+	rows, err := db.Query(context.Background(), query, args...)
 	if err != nil {
 		log.Printf("GetDeskItems error: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch desk items"})
@@ -211,14 +222,16 @@ func GetDeskItems(c *fiber.Ctx) error {
 }
 
 func AddDeskItem(c *fiber.Ctx) error {
-	userClaims := c.Locals("user").(*Claims)
+	db, userClaims, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
+
 	var it models.DeskItem
 	if err := c.BodyParser(&it); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
 	var dbUserID string
-	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
@@ -230,7 +243,7 @@ func AddDeskItem(c *fiber.Ctx) error {
 	}
 
 	query := "INSERT INTO desk_items (user_id, shelf_id, type, ref_id, sort_order) VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at"
-	err = database.LocalDB.QueryRow(context.Background(), query, dbUserID, sId, it.Type, it.RefID, it.SortOrder).Scan(&it.ID, &it.CreatedAt)
+	err = db.QueryRow(context.Background(), query, dbUserID, sId, it.Type, it.RefID, it.SortOrder).Scan(&it.ID, &it.CreatedAt)
 	if err != nil {
 		log.Printf("AddDeskItem SQL error: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to add item to desk"})
@@ -241,6 +254,9 @@ func AddDeskItem(c *fiber.Ctx) error {
 
 func UpdateDeskItem(c *fiber.Ctx) error {
 	id := c.Params("id")
+	db, _, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
+
 	var it models.DeskItem
 	if err := c.BodyParser(&it); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
@@ -253,7 +269,7 @@ func UpdateDeskItem(c *fiber.Ctx) error {
 	}
 
 	query := "UPDATE desk_items SET shelf_id = $1, sort_order = $2 WHERE id = $3"
-	_, err := database.LocalDB.Exec(context.Background(), query, sId, it.SortOrder, id)
+	_, err = db.Exec(context.Background(), query, sId, it.SortOrder, id)
 	if err != nil {
 		log.Printf("UpdateDeskItem error: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Update failed"})
@@ -263,7 +279,10 @@ func UpdateDeskItem(c *fiber.Ctx) error {
 
 func DeleteDeskItem(c *fiber.Ctx) error {
 	id := c.Params("id")
-	_, err := database.LocalDB.Exec(context.Background(), "DELETE FROM desk_items WHERE id = $1", id)
+	db, _, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
+
+	_, err = db.Exec(context.Background(), "DELETE FROM desk_items WHERE id = $1", id)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Delete failed"})
 	}

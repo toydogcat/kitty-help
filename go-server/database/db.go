@@ -48,26 +48,34 @@ func InitDB() {
 	if err != nil {
 		log.Fatalf("Unable to parse Cloud DB URL: %v", err)
 	}
+	// 🌊 Cloud Tuning: Fewer connections but longer idle persistence
+	configCloud.MaxConns = 10
+	configCloud.MaxConnIdleTime = 30 * time.Minute
+	
 	CloudDB, err = pgxpool.ConnectConfig(context.Background(), configCloud)
 	if err != nil {
 		log.Printf("⚠️ Warning: Unable to connect to Cloud DB: %v", err)
 	} else {
-		fmt.Println("✅ Connected to Cloud PostgreSQL (Supabase)")
+		fmt.Println("✅ Connected to Cloud PostgreSQL (Supabase) [Tuned]")
 	}
 
 	// Connect to Local DB
 	configLocal, err := pgxpool.ParseConfig(localURL)
 	if err != nil {
-		log.Printf("⚠️ Warning: Unable to parse Local DB URL: %v", err)
-		return
+		log.Fatalf("Unable to parse Local DB URL: %v", err)
 	}
+	// 🚀 Local NUC Tuning: Max throughput for intensive disk operations
+	configLocal.MaxConns = 25
+	configLocal.MaxConnIdleTime = 15 * time.Minute
+	configLocal.HealthCheckPeriod = 1 * time.Minute
+	
 	LocalDB, err = pgxpool.ConnectConfig(context.Background(), configLocal)
 	if err != nil {
 		log.Printf("⚠️ Warning: Unable to connect to Local DB: %v", err)
 	} else {
-		// Database connected successfully
-		fmt.Printf("✅ Connected to Local PostgreSQL at %s\n", configLocal.ConnConfig.Host)
+		fmt.Println("✅ Connected to Local PostgreSQL (NUC) [Turbo]")
 	}
+	fmt.Printf("✅ Connected to Local PostgreSQL at %s\n", configLocal.ConnConfig.Host)
 }
 
 func CloseDB() {
@@ -316,6 +324,17 @@ func EnsureTables() {
 			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS sort_order INT DEFAULT 0`,
 			`ALTER TABLE bookmarks ALTER COLUMN url DROP NOT NULL`,
 			`ALTER TABLE impression_nodes ADD COLUMN IF NOT EXISTS desk_shelf_id UUID REFERENCES desk_shelves(id) ON DELETE SET NULL`,
+			// --- Performance Indexes ---
+			`CREATE INDEX IF NOT EXISTS idx_impression_nodes_user ON impression_nodes(user_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_impression_nodes_media ON impression_nodes(media_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_impression_edges_source ON impression_edges(source_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_impression_edges_target ON impression_edges(target_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_impression_edges_user ON impression_edges(user_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_media_sender ON media_archives(sender_id, source_platform)`,
+			`CREATE INDEX IF NOT EXISTS idx_media_created ON media_archives(created_at DESC)`,
+			`CREATE INDEX IF NOT EXISTS idx_desk_items_user ON desk_items(user_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_desk_items_shelf ON desk_items(shelf_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_desk_shelves_user ON desk_shelves(user_id)`,
 		}
 		for _, m := range migrations {
 			LocalDB.Exec(ctx, m)

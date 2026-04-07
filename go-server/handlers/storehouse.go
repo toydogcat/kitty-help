@@ -52,6 +52,15 @@ func GetStorehouseItems(c *fiber.Ctx) error {
 	args := []interface{}{}
 	argIdx := 1
 
+	dbUserID := ""
+	isAdmin := false
+	if userClaims != nil {
+		dbUserID = userClaims.ID
+		if userClaims.Role == "superadmin" || userClaims.Role == "toby" {
+			isAdmin = true
+		}
+	}
+
 	if mode == "semantic" && query != "" {
 		// 1. Get embedding for query
 		apiKey := os.Getenv("GOOGLE_API_KEY")
@@ -61,16 +70,28 @@ func GetStorehouseItems(c *fiber.Ctx) error {
 			// Fallback to keyword if semantic fails
 			mode = "keyword"
 		} else {
-			// 2. Perform vector similarity search
-			sql = "SELECT id, file_id, media_type, title, caption, notes, source_platform, sender_name, created_at, is_indexable, index_status FROM media_archives WHERE embedding IS NOT NULL"
+			// 2. Perform user-filtered vector similarity search
+			if dbUserID != "" && !isAdmin {
+				sql = `
+					SELECT m.id, m.file_id, m.media_type, m.title, m.caption, m.notes, m.source_platform, m.sender_name, m.created_at, m.is_indexable, m.index_status 
+					FROM media_archives m
+					JOIN bot_authorized_users b ON m.sender_id = b.account_id AND m.source_platform = b.platform
+					WHERE b.user_id = $1 AND m.embedding IS NOT NULL`
+				args = append(args, dbUserID)
+				argIdx = 2
+			} else {
+				// Admin or unauthenticated sees global (semantic)
+				sql = `SELECT id, file_id, media_type, title, caption, notes, source_platform, sender_name, created_at, is_indexable, index_status 
+				       FROM media_archives WHERE embedding IS NOT NULL`
+				argIdx = 1
+			}
+			
 			if platform != "" {
-				sql += fmt.Sprintf(" AND source_platform = $%d", argIdx)
+				sql += fmt.Sprintf(" AND m.source_platform = $%d", argIdx)
 				args = append(args, platform)
 				argIdx++
 			}
-			// Order by Cosine Distance (<=>) or Inner Product (<#>) or L2 (<->)
-			// pgvector: 1 - (v1 <=> v2) is Cosine Similarity
-			sql += fmt.Sprintf(" ORDER BY embedding <=> $%d", argIdx)
+			sql += fmt.Sprintf(" ORDER BY m.embedding <=> $%d", argIdx)
 			args = append(args, services.Float32SliceToVector(embedding))
 			argIdx++
 			sql += fmt.Sprintf(" LIMIT %d", limit)
@@ -78,28 +99,43 @@ func GetStorehouseItems(c *fiber.Ctx) error {
 	}
 
 	if mode == "keyword" || sql == "" {
-		sql = "SELECT id, file_id, media_type, title, caption, notes, source_platform, sender_name, created_at, is_indexable, index_status FROM media_archives WHERE 1=1"
+		// 1. Base Query with User Filtering via JOIN
+		if dbUserID != "" && !isAdmin {
+			sql = `
+				SELECT m.id, m.file_id, m.media_type, m.title, m.caption, m.notes, m.source_platform, m.sender_name, m.created_at, m.is_indexable, m.index_status 
+				FROM media_archives m
+				JOIN bot_authorized_users b ON m.sender_id = b.account_id AND m.source_platform = b.platform
+				WHERE b.user_id = $1`
+			args = append(args, dbUserID)
+			argIdx = 2
+		} else {
+			// Admin sees all
+			sql = `SELECT id, file_id, media_type, title, caption, notes, source_platform, sender_name, created_at, is_indexable, index_status 
+			       FROM media_archives m WHERE 1=1`
+			argIdx = 1
+		}
+
 		if platform != "" {
-			sql += fmt.Sprintf(" AND source_platform = $%d", argIdx)
+			sql += fmt.Sprintf(" AND m.source_platform = $%d", argIdx)
 			args = append(args, platform)
 			argIdx++
 		}
 		if startDate != "" {
-			sql += fmt.Sprintf(" AND created_at >= $%d", argIdx)
+			sql += fmt.Sprintf(" AND m.created_at >= $%d", argIdx)
 			args = append(args, startDate)
 			argIdx++
 		}
 		if endDate != "" {
-			sql += fmt.Sprintf(" AND created_at <= $%d", argIdx)
+			sql += fmt.Sprintf(" AND m.created_at <= $%d", argIdx)
 			args = append(args, endDate)
 			argIdx++
 		}
 		if query != "" {
-			sql += fmt.Sprintf(" AND (title ILIKE $%d OR notes ILIKE $%d OR caption ILIKE $%d)", argIdx, argIdx, argIdx)
+			sql += fmt.Sprintf(" AND (m.title ILIKE $%d OR m.notes ILIKE $%d OR m.caption ILIKE $%d)", argIdx, argIdx, argIdx)
 			args = append(args, "%"+query+"%")
 			argIdx++
 		}
-		sql += " ORDER BY created_at DESC"
+		sql += " ORDER BY m.created_at DESC"
 		sql += fmt.Sprintf(" LIMIT %d", limit)
 	}
 
@@ -246,6 +282,17 @@ func GetFileProxy(c *fiber.Ctx) error {
 	
 	platform := c.Query("platform", "telegram")
 	c.Set("Access-Control-Allow-Origin", "*")
+	
+	// ⚡ [Performance Booster] Robust Caching Headers
+	// Allow browser to cache for 7 days. Even if tunnel URL changes, the ETag (fileID) will stay same.
+	c.Set("Cache-Control", "public, max-age=604800, immutable")
+	c.Set("ETag", fileID)
+	
+	// Check if client has a matching ETag (304 Not Modified)
+	if c.Get("If-None-Match") == fileID {
+		return c.SendStatus(304)
+	}
+
 	if c.Query("download") == "1" {
 		c.Set("Content-Disposition", "attachment")
 	}
