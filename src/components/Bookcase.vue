@@ -289,7 +289,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 
       <div class="ws-body" :class="'mode-' + viewMode">
         <div v-if="viewMode !== 'notes'" class="preview-pane">
-          <iframe v-if="activeBook.title?.toLowerCase().endsWith('.pdf')" :src="getFileUrl(activeBook)" frameborder="0"></iframe>
+          <iframe v-if="activeBook.title?.toLowerCase().endsWith('.pdf')" :src="getFileUrl(activeBook)" class="pdf-frame"></iframe>
           <div v-else-if="isEPUB(activeBook)" class="epub-reader">
              <div ref="epubViewerRef" class="epub-canvas"></div>
              <div v-if="isEpubLoading" class="loader"><div class="spin"></div></div>
@@ -362,6 +362,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 .tabs-nav button.active { background: #d97706; color: #fff; }
 .ws-body { flex: 1; display: flex; overflow: hidden; }
 .preview-pane { flex: 1.4; position: relative; background: #121519; border-right: 1px solid #1a1e23; overflow: hidden; }
+.pdf-frame { width: 100%; height: 100%; border: none; background: #1a1e23; }
 .epub-reader { width:100%; height:100%; position:relative; background: #000; }
 .epub-canvas { width:100%; height:100%; position: absolute; top:0; left:0; }
 :deep(.epub-canvas iframe) { width: 100% !important; height: 100% !important; border: none !important; }

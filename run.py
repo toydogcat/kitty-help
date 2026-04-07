@@ -5,12 +5,14 @@ import os
 import sys
 import time
 import re
+import zipfile
+import shutil
 
 # --- Kitty-Help Configuration ---
 ENV_FILE = ".env"
 ENV_PROD_FILE = ".env.production"
 TUNNEL_CONTAINER = "kitty-tunnel"
-DB_CONTAINER = "kitty-db"  # Defaults to standard name, can be changed
+DB_CONTAINER = "kitty-db"
 DB_NAME = "kitty_help"
 DB_USER = "toby"
 BACKUP_DIR = "/home/toymsi/文件/等待整理"
@@ -37,6 +39,44 @@ def run_command(cmd, msg=None):
         subprocess.run(cmd, shell=True, check=True)
     except subprocess.CalledProcessError as e:
         print(f"{Colors.FAIL}[ERROR]{Colors.ENDC} Command failed: {cmd}")
+
+def fix_epub_file(src_path):
+    """Sanitize EPUB: Remove scripts, inline events, and broken res:/// font links."""
+    if not os.path.exists(src_path):
+        print(f"{Colors.FAIL}[ERROR]{Colors.ENDC} File not found: {src_path}")
+        return
+    
+    filename = os.path.basename(src_path)
+    if not os.path.exists(BACKUP_DIR):
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+    
+    dest_path = os.path.join(BACKUP_DIR, filename.replace(".epub", "_Cleaned.epub"))
+    print_step(f"🛡️  Purifying Intel: {filename} ...")
+    
+    # Cleaning Logic
+    font_pattern = re.compile(r'@font-face\s*\{[^}]*res:\/\/[^}]*\}', re.IGNORECASE | re.DOTALL)
+    url_res_pattern = re.compile(r'url\(["\']?res:\/\/[^)]+\)', re.IGNORECASE)
+    script_pattern = re.compile(r'<script\b[^>]*>([\s\S]*?)<\/script>', re.IGNORECASE)
+    on_attr_pattern = re.compile(r'\son\w+="[^"]*"', re.IGNORECASE)
+
+    try:
+        with zipfile.ZipFile(src_path, 'r') as src_zip:
+            with zipfile.ZipFile(dest_path, 'w', compression=zipfile.ZIP_DEFLATED) as dest_zip:
+                for item in src_zip.infolist():
+                    content = src_zip.read(item.filename)
+                    if item.filename.lower().endswith(('.html', '.xhtml', '.css', '.htm')):
+                        text = content.decode('utf-8', errors='ignore')
+                        text = script_pattern.sub('', text)
+                        text = on_attr_pattern.sub('', text)
+                        text = font_pattern.sub('', text)
+                        text = url_res_pattern.sub('none', text)
+                        dest_zip.writestr(item, text.encode('utf-8'))
+                    else:
+                        dest_zip.writestr(item, content)
+        
+        print(f"{Colors.OKGREEN}✅ Success! Intel sanitized at: {dest_path}{Colors.ENDC}")
+    except Exception as e:
+        print(f"{Colors.FAIL}❌ Purification Error: {e}{Colors.ENDC}")
 
 def update_env_files(url):
     """Sync VITE_API_URL across all relevant env files."""
@@ -88,7 +128,6 @@ def export_db():
         os.makedirs(BACKUP_DIR, exist_ok=True)
 
     print_step(f"🗄️ Exporting database [kitty_help] from 192.168.0.150...")
-    # Using Docker to run latest pg_dump to avoid version mismatch
     cmd = f'docker run --rm -e PGPASSWORD=andy1984 postgres:latest pg_dump -h 192.168.0.150 -U toby kitty_help > "{BACKUP_FILE}"'
     try:
         subprocess.run(cmd, shell=True, check=True)
@@ -110,7 +149,6 @@ def import_db():
         return
 
     print_step(f"📥 Restoring database from {BACKUP_FILE} to 192.168.0.150...")
-    # Using Docker to run latest psql for restoration
     cmd = f'cat "{BACKUP_FILE}" | docker run -i --rm -e PGPASSWORD=andy1984 postgres:latest psql -h 192.168.0.150 -U toby -d kitty_help'
     try:
         subprocess.run(cmd, shell=True, check=True)
@@ -127,18 +165,22 @@ def main():
     parser.add_argument('-p', '--deploy', action='store_true', help='Deploy to Firebase Hosting')
     parser.add_argument('-e', '--export', action='store_true', help='Backup/Export Database to SQL')
     parser.add_argument('-i', '--import-db', action='store_true', help='Restore/Import Database from SQL')
+    parser.add_argument('-f', '--fix', type=str, help='Purify EPUB file (remove res:/// and scripts)')
     parser.add_argument('-all', '--full', action='store_true', help='Run everything (default if no flags)')
     parser.add_argument('--kill', action='store_true', help='Force kill port 3000')
 
     args = parser.parse_args()
     
-    # If using specific DB flags, we don't run_all
-    db_ops = args.export or args.import_db
+    db_ops = args.export or args.import_db or args.fix
     run_all = not db_ops and (args.full or not any([args.docker, args.catch, args.build, args.deploy]))
 
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
     print(f"{Colors.HEADER}{Colors.BOLD}--- 🐱 Kitty-Help Unified Management System ---{Colors.ENDC}\n")
+
+    if args.fix:
+        fix_epub_file(args.fix)
+        return
 
     if args.export:
         export_db()
