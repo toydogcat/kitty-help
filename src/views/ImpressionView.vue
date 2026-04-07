@@ -30,6 +30,8 @@ const isMediaSearching = ref(false);
 const showMediaStore = ref(false);
 
 const isLinkingMode = ref(false);
+const interactionMode = ref<'view' | 'edit'>('view');
+const selectedSourceNodeId = ref<string | null>(null);
 
 // Multi-KG State
 const kgName = ref(localStorage.getItem('impression_kg_name') || 'default');
@@ -92,12 +94,54 @@ const initGraph = () => {
   }
 
   network.value.on('click', (params) => {
-    isLinkingMode.value = false;
-    isEditingNode.value = false;
-    if (params.nodes.length > 0) {
-      handleNodeClick(params.nodes[0]);
+    if (interactionMode.value === 'view') {
+        isLinkingMode.value = false;
+        isEditingNode.value = false;
+        if (params.nodes.length > 0) {
+            loadGraph(params.nodes[0]); 
+        } else {
+            selectedNodeDetails.value = null;
+        }
     } else {
-      selectedNodeDetails.value = null;
+        // Edit Mode: Quick Link logic
+        if (params.nodes.length > 0) {
+            const nodeId = params.nodes[0];
+            if (!selectedSourceNodeId.value) {
+                selectedSourceNodeId.value = nodeId;
+                nodes.update({ id: nodeId, borderWidth: 6, color: { border: '#22d3ee' } });
+            } else {
+                if (selectedSourceNodeId.value === nodeId) {
+                    resetSelection();
+                } else {
+                    performQuickLink(selectedSourceNodeId.value, nodeId);
+                }
+            }
+        } else {
+            resetSelection();
+        }
+    }
+  });
+
+  network.value.on('hold', async (params) => {
+    if (interactionMode.value === 'view') {
+        if (params.nodes.length > 0) {
+            handleNodeClick(params.nodes[0]);
+        }
+    } else {
+        // Edit Mode: Delete logic
+        if (params.nodes.length > 0) {
+            const nodeId = params.nodes[0];
+            const nodeName = nodes.get(nodeId)?.label || nodeId;
+            if (confirm(`Destroy "${nodeName}"? This is irreversible.`)) {
+                await apiService.deleteImpressionNode(nodeId);
+                await loadGraph();
+            }
+        } else if (params.edges.length > 0) {
+            if (confirm(`Sever link ${params.edges[0]}?`)) {
+                await apiService.deleteImpressionLink(params.edges[0]);
+                await loadGraph();
+            }
+        }
     }
   });
 
@@ -138,6 +182,22 @@ import { useRouter } from 'vue-router';
 const router = useRouter();
 const jumpToDesk = (shelfId: string) => {
     router.push({ name: 'desk', query: { shelfId } });
+};
+
+const resetSelection = () => {
+    if (selectedSourceNodeId.value) {
+        const node = nodes.get(selectedSourceNodeId.value);
+        if (node) nodes.update({ id: selectedSourceNodeId.value, borderWidth: 3, color: { border: undefined } });
+        selectedSourceNodeId.value = null;
+    }
+};
+
+const performQuickLink = async (src: string, tgt: string) => {
+    try {
+        await apiService.createImpressionLink({ sourceId: src, targetId: tgt, label: '', kgName: kgName.value });
+        resetSelection();
+        await loadGraph(src);
+    } catch (e) { console.error(e); resetSelection(); }
 };
 
 watch(isPhysicsEnabled, (newVal) => {
@@ -298,7 +358,19 @@ const executeCommand = async () => {
             const newNode = await apiService.createImpressionNode({ title, content: '', nodeType: 'general', kgName: kgName.value });
             await loadGraph(newNode.id);
             commandInput.value = '';
+            commandInput.value = '';
             fetchKGs();
+        } else if (cmd === '/model') {
+            const mode = args[0]?.toLowerCase();
+            if (mode === 'edit') {
+                interactionMode.value = 'edit';
+                commandResults.value = [{ id: 'm-edit', title: 'Edit Mode Active: [Hold] to Delete, [Click 2 nodes] to link.', resultType: 'info' }];
+            } else {
+                interactionMode.value = 'view';
+                resetSelection();
+                commandResults.value = [{ id: 'm-view', title: 'View Mode Active: [Click] to focus, [Hold] to refine.', resultType: 'info' }];
+            }
+            commandInput.value = '';
         } else if (cmd === '/add' && args[0] === 'edge') {
             const argString = args.slice(1).join(' ');
             const matches = argString.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
@@ -541,6 +613,7 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
         <!-- Command Console -->
         <div class="command-console glass" :class="{ 'has-results': commandResults.length }">
             <div class="console-input-area">
+                <div class="mode-badge" :class="interactionMode" @click="interactionMode = interactionMode === 'view' ? 'edit' : 'view'">{{ interactionMode.toUpperCase() }}</div>
                 <span class="prompt">λ</span>
                 <input 
                     type="text" 
@@ -850,4 +923,8 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
     .card-flex { flex-direction: column; }
     .card-identity { border-right: none; border-bottom: 1px solid rgba(255,255,255,0.05); min-width: 0; }
 }
+.mode-badge { position: absolute; left: 10px; top: -25px; font-size: 0.7rem; font-weight: 800; padding: 2px 8px; border-radius: 4px; letter-spacing: 1px; color: #fff; background: #64748b; opacity: 0.8; }
+.mode-badge.edit { background: #f43f5e; box-shadow: 0 0 10px rgba(244, 63, 94, 0.4); }
+.mode-badge.view { background: #22d3ee; }
+
 </style>
