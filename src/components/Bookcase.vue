@@ -4,10 +4,7 @@ import { apiService } from '../services/api';
 import { marked } from 'marked';
 import { usePin } from '../composables/usePin';
 
-const props = defineProps<{
-  userId: string;
-}>();
-
+const props = defineProps<{ userId: string; }>();
 const { pinToDesk } = usePin();
 
 // --- Core Data ---
@@ -45,7 +42,7 @@ const fetchBookcase = async () => {
     if (saved) customFolders.value = JSON.parse(saved);
     books.value.forEach(b => { if (b.folder && !customFolders.value.includes(b.folder)) customFolders.value.push(b.folder); });
     if (books.value.length > 0 && !activeBook.value) selectBook(books.value[0]);
-  } catch (err) { console.error('Sync failure:', err); } finally { isLoading.value = false; }
+  } catch (e) { console.error('Sync fail:', e); } finally { isLoading.value = false; }
 };
 
 const selectBook = async (book: any) => {
@@ -64,7 +61,7 @@ const selectBook = async (book: any) => {
       isEpubLoading.value = true;
       nextTick(() => initEpubReader());
     }
-  } catch (err) { console.error('Selection breakdown:', err); }
+  } catch (e) { console.error('Selection break:', e); }
 };
 
 const cleanupEpub = () => {
@@ -73,20 +70,14 @@ const cleanupEpub = () => {
   isEpubLoading.value = false;
 };
 
-// --- Library Safeguard ---
 const waitForLibs = () => {
   return new Promise((resolve, reject) => {
     let attempts = 0;
     const check = () => {
       // @ts-ignore
-      if (typeof ePub !== 'undefined' && typeof JSZip !== 'undefined') {
-        resolve(true);
-      } else if (attempts > 30) {
-        reject(new Error("Core engines (EPub/JSZip) timed out. Check connection."));
-      } else {
-        attempts++;
-        setTimeout(check, 200);
-      }
+      if (typeof ePub !== 'undefined' && typeof JSZip !== 'undefined') resolve(true);
+      else if (attempts > 30) reject(new Error("Core engines (EPub/JSZip) timeout. Check connection."));
+      else { attempts++; setTimeout(check, 200); }
     };
     check();
   });
@@ -105,9 +96,19 @@ const initEpubReader = async () => {
     // @ts-ignore
     epubBook.value = ePub(buffer);
     epubRendition.value = epubBook.value.renderTo(epubViewerRef.value, { 
-       width: "100%", height: "100%", flow: "paginated", manager: "default" 
+       width: "100%", height: "100%", flow: "paginated", manager: "default"
     });
     
+    // Resolve Sandbox Issues: Explicitly allow scripts for EpubJS frames
+    epubRendition.value.on("rendered", (_section: any, view: any) => {
+       const frame = view.iframe;
+       if (frame) {
+          frame.setAttribute("sandbox", "allow-same-origin allow-scripts");
+          // Re-trigger layout if frame was blocked
+          setTimeout(() => { if(epubRendition.value) epubRendition.value.resize(); }, 100);
+       }
+    });
+
     epubRendition.value.themes.register("dark", {
        "body": { "color": "#cbd5e1 !important", "background": "transparent !important" },
        "p": { "color": "#cbd5e1 !important" }
@@ -147,7 +148,7 @@ const saveCurrentNote = async () => {
       activeNote.value.id = res.id;
     } else { await apiService.updateBookNote(activeNote.value.id, payload); }
     bookNotes.value = await apiService.getBookNotes(activeBook.value.id);
-  } catch (err) { alert('Commit disrupted'); } finally { isSaving.value = false; }
+  } catch (e) { alert('Commit fail'); } finally { isSaving.value = false; }
 };
 
 const deleteNote = async (id: string) => {
@@ -158,19 +159,19 @@ const deleteNote = async (id: string) => {
     bookNotes.value = await apiService.getBookNotes(activeBook.value.id);
     if (bookNotes.value.length > 0) activeNote.value = { ...bookNotes.value[0] };
     else createNewNote();
-  } catch (err) { alert('Operation aborted'); }
+  } catch (e) { alert('Operation aborted'); }
 };
 
 const removeBookStatus = async (id: string) => {
   if (!confirm('Detach from workspace?')) return;
-  try { await apiService.removeBook(id); activeBook.value = null; fetchBookcase(); } catch (err) { alert('Operation fail'); }
+  try { await apiService.removeBook(id); activeBook.value = null; fetchBookcase(); } catch (e) { alert('Operation fail'); }
 };
 
 const importBook = async (res: any) => {
   try {
     await apiService.addBookToBookcase({ storeId: res.id, title: res.title || res.caption || 'Intel', category: res.mediaType?.toUpperCase() || 'VOLUME' });
     showAddModal.value = false; fetchBookcase();
-  } catch (err) { alert('Import error'); }
+  } catch (e) { alert('Import error'); }
 };
 
 const folders = computed(() => {
@@ -193,7 +194,7 @@ const onDropIntoFolder = async (event: DragEvent, folderName: string) => {
   const bookId = event.dataTransfer?.getData('bookId');
   if (!bookId) return;
   const targetFolder = folderName === 'Uncategorized' ? '' : folderName;
-  try { await apiService.updateBookFolder(bookId, targetFolder); await fetchBookcase(); } catch (err) { fetchBookcase(); }
+  try { await apiService.updateBookFolder(bookId, targetFolder); await fetchBookcase(); } catch (e) { fetchBookcase(); }
 };
 
 const getFileUrl = (book: any) => { if (!book || !book.storeId) return ''; return `${import.meta.env.VITE_API_URL}/api/storehouse/file/${book.storeId}`; };
@@ -214,7 +215,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
   <div class="bookcase-v2">
     <aside class="sidebar">
       <div class="sidebar-header">
-        <div class="search-wrap"><input v-model="searchTerm" placeholder="Filter Core..." /></div>
+        <div class="search-wrap"><input v-model="searchTerm" placeholder="Filter Intel..." /></div>
         <button @click="showAddModal = true" class="add-btn">+</button>
       </div>
 
@@ -224,7 +225,6 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
              @dragover.prevent="dragOverFolder = String(folderName)" @dragleave="dragOverFolder = null" @drop="onDropIntoFolder($event, String(folderName))">
           <div class="folder-header" @click="collapsedFolders.has(String(folderName)) ? collapsedFolders.delete(String(folderName)) : collapsedFolders.add(String(folderName))">
             <span class="fold-arrow">{{ collapsedFolders.has(String(folderName)) ? '▶' : '▼' }}</span>
-            <span class="folder-icon">📂</span>
             <span class="folder-name">{{ folderName }}</span>
             <span class="count">{{ folderBooks.length }}</span>
           </div>
@@ -236,7 +236,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
             </div>
           </div>
         </div>
-        <div class="new-folder-area"><input v-model="newFolderName" placeholder="+ New Cluster" @keyup.enter="customFolders.push(newFolderName); newFolderName=''" /></div>
+        <div class="new-folder-area"><input v-model="newFolderName" placeholder="+ Cluster" @keyup.enter="customFolders.push(newFolderName); newFolderName=''" /></div>
       </div>
     </aside>
 
@@ -259,8 +259,8 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
              <div v-if="isEpubLoading" class="loader"><div class="spin"></div></div>
              <div v-if="epubError" class="overlay error"><span>{{ epubError }}</span><button @click="selectBook(activeBook)">RETRY</button></div>
              <div v-if="epubRendition" class="reader-controls">
-                <button @click="epubRendition.prev()" class="nav-btn">PREV</button>
-                <button @click="epubRendition.next()" class="nav-btn">NEXT</button>
+                <button @click="epubRendition.prev()" class="nav-btn">⬅️</button>
+                <button @click="epubRendition.next()" class="nav-btn">➡️</button>
              </div>
           </div>
           <div v-else class="fallback">UNSUPPORTED Intel Format</div>
@@ -289,13 +289,13 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
         </div>
       </div>
     </main>
-    <main v-else class="empty-workspace">DORMANT System Waiting.</main>
+    <main v-else class="empty-workspace">DEPLOY SYSTEM STANDBY.</main>
 
     <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
       <div class="modal">
         <header>INTEL REPOSITORY</header>
         <div class="m-content">
-          <input v-model="searchQuery" placeholder="Filter sources..." @input="apiService.getAvailableBooks(searchQuery).then(r => availableResources = r)" />
+          <input v-model="searchQuery" placeholder="Filter IDs..." @input="apiService.getAvailableBooks(searchQuery).then(r => availableResources = r)" />
           <div class="items">
             <div v-for="res in availableResources" :key="res.id" @click="importBook(res)"><span>[{{ res.mediaType }}]</span>{{ res.title || res.caption }}</div>
           </div>
@@ -314,6 +314,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 .add-btn { width: 34px; background: #d97706; border: none; color: #fff; border-radius: 4px; cursor: pointer; font-weight: bold; }
 .folder-list { flex: 1; overflow-y: auto; padding: 0.5rem; }
 .folder-header { padding: 0.75rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; border-radius: 6px; font-weight: 700; color: #e2e8f0; }
+.folder-name { font-size: 0.85rem; }
 .folder-header:hover { background: #11151a; }
 .fold-arrow { font-size: 0.6rem; width: 12px; opacity: 0.5; }
 .count { margin-left: auto; font-size: 0.7rem; color: #fbbf24; background: #fbbf2411; padding: 2px 6px; border-radius: 4px; }
@@ -323,26 +324,21 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 .item-meta { font-size: 0.6rem; opacity: 0.4; }
 .workspace { flex: 1; display: flex; flex-direction: column; }
 .ws-header { height: 64px; padding: 0 1.25rem; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #1a1e23; background: #000; }
-.active-book-info h2 { font-size: 0.95rem; margin: 0; color: #fff; }
-.badge { font-size: 0.6rem; background: #fbbf2422; color: #fbbf24; padding: 2px 6px; border-radius: 4px; font-weight: 800; }
 .tabs-nav { display: flex; gap: 4px; background: #11151a; padding: 4px; border-radius: 8px; }
 .tabs-nav button { padding: 0.4rem 1rem; border: none; background: transparent; color: #666; font-size: 0.75rem; font-weight: 700; border-radius: 6px; cursor: pointer; transition: all 0.2s; }
 .tabs-nav button.active { background: #d97706; color: #fff; }
-.detach-btn { background: transparent; border: none; padding: 0.5rem; cursor: pointer; opacity: 0.5; }
 .ws-body { flex: 1; display: flex; overflow: hidden; }
 .preview-pane { flex: 1.4; position: relative; background: #121519; border-right: 1px solid #1a1e23; }
-.preview-pane iframe { width: 100%; height: 100%; }
 .epub-reader { width:100%; height:100%; position:relative; }
-.epub-canvas { width:100%; height:100%; }
-.reader-controls { position: absolute; bottom: 1.5rem; left: 50%; transform: translateX(-50%); display: flex; gap: 0.75rem; z-index: 100; }
-.nav-btn { background: #d97706DD; backdrop-filter: blur(4px); color: #fff; border: 1px solid #fbbf2444; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.7rem; font-weight: 900; }
+.epub-canvas { width:100%; height:100%; min-height: 500px; }
+.reader-controls { position: absolute; bottom: 2rem; left: 50%; transform: translateX(-50%); display: flex; gap: 1rem; z-index: 100; }
+.nav-btn { background: #d97706DD; backdrop-filter: blur(4px); color: #fff; border: 1px solid #fbbf2444; padding: 0.6rem 1.25rem; border-radius: 4px; cursor: pointer; font-size: 0.75rem; font-weight: 900; }
 .notes-pane { flex: 1; display: flex; flex-direction: column; background: #0a0c10; }
 .note-tabs { display: flex; padding: 0.6rem 1rem 0; border-bottom: 1px solid #1a1e23; overflow-x: auto; gap: 4px; }
 .note-tab { padding: 0.5rem 1.25rem; font-size: 0.8rem; background: #11151a; border-radius: 6px 6px 0 0; cursor: pointer; color: #666; }
 .note-tab.active { background: #1a1e23; color: #fbbf24; }
 .ed-toolbar { padding: 1rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1a1e23; }
 .title-in { flex: 1; background: transparent; border: none; color: #fff; font-size: 1.1rem; font-weight: 700; outline: none; }
-.actions { display: flex; gap: 0.5rem; }
 .cycle-btn { padding: 0.4rem 0.8rem; background: #222; border: 1px solid #333; color: #fbbf24; border-radius: 4px; font-size: 0.7rem; font-weight: 800; cursor: pointer; }
 .commit-btn { padding: 0.4rem 1rem; background: #d97706; border: none; color: #fff; border-radius: 4px; font-size: 0.75rem; font-weight: 900; cursor: pointer; }
 .ed-body { flex: 1; display: flex; overflow: hidden; }
@@ -355,11 +351,4 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 @keyframes rot { to { transform: rotate(360deg); } }
 .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #000E; z-index: 2000; display: flex; align-items: center; justify-content: center; }
 .modal { background: #11151a; width: 440px; border-radius: 12px; border: 1px solid #222; overflow: hidden; }
-.modal header { padding: 1rem; background: #000; border-bottom: 1px solid #222; font-weight: 900; color: #fff; font-size: 0.8rem; letter-spacing: 1px; }
-.m-content { padding: 1.5rem; }
-.m-content input { width: 100%; padding: 0.75rem; background: #000; border: 1px solid #222; border-radius: 6px; color: #fff; margin-bottom: 1.5rem; }
-.items { max-height: 350px; overflow-y: auto; }
-.items div { padding: 0.75rem; border-bottom: 1px solid #1a1e23; cursor: pointer; font-size: 0.85rem; text-align: left; transition: all 0.2s; }
-.items div:hover { background: #d9770611; color: #fbbf24; }
-.items div span { color: #fbbf24; opacity: 0.5; margin-right: 0.5rem; font-size: 0.7rem; font-weight: bold; }
 </style>
