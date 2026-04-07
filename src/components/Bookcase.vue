@@ -36,7 +36,6 @@ const epubViewerRef = ref<HTMLElement | null>(null);
 const isEpubLoading = ref(false);
 const epubError = ref<string | null>(null);
 
-// --- Library Management ---
 const fetchBookcase = async () => {
   isLoading.value = true;
   try {
@@ -45,9 +44,8 @@ const fetchBookcase = async () => {
     const saved = localStorage.getItem('kb_custom_folders');
     if (saved) customFolders.value = JSON.parse(saved);
     books.value.forEach(b => { if (b.folder && !customFolders.value.includes(b.folder)) customFolders.value.push(b.folder); });
-
     if (books.value.length > 0 && !activeBook.value) selectBook(books.value[0]);
-  } catch (err) { console.error('Sync fail:', err); } finally { isLoading.value = false; }
+  } catch (err) { console.error('Sync failure:', err); } finally { isLoading.value = false; }
 };
 
 const selectBook = async (book: any) => {
@@ -66,7 +64,7 @@ const selectBook = async (book: any) => {
       isEpubLoading.value = true;
       nextTick(() => initEpubReader());
     }
-  } catch (err) { console.error('Selection err:', err); }
+  } catch (err) { console.error('Selection breakdown:', err); }
 };
 
 const cleanupEpub = () => {
@@ -75,15 +73,33 @@ const cleanupEpub = () => {
   isEpubLoading.value = false;
 };
 
+// --- Library Safeguard ---
+const waitForLibs = () => {
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+    const check = () => {
+      // @ts-ignore
+      if (typeof ePub !== 'undefined' && typeof JSZip !== 'undefined') {
+        resolve(true);
+      } else if (attempts > 30) {
+        reject(new Error("Core engines (EPub/JSZip) timed out. Check connection."));
+      } else {
+        attempts++;
+        setTimeout(check, 200);
+      }
+    };
+    check();
+  });
+};
+
 const initEpubReader = async () => {
   if (!activeBook.value || !isEPUB(activeBook.value) || !epubViewerRef.value) return;
-  // @ts-ignore
-  if (typeof ePub === 'undefined') { epubError.value = "Library still warming..."; setTimeout(initEpubReader, 1000); return; }
-
-  const url = getFileUrl(activeBook.value);
+  
   try {
+    await waitForLibs();
+    const url = getFileUrl(activeBook.value);
     const response = await fetch(url, { cache: 'force-cache' });
-    if (!response.ok) throw new Error("Cloud asset retrieval failure");
+    if (!response.ok) throw new Error("Cloud stream retrieval failed");
     const buffer = await response.arrayBuffer();
 
     // @ts-ignore
@@ -92,27 +108,24 @@ const initEpubReader = async () => {
        width: "100%", height: "100%", flow: "paginated", manager: "default" 
     });
     
-    // Theme setup BEFORE display to prevent flash or black-on-black issues
     epubRendition.value.themes.register("dark", {
        "body": { "color": "#cbd5e1 !important", "background": "transparent !important" },
-       "p": { "color": "#cbd5e1 !important" },
-       "h1, h2, h3, h4": { "color": "#fbbf24 !important" }
+       "p": { "color": "#cbd5e1 !important" }
     });
     
     await epubRendition.value.display();
     epubRendition.value.themes.select("dark");
-    
     isEpubLoading.value = false;
     epubError.value = null;
   } catch (e: any) { 
-    console.error('Reader err:', e);
-    epubError.value = e.message || "Engine disruption detected."; 
+    console.error('Reader Intel Error:', e);
+    epubError.value = e.message || "Engine synchronization failure."; 
     isEpubLoading.value = false; 
   }
 };
 
 const createNewNote = () => {
-  activeNote.value = { id: 'temp-' + Date.now(), title: 'New Analysis', content: '', noteType: 'both' };
+  activeNote.value = { id: 'temp-' + Date.now(), title: 'Volume Abstract', content: '', noteType: 'both' };
 };
 
 const toggleNoteType = () => {
@@ -134,30 +147,30 @@ const saveCurrentNote = async () => {
       activeNote.value.id = res.id;
     } else { await apiService.updateBookNote(activeNote.value.id, payload); }
     bookNotes.value = await apiService.getBookNotes(activeBook.value.id);
-  } catch (err) { alert('Commit fail'); } finally { isSaving.value = false; }
+  } catch (err) { alert('Commit disrupted'); } finally { isSaving.value = false; }
 };
 
 const deleteNote = async (id: string) => {
   if (id.startsWith('temp-')) { activeNote.value = null; return; }
-  if (!confirm('Eliminate record?')) return;
+  if (!confirm('Eliminate data?')) return;
   try {
     await apiService.removeBookNote(id);
     bookNotes.value = await apiService.getBookNotes(activeBook.value.id);
     if (bookNotes.value.length > 0) activeNote.value = { ...bookNotes.value[0] };
     else createNewNote();
-  } catch (err) { alert('Operation cancelled'); }
+  } catch (err) { alert('Operation aborted'); }
 };
 
 const removeBookStatus = async (id: string) => {
-  if (!confirm('Detach volume from workspace?')) return;
-  try { await apiService.removeBook(id); activeBook.value = null; fetchBookcase(); } catch (err) { alert('Detach fail'); }
+  if (!confirm('Detach from workspace?')) return;
+  try { await apiService.removeBook(id); activeBook.value = null; fetchBookcase(); } catch (err) { alert('Operation fail'); }
 };
 
 const importBook = async (res: any) => {
   try {
-    await apiService.addBookToBookcase({ storeId: res.id, title: res.title || res.caption || 'Source', category: res.mediaType?.toUpperCase() || 'VOLUME' });
+    await apiService.addBookToBookcase({ storeId: res.id, title: res.title || res.caption || 'Intel', category: res.mediaType?.toUpperCase() || 'VOLUME' });
     showAddModal.value = false; fetchBookcase();
-  } catch (err) { alert('Acquisition disrupted'); }
+  } catch (err) { alert('Import error'); }
 };
 
 const folders = computed(() => {
@@ -188,9 +201,9 @@ const isEPUB = (book: any) => { if (!book) return false; return (book.title || '
 
 onMounted(() => {
   fetchBookcase();
-  if (!document.getElementById('epub-js')) {
+  if (!document.getElementById('jszip-js')) {
+    const j = document.createElement('script'); j.id = 'jszip-js'; j.src = 'https://unpkg.com/jszip/dist/jszip.min.js'; j.async = true; document.head.appendChild(j);
     const s = document.createElement('script'); s.id = 'epub-js'; s.src = 'https://unpkg.com/epubjs/dist/epub.min.js'; s.async = true; document.head.appendChild(s);
-    const j = document.createElement('script'); j.src = 'https://unpkg.com/jszip/dist/jszip.min.js'; j.async = true; document.head.appendChild(j);
   }
 });
 
@@ -201,7 +214,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
   <div class="bookcase-v2">
     <aside class="sidebar">
       <div class="sidebar-header">
-        <div class="search-wrap"><input v-model="searchTerm" placeholder="Filter Research..." /></div>
+        <div class="search-wrap"><input v-model="searchTerm" placeholder="Filter Core..." /></div>
         <button @click="showAddModal = true" class="add-btn">+</button>
       </div>
 
@@ -211,6 +224,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
              @dragover.prevent="dragOverFolder = String(folderName)" @dragleave="dragOverFolder = null" @drop="onDropIntoFolder($event, String(folderName))">
           <div class="folder-header" @click="collapsedFolders.has(String(folderName)) ? collapsedFolders.delete(String(folderName)) : collapsedFolders.add(String(folderName))">
             <span class="fold-arrow">{{ collapsedFolders.has(String(folderName)) ? '▶' : '▼' }}</span>
+            <span class="folder-icon">📂</span>
             <span class="folder-name">{{ folderName }}</span>
             <span class="count">{{ folderBooks.length }}</span>
           </div>
@@ -222,7 +236,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
             </div>
           </div>
         </div>
-        <div class="new-folder-area"><input v-model="newFolderName" placeholder="+ Cluster" @keyup.enter="customFolders.push(newFolderName); newFolderName=''" /></div>
+        <div class="new-folder-area"><input v-model="newFolderName" placeholder="+ New Cluster" @keyup.enter="customFolders.push(newFolderName); newFolderName=''" /></div>
       </div>
     </aside>
 
@@ -249,7 +263,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
                 <button @click="epubRendition.next()" class="nav-btn">NEXT</button>
              </div>
           </div>
-          <div v-else class="fallback">UNSUPPORTED FORMAT</div>
+          <div v-else class="fallback">UNSUPPORTED Intel Format</div>
         </div>
 
         <div v-if="viewMode !== 'preview'" class="notes-pane">
@@ -275,13 +289,13 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
         </div>
       </div>
     </main>
-    <main v-else class="empty-workspace">DORMANT STATE</main>
+    <main v-else class="empty-workspace">DORMANT System Waiting.</main>
 
     <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
       <div class="modal">
-        <header>RESOURCES</header>
+        <header>INTEL REPOSITORY</header>
         <div class="m-content">
-          <input v-model="searchQuery" placeholder="Filter IDs..." @input="apiService.getAvailableBooks(searchQuery).then(r => availableResources = r)" />
+          <input v-model="searchQuery" placeholder="Filter sources..." @input="apiService.getAvailableBooks(searchQuery).then(r => availableResources = r)" />
           <div class="items">
             <div v-for="res in availableResources" :key="res.id" @click="importBook(res)"><span>[{{ res.mediaType }}]</span>{{ res.title || res.caption }}</div>
           </div>
@@ -320,8 +334,8 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 .preview-pane iframe { width: 100%; height: 100%; }
 .epub-reader { width:100%; height:100%; position:relative; }
 .epub-canvas { width:100%; height:100%; }
-.reader-controls { position: absolute; bottom: 2rem; left: 50%; transform: translateX(-50%); display: flex; gap: 1rem; z-index: 100; }
-.nav-btn { background: #d97706CC; backdrop-filter: blur(8px); color: #fff; border: 1px solid #fbbf2444; padding: 0.6rem 1.25rem; border-radius: 4px; cursor: pointer; font-size: 0.75rem; font-weight: 900; }
+.reader-controls { position: absolute; bottom: 1.5rem; left: 50%; transform: translateX(-50%); display: flex; gap: 0.75rem; z-index: 100; }
+.nav-btn { background: #d97706DD; backdrop-filter: blur(4px); color: #fff; border: 1px solid #fbbf2444; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.7rem; font-weight: 900; }
 .notes-pane { flex: 1; display: flex; flex-direction: column; background: #0a0c10; }
 .note-tabs { display: flex; padding: 0.6rem 1rem 0; border-bottom: 1px solid #1a1e23; overflow-x: auto; gap: 4px; }
 .note-tab { padding: 0.5rem 1.25rem; font-size: 0.8rem; background: #11151a; border-radius: 6px 6px 0 0; cursor: pointer; color: #666; }
@@ -339,6 +353,13 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 .loader { position: absolute; top:0; left:0; width:100%; height:100%; background: #111; display: flex; align-items: center; justify-content: center; z-index: 50; }
 .spin { width: 32px; height: 32px; border: 3px solid #333; border-top-color: #d97706; border-radius: 50%; animation: rot 0.8s linear infinite; }
 @keyframes rot { to { transform: rotate(360deg); } }
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #000B; z-index: 2000; display: flex; align-items: center; justify-content: center; }
-.modal { background: #11151a; width: 420px; border-radius: 12px; border: 1px solid #222; overflow: hidden; }
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #000E; z-index: 2000; display: flex; align-items: center; justify-content: center; }
+.modal { background: #11151a; width: 440px; border-radius: 12px; border: 1px solid #222; overflow: hidden; }
+.modal header { padding: 1rem; background: #000; border-bottom: 1px solid #222; font-weight: 900; color: #fff; font-size: 0.8rem; letter-spacing: 1px; }
+.m-content { padding: 1.5rem; }
+.m-content input { width: 100%; padding: 0.75rem; background: #000; border: 1px solid #222; border-radius: 6px; color: #fff; margin-bottom: 1.5rem; }
+.items { max-height: 350px; overflow-y: auto; }
+.items div { padding: 0.75rem; border-bottom: 1px solid #1a1e23; cursor: pointer; font-size: 0.85rem; text-align: left; transition: all 0.2s; }
+.items div:hover { background: #d9770611; color: #fbbf24; }
+.items div span { color: #fbbf24; opacity: 0.5; margin-right: 0.5rem; font-size: 0.7rem; font-weight: bold; }
 </style>
