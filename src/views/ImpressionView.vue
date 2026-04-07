@@ -130,8 +130,9 @@ const initGraph = () => {
     } else {
         // Edit Mode: Delete logic
         if (params.nodes.length > 0) {
-            const nodeId = params.nodes[0];
-            const nodeName = nodes.get(nodeId)?.label || nodeId;
+            const nodeId = params.nodes[0] as string;
+            const nodeData = nodes.get(nodeId) as any;
+            const nodeName = nodeData?.label || nodeId;
             if (confirm(`Destroy "${nodeName}"? This is irreversible.`)) {
                 await apiService.deleteImpressionNode(nodeId);
                 await loadGraph();
@@ -461,8 +462,16 @@ const importGraphData = async (event: any) => {
 
 const goToRandomNode = async () => {
     try {
-        const res = await apiService.getImpressionRandom();
-        if (res.id) loadGraph(res.id);
+        const all = nodes.getIds();
+        if (all.length > 0) {
+             const rid = all[Math.floor(Math.random() * all.length)] as string;
+             if (network.value) network.value.focus(rid, { animation: true, scale: 1.0 });
+             const fresh = nodes.get(rid) as any;
+             if (fresh) selectedNodeDetails.value = fresh.raw;
+        } else {
+             const res = await apiService.getImpressionRandom();
+             if (res.id) loadGraph(res.id);
+        }
     } catch (e) { console.error(e); }
 };
 
@@ -645,6 +654,9 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
                 <button class="close-help" @click="showCommandHelp = false">×</button>
                 <h3>Knowledge Terminal 知識圖譜終端機控制台</h3>
                 <ul>
+                    <li><code>/model [view/edit]</code> - 切換互動模式 (點擊與長按的手勢功能會改變)</li>
+                    <li><code>[VIEW 模式]</code> - 點擊節點置中焦點；長按節點開啟編輯面版</li>
+                    <li><code>[EDIT 模式]</code> - 點擊兩個點進行連線；長按節點或邊線可立即刪除</li>
                     <li><code>/add point [標題]</code> - 建立一個新的知識點 (Concept Node)</li>
                     <li><code>/add edge "[起點]" "[終點]" [標籤]</code> - 透過標題連結兩個點 (含空格標題請用雙引號)</li>
                     <li><code>/search [關鍵字]</code> - 同時搜尋當前圖譜中的節點與連線</li>
@@ -658,6 +670,11 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
 
         <!-- Studio Toolbox -->
         <div class="studio-toolbox glass neon-border">
+            <div class="tool-btn" :class="interactionMode" @click="interactionMode = interactionMode === 'view' ? 'edit' : 'view'">
+                <div class="t-icon">{{ interactionMode === 'view' ? '🔭' : '🛠️' }}</div>
+                <div class="t-label">{{ interactionMode.toUpperCase() }}</div>
+            </div>
+            <div class="t-sep"></div>
             <div class="tool-btn" :class="{ on: isPhysicsEnabled }" @click="isPhysicsEnabled = !isPhysicsEnabled">
                 <div class="t-icon">⚛️</div>
                 <div class="t-label">Flow</div>
