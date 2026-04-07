@@ -13,8 +13,9 @@ const props = defineProps<{
 // State
 const shelves = ref<any[]>([]);
 const desktopItems = ref<any[]>([]);
-const activeShelfId = ref<string | null>(null); // null means "Desktop"
+const activeShelfId = ref<string | null>(null);
 const loading = ref(true);
+const modalLoading = ref(false);
 const draggingItem = ref<any>(null);
 const dragOverShelfId = ref<string | null | 'desktop'>(null);
 
@@ -28,7 +29,7 @@ const renamingShelfId = ref<string | null>(null);
 const showEditModal = ref(false);
 const editingItem = ref<any>(null);
 const editBuffer = ref({ title: '', content: '' });
-const editMode = ref<'edit' | 'preview'>('preview'); // DEFAULT TO PREVIEW
+const editMode = ref<'edit' | 'preview'>('preview'); 
 const saving = ref(false);
 const remarkDetails = ref<any>(null); 
 
@@ -178,26 +179,28 @@ const openOriginal = async (item: any) => {
     return;
   }
   
+  // IMMEDIATELY OPEN MODAL
   editingItem.value = item;
   editBuffer.value = { 
     title: item.title, 
     content: item.content || '' 
   };
-  editMode.value = 'preview'; // Default to preview when opening
+  editMode.value = 'preview'; 
+  showEditModal.value = true;
+  remarkDetails.value = null;
 
   if (item.type === 'remark') {
+    modalLoading.value = true;
     try {
       const data = await apiService.getRemarks();
       const container = data.containers?.find((c: any) => c.id === item.refId);
       remarkDetails.value = container || null;
     } catch (err) {
       console.error("Failed to load remark details:", err);
+    } finally {
+      modalLoading.value = false;
     }
-  } else {
-    remarkDetails.value = null;
   }
-
-  showEditModal.value = true;
 };
 
 const saveItemEdit = async () => {
@@ -270,7 +273,6 @@ const saveItemEdit = async () => {
           class="desk-tile"
           draggable="true"
           @dragstart="onDragStart(it)"
-          @dblclick="openOriginal(it)"
           @click="openOriginal(it)"
         >
           <div v-if="getThumbnail(it)" class="tile-preview">
@@ -332,7 +334,7 @@ const saveItemEdit = async () => {
             <div class="type-badge">{{ editingItem?.type.toUpperCase() }} EDITOR</div>
             <div class="render-toggle" v-if="editingItem?.type === 'remark' || editingItem?.type === 'snippet'">
                <button @click="editMode = 'preview'" :class="{ active: editMode === 'preview' }">PREVIEW</button>
-               <button @click="editMode = 'edit'" :class="{ active: editMode === 'edit' }">TXT/EDIT</button>
+               <button @click="editMode = 'edit'" :class="{ active: editMode === 'edit' }">TXT / EDIT</button>
             </div>
             <button @click="showEditModal = false" class="close-x">✕</button>
           </div>
@@ -348,26 +350,26 @@ const saveItemEdit = async () => {
             </div>
 
             <div class="field fill">
-              <label>Notes / Description (Markdown)</label>
-              <!-- Markdown Rendering Pane -->
+              <label>Notes / Description (Markdown Supported)</label>
               <div v-if="editMode === 'preview'" class="md-preview-area" v-html="marked.parse(editBuffer.content || '')"></div>
-              <textarea v-else v-model="editBuffer.content" placeholder="Summary..."></textarea>
+              <textarea v-else v-model="editBuffer.content" placeholder="Type something here..."></textarea>
             </div>
 
-            <!-- RENDER REMARK ITEMS AS GRID CARDS -->
-            <div v-if="editingItem?.type === 'remark' && remarkDetails" class="nested-remark-items">
+            <!-- RENDER REMARK ITEMS -->
+            <div v-if="editingItem?.type === 'remark'" class="nested-remark-items">
               <label class="section-label">📚 Quoted Items (引用項目)</label>
-              <div class="nested-items-grid">
-                <div v-for="item in (remarkDetails.items || [])" :key="item.id" class="nested-card">
+              <div v-if="modalLoading" class="modal-item-loader"><span class="spinner"></span> Loading items...</div>
+              <div v-else class="nested-items-grid">
+                <div v-for="item in (remarkDetails?.items || [])" :key="item.id" class="nested-card">
                   <div class="nested-cap">
-                    <span class="tag-p">{{ item.log.platform }}</span>
-                    <span class="tag-s">{{ item.log.senderName }}</span>
+                    <span class="tag-p">{{ item.log?.platform }}</span>
+                    <span class="tag-s">{{ item.log?.senderName }}</span>
                   </div>
-                  <div v-if="item.log?.mediaId && (item.log?.msgType === 'image' || item.log?.content.includes('[Image]'))" class="nested-img" @click="zoomedImageUrl = getStorehouseUrl(item.log.mediaId, item.log.platform)">
+                  <div v-if="item.log?.mediaId && (item.log?.msgType === 'image' || item.log?.content?.includes('[Image]'))" class="nested-img" @click="zoomedImageUrl = getStorehouseUrl(item.log.mediaId, item.log.platform)">
                     <img :src="getStorehouseUrl(item.log.mediaId, item.log.platform)" />
                   </div>
                   <div v-else class="nested-txt">
-                    <p>{{ item.log.content }}</p>
+                    <p>{{ item.log?.content }}</p>
                   </div>
                 </div>
               </div>
@@ -376,11 +378,14 @@ const saveItemEdit = async () => {
 
           <div class="editor-footer">
             <button @click="showEditModal = false" class="cancel-btn">Discard</button>
-            <button @click="saveItemEdit" class="save-btn" :disabled="saving">Save Changes</button>
+            <button @click="saveItemEdit" class="save-btn" :disabled="saving">
+              {{ saving ? 'Saving...' : '✅ Save Changes' }}
+            </button>
           </div>
         </div>
       </div>
 
+      <!-- Image Zoom -->
       <div v-if="zoomedImageUrl" class="global-zoom" @click="zoomedImageUrl = ''">
          <img :src="zoomedImageUrl" />
          <span class="close-zoom">✕</span>
@@ -395,57 +400,67 @@ const saveItemEdit = async () => {
 .title-group h1 { margin: 0; font-size: 1.8rem; color: var(--primary-color); }
 .subtitle { margin: 0; opacity: 0.7; font-size: 0.9rem; }
 .actions { display: flex; gap: 0.8rem; }
-.add-shelf-btn { background: var(--primary-color); color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 10px; font-weight: 700; cursor: pointer; }
-.back-btn { background: rgba(var(--primary-rgb), 0.1); border: 1px solid var(--primary-color); color: var(--primary-color); padding: 0.6rem 1.2rem; border-radius: 10px; cursor: pointer; }
+.add-shelf-btn, .back-btn { padding: 0.6rem 1.2rem; border-radius: 10px; font-weight: 700; cursor: pointer; }
+.add-shelf-btn { background: var(--primary-color); color: white; border: none; }
+.back-btn { background: rgba(var(--primary-rgb), 0.1); border: 1px solid var(--primary-color); color: var(--primary-color); }
 
-.desktop-canvas { flex: 1; background: rgba(var(--primary-rgb), 0.03); border: 2px dashed rgba(var(--primary-rgb), 0.1); border-radius: 20px; overflow-y: auto; padding: 2rem; }
-.items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1.5rem; }
+.desktop-canvas { flex: 1; background: rgba(var(--primary-rgb), 0.03); border: 2px dashed rgba(var(--primary-rgb), 0.1); border-radius: 20px; overflow-y: auto; padding: 2rem; position: relative; }
+.items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1.5rem; }
 
-.desk-tile { background: var(--card-bg); border: 1px solid rgba(var(--primary-rgb), 0.2); border-radius: 16px; padding: 1.2rem; display: flex; flex-direction: column; align-items: center; gap: 0.8rem; cursor: pointer; position: relative; transition: all 0.2s; }
+.desk-tile { background: var(--card-bg); border: 1px solid rgba(var(--primary-rgb), 0.2); border-radius: 16px; padding: 1.2rem; display: flex; flex-direction: column; align-items: center; gap: 0.8rem; cursor: pointer; position: relative; transition: all 0.2s; backdrop-filter: blur(10px); }
 .desk-tile:hover { transform: translateY(-5px); border-color: var(--primary-color); box-shadow: 0 8px 25px rgba(0,0,0,0.2); }
 .tile-preview { width: 100%; height: 100px; border-radius: 12px; overflow: hidden; background: rgba(0,0,0,0.2); }
 .tile-preview img { width: 100%; height: 100%; object-fit: cover; }
-.tile-title { font-weight: 700; font-size: 0.9rem; text-align: center; width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.tile-title { font-weight: 700; font-size: 0.9rem; text-align: center; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile-meta { font-size: 0.7rem; opacity: 0.5; font-weight: 800; }
 
-.remove-btn { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.5); border: none; border-radius: 50%; width: 22px; height: 22px; color: #ff5f5f; font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-
-.shelves-rail { background: rgba(var(--primary-rgb), 0.1); backdrop-filter: blur(20px); border-radius: 20px; padding: 1rem; }
-.shelves-container { display: flex; gap: 1rem; overflow-x: auto; padding: 0.5rem; }
-.shelf-card { min-width: 120px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 15px; padding: 0.8rem; display: flex; flex-direction: column; align-items: center; }
-.shelf-card.active { background: var(--primary-color); }
+.remove-btn { position: absolute; top: -5px; right: -5px; background: #e74c3c; border: none; border-radius: 50%; width: 22px; height: 22px; color: white; font-size: 0.8rem; cursor: pointer; opacity: 0; transition: opacity 0.2s; z-index: 10; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+.desk-tile:hover .remove-btn { opacity: 1; }
 
 /* Editor Modal Styles */
-.editor-pane { background: var(--card-bg); width: 850px; max-width: 95vw; max-height: 90vh; border-radius: 24px; display: flex; flex-direction: column; overflow: hidden; }
-.editor-header { padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); }
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+.editor-pane { background: var(--card-bg); width: 900px; max-width: 95vw; max-height: 90vh; border-radius: 24px; border: 1px solid rgba(var(--primary-rgb), 0.3); display: flex; flex-direction: column; overflow: hidden; }
 
+.editor-header { padding: 1.2rem 2rem; display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); border-bottom: 1px solid rgba(255,255,255,0.05); }
 .render-toggle { display: flex; background: rgba(255,255,255,0.05); padding: 4px; border-radius: 10px; gap: 4px; }
-.render-toggle button { background: none; border: none; color: #fff; padding: 4px 12px; border-radius: 8px; font-size: 0.7rem; font-weight: 800; cursor: pointer; opacity: 0.5; }
-.render-toggle button.active { background: var(--primary-color); opacity: 1; }
+.render-toggle button { background: none; border: none; color: #fff; padding: 6px 16px; border-radius: 8px; font-size: 0.75rem; font-weight: 800; cursor: pointer; opacity: 0.5; transition: all 0.2s; }
+.render-toggle button.active { background: var(--primary-color); opacity: 1; box-shadow: 0 2px 8px rgba(var(--primary-rgb), 0.4); }
 
-.editor-body { flex: 1; overflow-y: auto; padding: 2rem; display: flex; flex-direction: column; gap: 1.5rem; }
-.field { display: flex; flex-direction: column; gap: 0.4rem; }
-.field input, .field textarea { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 1rem; color: #fff; width: 100%; }
+.editor-body { flex: 1; overflow-y: auto; padding: 2.5rem; display: flex; flex-direction: column; gap: 2rem; }
+.field { display: flex; flex-direction: column; gap: 0.6rem; }
+.field input, .field textarea { background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 1.2rem; color: #eee; width: 100%; outline: none; font-size: 1rem; }
+.field input:focus, .field textarea:focus { border-color: var(--primary-color); }
 
-.md-preview-area { background: rgba(0,0,0,0.3); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); min-height: 200px; color: #eee; line-height: 1.6; }
-.md-preview-area :deep(h1), .md-preview-area :deep(h2) { border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; margin-top: 1rem; }
-.md-preview-area :deep(code) { background: rgba(var(--primary-rgb), 0.2); padding: 2px 4px; border-radius: 4px; font-family: monospace; }
-.field textarea { height: 200px; resize: none; }
+.md-preview-area { background: rgba(0,0,0,0.35); padding: 1.8rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); min-height: 250px; color: #eee; line-height: 1.7; font-size: 1.05rem; }
+.md-preview-area :deep(img) { max-width: 100%; border-radius: 8px; }
+.md-preview-area :deep(h1), .md-preview-area :deep(h2) { border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; margin: 1.5rem 0 1rem; color: var(--primary-color); }
+.md-preview-area :deep(code) { background: rgba(var(--primary-rgb), 0.2); padding: 2px 6px; border-radius: 4px; font-family: 'Fira Code', monospace; font-size: 0.9em; }
 
-/* Nested Items */
-.nested-items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; }
-.nested-card { background: rgba(255,255,255,0.03); border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05); }
-.nested-cap { padding: 0.6rem; display: flex; gap: 5px; font-size: 0.65rem; background: rgba(0,0,0,0.2); }
-.nested-img { width: 100%; height: 150px; cursor: zoom-in; }
-.nested-img img { width: 100%; height: 100%; object-fit: cover; }
-.nested-txt { padding: 1rem; font-size: 0.9rem; color: #ccc; }
+.nested-remark-items { border-top: 1px solid rgba(255,255,255,0.08); padding-top: 2rem; }
+.nested-items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1.2rem; }
+.nested-card { background: rgba(255,255,255,0.03); border-radius: 14px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06); transition: transform 0.2s; }
+.nested-card:hover { transform: scale(1.02); border-color: var(--primary-color); }
+.nested-cap { padding: 0.8rem; display: flex; justify-content: space-between; font-size: 0.7rem; background: rgba(0,0,0,0.2); }
+.tag-p { color: var(--primary-color); font-weight: 800; text-transform: uppercase; }
+.tag-s { opacity: 0.6; }
+.nested-img { width: 100%; height: 160px; cursor: zoom-in; overflow: hidden; }
+.nested-img img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.3s; }
+.nested-img:hover img { transform: scale(1.1); }
+.nested-txt { padding: 1.2rem; font-size: 0.95rem; color: #ccc; line-height: 1.5; }
 
-.editor-footer { padding: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem; background: rgba(0,0,0,0.2); }
-.save-btn { background: var(--primary-color); color: #fff; padding: 0.8rem 1.5rem; border-radius: 10px; border: none; font-weight: 700; cursor: pointer; }
-.close-x { background: none; border: none; color: #fff; font-size: 1.5rem; cursor: pointer; opacity: 0.5; }
+.modal-item-loader { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 2rem; opacity: 0.6; }
+.spinner { width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.1); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
-.global-zoom { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 3000; display: flex; align-items: center; justify-content: center; }
-.global-zoom img { max-width: 90vw; max-height: 90vh; }
+.editor-footer { padding: 1.5rem 2.5rem; display: flex; justify-content: flex-end; gap: 1.2rem; background: rgba(0,0,0,0.2); border-top: 1px solid rgba(255,255,255,0.05); }
+.save-btn { background: var(--primary-color); color: #fff; padding: 0.8rem 2rem; border-radius: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s; }
+.save-btn:hover { filter: brightness(1.1); transform: translateY(-2px); }
 
-.custom-scrollbar::-webkit-scrollbar { width: 6px; }
+.global-zoom { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 3000; display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
+.global-zoom img { max-width: 90vw; max-height: 90vh; border-radius: 12px; box-shadow: 0 0 50px rgba(0,0,0,0.5); }
+.close-zoom { position: absolute; top: 30px; right: 30px; color: #fff; font-size: 2.5rem; }
+
+.custom-scrollbar::-webkit-scrollbar { width: 8px; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(var(--primary-rgb), 0.5); }
 </style>
