@@ -150,6 +150,9 @@ const handleNodeClick = (nodeId: string) => {
       selectedNodeDetails.value = node.raw;
       editForm.value = { ...node.raw };
       isEditingDeskLink.value = false;
+      isEditingNode.value = false;
+      showMediaStore.value = false;
+      mediaSearchResults.value = [];
       showMediaStore.value = false;
       mediaSearchResults.value = [];
       if (node.raw.deskShelfId) {
@@ -216,6 +219,9 @@ const loadGraph = async (nodeId?: string) => {
         setTimeout(() => {
             if (network.value && nodes.get(nodeId)) {
                 network.value.fit({ nodes: [nodeId], animation: true });
+                // NEW: Sync selectedNodeDetails with the newly loaded data
+                const fresh = nodes.get(nodeId) as any;
+                if (fresh) selectedNodeDetails.value = fresh.raw;
             } else if (network.value && nodes.length > 0) {
                 network.value.fit({ animation: true });
             }

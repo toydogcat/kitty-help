@@ -404,12 +404,12 @@ func UpdateImpressionNode(c *fiber.Ctx) error {
 	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User not found"}) }
 
 	query := `UPDATE impression_nodes 
-	          SET title = $1, content = $2, node_type = $3, desk_shelf_id = $4 
-	          WHERE id = $5 AND user_id = $6 
-	          RETURNING id, linked_snippet_id, desk_shelf_id, created_at`
+	          SET title = $1, content = $2, node_type = $3, desk_shelf_id = $4, media_id = $5 
+	          WHERE id = $6 AND user_id = $7 
+	          RETURNING id, linked_snippet_id, desk_shelf_id, created_at, media_id`
 	
 	err = db.QueryRow(context.Background(), query, 
-		n.Title, n.Content, n.NodeType, n.DeskShelfID, id, dbUserID).Scan(&n.ID, &n.LinkedSnippetID, &n.DeskShelfID, &n.CreatedAt)
+		n.Title, n.Content, n.NodeType, n.DeskShelfID, n.MediaID, id, dbUserID).Scan(&n.ID, &n.LinkedSnippetID, &n.DeskShelfID, &n.CreatedAt, &n.MediaID)
 	
 	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
 
