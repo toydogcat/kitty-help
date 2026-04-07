@@ -156,12 +156,6 @@ const removeItem = async (id: string) => {
   }
 };
 
-const activeShelfName = computed(() => {
-  if (!activeShelfId.value) return 'Main Desktop';
-  const s = shelves.value.find(x => x.id === activeShelfId.value);
-  return s ? s.name : 'Unknown Shelf';
-});
-
 const getIcon = (type: string) => {
   switch (type) {
     case 'bookmark': return '🔖';
