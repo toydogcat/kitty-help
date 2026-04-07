@@ -3,7 +3,6 @@ import { ref, onMounted, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import { apiService } from '../services/api';
 import UnifiedRemarkModal from '../components/UnifiedRemarkModal.vue';
-import { marked } from 'marked';
 
 const props = defineProps<{
   userRole: string;
@@ -171,9 +170,7 @@ const getThumbnail = (item: any, large = false) => {
   return null;
 };
 
-const getStorehouseUrl = (mediaId: string, platform?: string) => {
-  return apiService.getStorehouseFileUrl(mediaId, platform || 'line');
-};
+// Helper removed because it is now handled inside UnifiedRemarkModal component
 
 const openOriginal = async (item: any) => {
   if (item.type === 'bookmark' && item.url) {
