@@ -460,9 +460,14 @@ const importGraphData = async (event: any) => {
         try {
             const data = JSON.parse(e.target?.result as string);
             await apiService.importImpressionGraph(data);
-            alert('Universe Restored.');
-            loadGraph();
-        } catch (err) { alert('Import failed: Check file format'); }
+            alert('Universe Restored Successfully.');
+            if (importFileRef.value) importFileRef.value.value = ''; // Reset input
+            await loadGraph(); // Full fresh reload
+        } catch (err: any) { 
+            console.error(err);
+            alert(`Restore Failed: ${err.response?.data?.error || err.message}`); 
+            if (importFileRef.value) importFileRef.value.value = '';
+        }
     };
     reader.readAsText(file);
 };
@@ -816,8 +821,13 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
             <div class="panel-head"><h4>Snapshot Studio</h4><button class="close-p" @click="showExportPanel = false">×</button></div>
             <div class="panel-body">
                 <div class="color-picker-grid">
-                    <div v-for="c in ['#0f172a', '#1e293b', '#000000', '#ffffff']" :key="c" :style="{ background: c }"
-                        @click="exportBgColor = c; exportBgImage = null" class="c-dot"></div>
+                    <div v-for="c in [
+                        '#0f172a', '#1e293b', '#000000', '#ffffff', 
+                        '#164e63', '#4c1d95', '#7c2d12', '#064e3b',
+                        '#be123c', '#ca8a04'
+                    ]" :key="c" :style="{ background: c }"
+                        @click="exportBgColor = c; exportBgImage = null" class="c-dot"
+                        :class="{ active: exportBgColor === c }"></div>
                 </div>
                 <button class="confirm-link-btn" @click="exportAsImage">Download Art</button>
             </div>
@@ -903,9 +913,14 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
 .t-label { font-size: 0.55rem; font-weight: 800; text-transform: uppercase; }
 .t-sep { width: 1px; height: 18px; background: rgba(255,255,255,0.1); margin: 0 8px; }
 
-.snapshot-panel { position: absolute; top: 85px; right: 25px; width: 250px; padding: 20px; z-index: 2200; }
-.color-picker-grid { display: flex; gap: 10px; margin-bottom: 15px; }
-.c-dot { width: 30px; height: 30px; border-radius: 50%; cursor: pointer; }
+.snapshot-panel { position: absolute; top: 95px; right: 25px; width: 280px; padding: 25px; z-index: 2200; box-shadow: 0 15px 50px rgba(0,0,0,0.8); }
+.panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.panel-head h4 { margin: 0; font-size: 0.9rem; letter-spacing: 1px; color: #f1f5f9; }
+.close-p { background: none; border: none; color: #475569; font-size: 1.5rem; cursor: pointer; }
+.color-picker-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 25px; }
+.c-dot { aspect-ratio: 1; border-radius: 50%; cursor: pointer; border: 2px solid rgba(255,255,255,0.1); transition: 0.2s; position: relative; }
+.c-dot:hover { transform: scale(1.15); border-color: rgba(34, 211, 238, 0.4); }
+.c-dot.active { border-color: #22d3ee; transform: scale(1.15); box-shadow: 0 0 15px rgba(34, 211, 238, 0.4); }
 
 .in-field { margin-bottom: 25px; }
 .in-field label { display: block; font-size: 0.7rem; color: #64748b; font-weight: 800; text-transform: uppercase; margin-bottom: 8px; }
