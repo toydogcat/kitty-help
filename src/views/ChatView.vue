@@ -185,12 +185,15 @@ const otherRemarks = computed(() => remarkContainers.value.filter(c => !c.isPinn
       </div>
       <div class="messages-list custom-scrollbar">
          <div v-for="m in recentMessages" :key="m.id" class="msg-card" :class="m.platform">
-            <div class="msg-meta">
-              <span class="platform-tag">{{ m.platform }}</span>
-              <span class="sender">{{ m.senderName }}</span>
-              <span class="time">{{ new Date(m.timestamp).toLocaleTimeString() }}</span>
+            <div class="msg-bubble shadow-sm">
+              <div class="msg-meta">
+                <span class="platform-indicator" :class="m.platform"></span>
+                <span class="platform-name">{{ m.platform.toUpperCase() }}</span>
+                <span class="sender-name">{{ m.senderName }}</span>
+                <span class="time">{{ m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '' }}</span>
+              </div>
+              <div class="msg-text">{{ m.content }}</div>
             </div>
-            <div class="msg-content">{{ m.content }}</div>
          </div>
       </div>
     </div>
@@ -352,8 +355,36 @@ const otherRemarks = computed(() => remarkContainers.value.filter(c => !c.isPinn
 
 <style scoped>
 .chat-view { display: flex; height: calc(100vh - 100px); gap: 1rem; padding: 1rem; }
-.center-panel { flex: 1; background: rgba(0,0,0,0.2); border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; }
 .right-panel { width: 450px; display: flex; flex-direction: column; gap: 1rem; }
+.center-panel { flex: 1; background: rgba(0,0,0,0.2); border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; overflow: hidden; }
+.panel-header { padding: 1.5rem; background: rgba(255,255,255,0.02); border-bottom: 1px solid rgba(255,255,255,0.05); }
+.messages-list { flex: 1; padding: 1.5rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem; }
+
+.msg-card { display: flex; flex-direction: column; align-items: flex-start; width: 100%; transition: all 0.2s; }
+.msg-bubble { 
+  max-width: 85%; 
+  background: rgba(255,255,255,0.05); 
+  border-radius: 18px; 
+  padding: 1rem 1.4rem; 
+  border: 1px solid rgba(255,255,255,0.08); 
+  display: flex; 
+  flex-direction: column; 
+  gap: 0.5rem;
+}
+
+.msg-meta { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 2px; }
+.platform-indicator { width: 8px; height: 8px; border-radius: 50%; }
+.platform-indicator.discord { background: #5865F2; }
+.platform-indicator.telegram { background: #0088cc; }
+.platform-indicator.line { background: #00B900; }
+
+.platform-name { font-size: 0.7rem; font-weight: 800; opacity: 0.4; letter-spacing: 1px; }
+.sender-name { font-weight: 700; color: #fff; font-size: 0.9rem; }
+.time { font-size: 0.75rem; opacity: 0.4; margin-left: auto; }
+
+.msg-text { font-size: 1rem; color: #eee; line-height: 1.6; word-break: break-word; }
+
+.foto-badge { background: var(--primary-color); color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; }
 
 /* Photos Bucket */
 .photos-bucket { height: 280px; background: rgba(255,255,255,0.03); border-radius: 20px; padding: 1.2rem; display: flex; flex-direction: column; }
