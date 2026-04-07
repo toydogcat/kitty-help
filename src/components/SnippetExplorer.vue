@@ -34,7 +34,7 @@ const isFullScreen = ref(false);
 const draggedItem = ref<any>(null);
 const dropTargetId = ref<string | null>(null);
 const isDropOverRoot = ref(false);
-const editMode = ref<'txt' | 'md'>('md'); // DEFAULT TO MD
+const editMode = ref<'txt' | 'md'>('md');
 
 const fetchData = async () => {
   loading.value = true;
@@ -110,7 +110,7 @@ const openAddModal = () => {
   newItemName.value = '';
   newItemContent.value = '';
   newItemIsFolder.value = false;
-  editMode.value = 'txt'; // New items start in text mode
+  editMode.value = 'txt';
   showAddModal.value = true;
 };
 
@@ -124,7 +124,7 @@ const openEditModal = (item: any) => {
   newItemContent.value = item.content || '';
   newItemIsFolder.value = item.isFolder;
   isFullScreen.value = false; 
-  editMode.value = 'md'; // PREVIEW BY DEFAULT
+  editMode.value = 'md'; 
   showAddModal.value = true;
 };
 
@@ -379,10 +379,6 @@ const addToDesk = async (item: any) => {
             <button @click.stop="deleteItem(item.id)" class="del-small">✕</button>
           </div>
         </div>
-        
-        <div v-if="snippets.length === 0 && pathStack.length === 0" class="empty-hint">
-          Your personal clipboard is empty.
-        </div>
       </div>
     </div>
 
@@ -392,13 +388,19 @@ const addToDesk = async (item: any) => {
         <div class="modal-card wide-editor" :class="{ 'is-full': isFullScreen }">
           <div class="modal-header">
             <h3>{{ isEditing ? 'Edit Item' : 'Create New Item' }}</h3>
-            <div class="modal-controls">
-              <div class="mode-switch" v-if="!newItemIsFolder">
-                <button :class="{ active: editMode === 'md' }" @click="editMode = 'md'">MD PREVIEW</button>
-                <button :class="{ active: editMode === 'txt' }" @click="editMode = 'txt'">TXT / EDIT</button>
-              </div>
-              <button @click="isFullScreen = !isFullScreen" class="ctrl-btn">{{ isFullScreen ? '❐' : '⛶' }}</button>
-              <button @click="showAddModal = false" class="ctrl-btn">✕</button>
+            
+            <!-- UNIFIED CONTROL CAPSULE -->
+            <div class="unified-controls">
+               <div class="mode-capsule" v-if="!newItemIsFolder">
+                  <button :class="{ active: editMode === 'md' }" @click="editMode = 'md'">MD PREVIEW</button>
+                  <button :class="{ active: editMode === 'txt' }" @click="editMode = 'txt'">TXT / EDIT</button>
+               </div>
+               <div class="action-set">
+                  <button @click="isFullScreen = !isFullScreen" class="action-item" title="Maximize">
+                    {{ isFullScreen ? '❐' : '⛶' }}
+                  </button>
+                  <button @click="showAddModal = false" class="action-item close" title="Close">✕</button>
+               </div>
             </div>
           </div>
           
@@ -463,33 +465,37 @@ const addToDesk = async (item: any) => {
 .item-actions button { background: rgba(255,255,255,0.1); border: none; border-radius: 6px; padding: 4px 10px; color: #fff; font-size: 0.75rem; cursor: pointer; }
 .item-actions button:hover { background: var(--primary-color); }
 
-/* Unified Editor Modal */
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; z-index: 3000; }
-.modal-card.wide-editor { width: 900px; max-width: 95vw; background: var(--card-bg); border-radius: 24px; border: 1px solid rgba(var(--primary-rgb), 0.3); display: flex; flex-direction: column; overflow: hidden; }
-.modal-card.is-full { width: 100vw; height: 100vh; border-radius: 0; }
+/* Unified Controls Styling */
+.unified-controls { display: flex; align-items: center; gap: 1rem; }
+.mode-capsule { display: flex; background: rgba(0,0,0,0.4); padding: 4px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
+.mode-capsule button { background: none; border: none; color: #fff; padding: 6px 14px; border-radius: 9px; font-size: 0.75rem; font-weight: 800; cursor: pointer; opacity: 0.4; transition: all 0.2s; }
+.mode-capsule button.active { background: var(--primary-color); opacity: 1; box-shadow: 0 2px 8px rgba(var(--primary-rgb), 0.4); }
 
-.modal-header { padding: 1.5rem 2.5rem; display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); border-bottom: 1px solid rgba(255,255,255,0.05); }
-.mode-switch { display: flex; background: rgba(0,0,0,0.3); padding: 4px; border-radius: 10px; gap: 4px; margin-right: 1.5rem; }
-.mode-switch button { background: none; border: none; color: #fff; padding: 6px 14px; border-radius: 8px; font-size: 0.7rem; font-weight: 800; cursor: pointer; opacity: 0.4; }
-.mode-switch button.active { background: var(--primary-color); opacity: 1; }
+.action-set { display: flex; background: rgba(255,255,255,0.05); padding: 4px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
+.action-item { background: none; border: none; color: #fff; width: 34px; height: 34px; border-radius: 9px; font-size: 1.1rem; cursor: pointer; opacity: 0.6; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
+.action-item:hover { background: rgba(255,255,255,0.1); opacity: 1; }
+.action-item.close:hover { background: #e74c3c; color: #fff; }
 
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; z-index: 3001; }
+.modal-card.wide-editor { width: 950px; max-width: 95vw; background: var(--card-bg); border-radius: 28px; border: 1px solid rgba(var(--primary-rgb), 0.3); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 60px rgba(0,0,0,0.6); }
+.modal-card.is-full { width: 100vw; height: 100vh; border-radius: 0; border: none; }
+
+.modal-header { padding: 1.2rem 2.5rem; display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); border-bottom: 1px solid rgba(255,255,255,0.05); }
 .modal-body { flex: 1; padding: 2.5rem; display: flex; flex-direction: column; gap: 1.8rem; }
-.form-group { display: flex; flex-direction: column; gap: 0.6rem; }
 .form-group.fill { flex: 1; }
-.input-row { display: flex; gap: 10px; }
-input, textarea { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 1rem; color: #fff; font-size: 1rem; width: 100%; outline: none; }
-textarea { height: 350px; resize: none; }
+input, textarea { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 14px; padding: 1.2rem; color: #fff; font-size: 1rem; width: 100%; outline: none; }
+textarea { height: 400px; resize: none; }
 
-.md-preview-box { background: rgba(0,0,0,0.4); padding: 2rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); height: 350px; overflow-y: auto; color: #eee; line-height: 1.7; }
-.md-preview-box :deep(h1) { color: var(--primary-color); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; }
+.md-preview-box { background: rgba(0,0,0,0.4); padding: 2.5rem; border-radius: 14px; border: 1px solid rgba(255,255,255,0.05); height: 400px; overflow-y: auto; color: #eee; line-height: 1.8; font-size: 1.1rem; }
+.md-preview-box :deep(h1) { color: var(--primary-color); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; margin: 1.5rem 0 1rem; }
 
-.modal-footer { padding: 1.5rem 2.5rem; display: flex; justify-content: flex-end; gap: 1rem; background: rgba(0,0,0,0.2); }
-.save-btn { background: var(--primary-color); color: #fff; border-radius: 12px; font-weight: 800; padding: 0.8rem 2.5rem; border: none; cursor: pointer; }
-.cancel-btn { background: transparent; color: #aaa; border: 1px solid #444; border-radius: 12px; padding: 0.8rem 1.5rem; cursor: pointer; }
+.modal-footer { padding: 1.5rem 2.8rem; display: flex; justify-content: flex-end; gap: 1.2rem; background: rgba(0,0,0,0.2); }
+.save-btn { background: var(--primary-color); color: #fff; border-radius: 12px; font-weight: 800; padding: 0.9rem 3rem; border: none; cursor: pointer; transition: all 0.2s; }
+.save-btn:hover { filter: brightness(1.1); transform: translateY(-2px); }
 
-.mic-btn-float { position: absolute; right: 1.5rem; bottom: 1.5rem; background: rgba(var(--primary-rgb), 0.2); border: none; border-radius: 50%; width: 40px; height: 40px; cursor: pointer; }
+.mic-btn-float { position: absolute; right: 1.5rem; bottom: 1.5rem; background: rgba(var(--primary-rgb), 0.2); border: none; border-radius: 50%; width: 44px; height: 44px; cursor: pointer; }
 .editor-row { position: relative; }
 
-.custom-scrollbar::-webkit-scrollbar { width: 6px; }
+.custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
 </style>
