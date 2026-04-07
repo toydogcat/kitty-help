@@ -9,6 +9,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/google/uuid"
 	"github.com/toydogcat/kitty-help/go-server/database"
 	"github.com/toydogcat/kitty-help/go-server/models"
 )
@@ -129,14 +130,17 @@ func CreateImpressionNode(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
 	}
 
-	dbUserID := userClaims.ID // Bypassing redundant DB lookup
+	dbUserID := userClaims.ID
 
-	// 1. Check for UPSERT (same media_id)
+	// Default KG if empty
+	if n.KGName == "" { n.KGName = "default" }
+
+	// 1. Check for UPSERT (same media_id and kg_name)
 	if n.MediaID != nil && *n.MediaID != "" {
 		var existingID string
 		err := db.QueryRow(context.Background(), 
-			"SELECT id FROM impression_nodes WHERE user_id = $1 AND media_id = $2", 
-			dbUserID, n.MediaID).Scan(&existingID)
+			"SELECT id FROM impression_nodes WHERE user_id = $1 AND media_id = $2 AND kg_name = $3", 
+			dbUserID, n.MediaID, n.KGName).Scan(&existingID)
 		
 		if err == nil {
 			updateQuery := `UPDATE impression_nodes 
@@ -154,12 +158,12 @@ func CreateImpressionNode(c *fiber.Ctx) error {
 	}
 
 	// 2. Normal INSERT
-	query := `INSERT INTO impression_nodes (user_id, media_id, title, content, node_type, desk_shelf_id) 
-	          VALUES ($1, $2, $3, $4, $5, $6) 
+	query := `INSERT INTO impression_nodes (user_id, media_id, title, content, node_type, desk_shelf_id, kg_name) 
+	          VALUES ($1, $2, $3, $4, $5, $6, $7) 
 	          RETURNING id, linked_snippet_id, desk_shelf_id, created_at`
 	
 	err = db.QueryRow(context.Background(), query, 
-		dbUserID, n.MediaID, n.Title, n.Content, n.NodeType, n.DeskShelfID).Scan(&n.ID, &n.LinkedSnippetID, &n.DeskShelfID, &n.CreatedAt)
+		dbUserID, n.MediaID, n.Title, n.Content, n.NodeType, n.DeskShelfID, n.KGName).Scan(&n.ID, &n.LinkedSnippetID, &n.DeskShelfID, &n.CreatedAt)
 	
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -171,121 +175,61 @@ func CreateImpressionNode(c *fiber.Ctx) error {
 
 func GetImpressionGraph(c *fiber.Ctx) error {
 	userClaims := c.Locals("user").(*Claims)
-	centerID := c.Query("centerId")
+	kgName := c.Query("kgName")
+	if kgName == "" { kgName = "default" }
 
-	db := database.LocalDB
-	if db == nil { db = database.CloudDB }
-	if db == nil { return c.Status(503).JSON(fiber.Map{"error": "Database not connected"}) }
+	db, _, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
 
-	// Resolve internal DB User ID from email
-	var dbUserID string
-	err := db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "User not found"})
-	}
+	dbUserID := userClaims.ID
 
-	// 1. If centerID is empty, find the latest node
-	isFocusMode := centerID != ""
-	if centerID == "" {
-		err := db.QueryRow(context.Background(), 
-			"SELECT id FROM impression_nodes WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1", 
-			dbUserID).Scan(&centerID)
-		if err != nil {
-			return c.JSON(models.GraphResponse{Nodes: []models.ImpressionNode{}, Edges: []models.ImpressionEdge{}})
-		}
-	}
-
-	// 2. Fetch Nodes using Recursive CTE (2 Degrees Bi-directional)
+	// 1. Fetch ALL Nodes in this KG
 	nodesQuery := `
-	WITH RECURSIVE graph_nodes AS (
-		SELECT id, user_id, media_id, linked_snippet_id, desk_shelf_id, title, content, node_type, created_at, 0 as depth
-		FROM impression_nodes
-		WHERE id = $1 AND user_id = $2
-		UNION
-		SELECT n.id, n.user_id, n.media_id, n.linked_snippet_id, n.desk_shelf_id, n.title, n.content, n.node_type, n.created_at, gn.depth + 1
-		FROM graph_nodes gn
-		JOIN impression_edges e ON (e.source_id = gn.id OR e.target_id = gn.id)
-		JOIN impression_nodes n ON (n.id = CASE WHEN e.source_id = gn.id THEN e.target_id ELSE e.source_id END)
-		WHERE gn.depth < 2 AND n.user_id = $2
-	),
-	recent_nodes AS (
-		SELECT id, user_id, media_id, linked_snippet_id, desk_shelf_id, title, content, node_type, created_at, 99 as depth
-		FROM impression_nodes
-		WHERE user_id = $2 AND NOT $3
-		ORDER BY created_at DESC
-		LIMIT 50
-	),
-	all_nodes AS (
-		SELECT * FROM graph_nodes
-		UNION
-		SELECT * FROM recent_nodes
-	)
-	SELECT DISTINCT 
-		an.id::TEXT, 
-		an.user_id::TEXT, 
-		an.media_id::TEXT, 
-		an.linked_snippet_id::TEXT,
-		an.desk_shelf_id::TEXT,
-		an.title, 
-		COALESCE(an.content, '') as content, 
-		an.node_type, 
-		an.created_at, 
-		COALESCE(m.file_id, '') as file_id, 
-		COALESCE(m.source_platform, 'telegram') as source_platform
-	FROM all_nodes an
-	LEFT JOIN media_archives m ON an.media_id = m.id
+		SELECT 
+			n.id::TEXT, n.user_id::TEXT, n.media_id::TEXT, n.linked_snippet_id::TEXT, n.desk_shelf_id::TEXT,
+			n.title, COALESCE(n.content, '') as content, n.node_type, n.created_at, 
+			COALESCE(m.file_id, '') as file_id, COALESCE(m.source_platform, 'telegram') as source_platform,
+			n.kg_name
+		FROM impression_nodes n
+		LEFT JOIN media_archives m ON n.media_id = m.id
+		WHERE n.user_id = $1 AND n.kg_name = $2
 	`
 
-	rows, err := db.Query(context.Background(), nodesQuery, centerID, dbUserID, isFocusMode)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
+	rows, err := db.Query(context.Background(), nodesQuery, dbUserID, kgName)
+	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
 	defer rows.Close()
 
-	nodeMap := make(map[string]models.ImpressionNode)
-	nodesList := []models.ImpressionNode{}
+	nodes := []models.ImpressionNode{}
 	for rows.Next() {
-		var it models.ImpressionNode
-		err := rows.Scan(&it.ID, &it.UserID, &it.MediaID, &it.LinkedSnippetID, &it.DeskShelfID, &it.Title, &it.Content, &it.NodeType, &it.CreatedAt, &it.FileID, &it.SourcePlatform)
-		if err == nil {
-			if it.FileID != nil && *it.FileID != "" {
-				it.ImageURL = "/api/storehouse/file/" + *it.FileID
-				if it.SourcePlatform != nil {
-					it.ImageURL += "?platform=" + *it.SourcePlatform
-				}
-			}
-			nodesList = append(nodesList, it)
-			nodeMap[it.ID] = it
+		var n models.ImpressionNode
+		var sourcePlatform string
+		if err := rows.Scan(&n.ID, &n.UserID, &n.MediaID, &n.LinkedSnippetID, &n.DeskShelfID, &n.Title, &n.Content, &n.NodeType, &n.CreatedAt, &n.FileID, &sourcePlatform, &n.KGName); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+		n.SourcePlatform = &sourcePlatform
+		nodes = append(nodes, n)
 	}
 
-	// 3. Fetch all edges between these nodes ONLY
-	nodeIDs := make([]string, 0, len(nodeMap))
-	for id := range nodeMap { nodeIDs = append(nodeIDs, id) }
+	// 2. Fetch ALL Edges in this KG
+	edgesQuery := `
+		SELECT id::TEXT, user_id::TEXT, source_id::TEXT, target_id::TEXT, label, created_at, kg_name
+		FROM impression_edges
+		WHERE user_id = $1 AND kg_name = $2
+	`
+	rowsE, err := db.Query(context.Background(), edgesQuery, dbUserID, kgName)
+	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
+	defer rowsE.Close()
 
 	edges := []models.ImpressionEdge{}
-	if len(nodeIDs) > 0 {
-		edgesQuery := `
-			SELECT id::TEXT, user_id::TEXT, source_id::TEXT, target_id::TEXT, label, created_at 
-			FROM impression_edges 
-			WHERE user_id = $1 AND source_id = ANY($2::uuid[]) AND target_id = ANY($2::uuid[])
-		`
-		rowsE, err := db.Query(context.Background(), edgesQuery, dbUserID, nodeIDs)
-		if err != nil {
-			log.Printf("⚠️ GetGraph SQL Warning: %v", err)
-		} else {
-			defer rowsE.Close()
-			for rowsE.Next() {
-				var e models.ImpressionEdge
-				err := rowsE.Scan(&e.ID, &e.UserID, &e.SourceID, &e.TargetID, &e.Label, &e.CreatedAt)
-				if err == nil {
-					edges = append(edges, e)
-				}
-			}
+	for rowsE.Next() {
+		var e models.ImpressionEdge
+		if err := rowsE.Scan(&e.ID, &e.UserID, &e.SourceID, &e.TargetID, &e.Label, &e.CreatedAt, &e.KGName); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+		edges = append(edges, e)
 	}
 
-	return c.JSON(models.GraphResponse{Nodes: nodesList, Edges: edges})
+	return c.JSON(models.GraphResponse{Nodes: nodes, Edges: edges})
 }
 
 func CreateImpressionLink(c *fiber.Ctx) error {
@@ -299,25 +243,24 @@ func CreateImpressionLink(c *fiber.Ctx) error {
 	if db == nil { db = database.CloudDB }
 	if db == nil { return c.Status(503).JSON(fiber.Map{"error": "Database not connected"}) }
 
-	var dbUserID string
-	err := db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
-	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User not found"}) }
+	dbUserID := userClaims.ID
+	if e.KGName == "" { e.KGName = "default" }
 
 	var exists bool
 	db.QueryRow(context.Background(), 
-		"SELECT EXISTS(SELECT 1 FROM impression_edges WHERE source_id = $1 AND target_id = $2 AND label = $3 AND user_id = $4)", 
-		e.SourceID, e.TargetID, e.Label, dbUserID).Scan(&exists)
+		"SELECT EXISTS(SELECT 1 FROM impression_edges WHERE source_id = $1 AND target_id = $2 AND label = $3 AND user_id = $4 AND kg_name = $5)", 
+		e.SourceID, e.TargetID, e.Label, dbUserID, e.KGName).Scan(&exists)
 
 	if exists {
 		return c.Status(409).JSON(fiber.Map{"error": "Relationship already exists"})
 	}
 
-	query := `INSERT INTO impression_edges (user_id, source_id, target_id, label) 
-	          VALUES ($1, $2, $3, $4) 
+	query := `INSERT INTO impression_edges (user_id, source_id, target_id, label, kg_name) 
+	          VALUES ($1, $2, $3, $4, $5) 
 	          RETURNING id, created_at`
 	
-	err = db.QueryRow(context.Background(), query, 
-		dbUserID, e.SourceID, e.TargetID, e.Label).Scan(&e.ID, &e.CreatedAt)
+	err := db.QueryRow(context.Background(), query, 
+		dbUserID, e.SourceID, e.TargetID, e.Label, e.KGName).Scan(&e.ID, &e.CreatedAt)
 	
 	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
 
@@ -343,9 +286,10 @@ func DeleteImpressionNode(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "deleted"})
 }
 
-func SearchImpressionNodes(c *fiber.Ctx) error {
+func SearchImpression(c *fiber.Ctx) error {
 	userClaims := c.Locals("user").(*Claims)
 	q := c.Query("q")
+	kgSearch := c.Query("kgName") // Optional: search all or specific
 
 	db := database.LocalDB
 	if db == nil { db = database.CloudDB }
@@ -353,43 +297,95 @@ func SearchImpressionNodes(c *fiber.Ctx) error {
 
 	dbUserID := userClaims.ID
 
-	nodesQuery := `
-	SELECT 
-		n.id::TEXT, 
-		n.title, 
-		n.node_type, 
-		m.file_id, 
-		m.source_platform
+	// 1. Search Nodes
+	nodesSQL := `
+	SELECT n.id::TEXT, n.title, n.node_type, m.file_id, m.source_platform, n.kg_name, 'node' as result_type
 	FROM impression_nodes n
 	LEFT JOIN media_archives m ON n.media_id = m.id
 	WHERE n.user_id = $1 AND n.title ILIKE $2
-	LIMIT 10
 	`
+	if kgSearch != "" {
+		nodesSQL += " AND n.kg_name = '" + kgSearch + "'"
+	}
+	nodesSQL += " LIMIT 20"
 
-	rows, err := db.Query(context.Background(), nodesQuery, dbUserID, "%"+q+"%")
+	rowsN, err := db.Query(context.Background(), nodesSQL, dbUserID, "%"+q+"%")
 	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
-	defer rows.Close()
+	defer rowsN.Close()
 
-	nodes := []fiber.Map{}
-	for rows.Next() {
-		var id, title, nodeType string
+	results := []fiber.Map{}
+	for rowsN.Next() {
+		var id, title, nodeType, kgName, resType string
 		var fileID, sourcePlatform *string
-		if err := rows.Scan(&id, &title, &nodeType, &fileID, &sourcePlatform); err == nil {
+		if err := rowsN.Scan(&id, &title, &nodeType, &fileID, &sourcePlatform, &kgName, &resType); err == nil {
 			nodeMap := fiber.Map{
-				"id":       id,
-				"title":    title,
-				"nodeType": nodeType,
+				"id":         id,
+				"title":      title,
+				"nodeType":   nodeType,
+				"resultType": resType,
+				"kgName":     kgName,
 			}
 			if fileID != nil && sourcePlatform != nil {
-				// Use consistent URL format without cache-busting timestamp
 				nodeMap["imageUrl"] = "/api/storehouse/file/" + *fileID + "?platform=" + *sourcePlatform
 			}
-			nodes = append(nodes, nodeMap)
+			results = append(results, nodeMap)
 		}
 	}
 
-	log.Printf("🔍 DB Search: q=[%s] user=[%s] count=%d", q, dbUserID, len(nodes))
-	return c.JSON(nodes)
+	// 2. Search Edges (Links)
+	edgesSQL := `
+	SELECT e.id::TEXT, e.label, 'edge' as result_type, e.kg_name, s.title as source_title, t.title as target_title
+	FROM impression_edges e
+	JOIN impression_nodes s ON e.source_id = s.id
+	JOIN impression_nodes t ON e.target_id = t.id
+	WHERE e.user_id = $1 AND e.label ILIKE $2
+	`
+	if kgSearch != "" {
+		edgesSQL += " AND e.kg_name = '" + kgSearch + "'"
+	}
+	edgesSQL += " LIMIT 20"
+
+	rowsE, err := db.Query(context.Background(), edgesSQL, dbUserID, "%"+q+"%")
+	if err == nil {
+		defer rowsE.Close()
+		for rowsE.Next() {
+			var id, label, resType, kgName, stTitle, tgTitle string
+			if err := rowsE.Scan(&id, &label, &resType, &kgName, &stTitle, &tgTitle); err == nil {
+				results = append(results, fiber.Map{
+					"id":          id,
+					"title":       label,
+					"resultType":  resType,
+					"kgName":      kgName,
+					"sourceTitle": stTitle,
+					"targetTitle": tgTitle,
+				})
+			}
+		}
+	}
+
+	return c.JSON(results)
+}
+
+func GetKnowledgeGraphs(c *fiber.Ctx) error {
+	userClaims := c.Locals("user").(*Claims)
+	db, _, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
+
+	sql := `SELECT DISTINCT kg_name FROM impression_nodes WHERE user_id = $1 
+	        UNION 
+	        SELECT DISTINCT kg_name FROM impression_edges WHERE user_id = $1`
+	
+	rows, err := db.Query(context.Background(), sql, userClaims.ID)
+	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
+	defer rows.Close()
+
+	kgs := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err == nil { kgs = append(kgs, name) }
+	}
+	if len(kgs) == 0 { kgs = []string{"default"} }
+	return c.JSON(kgs)
 }
 
 func UpdateImpressionNode(c *fiber.Ctx) error {
@@ -409,12 +405,12 @@ func UpdateImpressionNode(c *fiber.Ctx) error {
 	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User not found"}) }
 
 	query := `UPDATE impression_nodes 
-	          SET title = $1, content = $2, node_type = $3, desk_shelf_id = $4 
-	          WHERE id = $5 AND user_id = $6 
-	          RETURNING id, linked_snippet_id, desk_shelf_id, created_at`
+	          SET title = $1, content = $2, node_type = $3, desk_shelf_id = $4, media_id = $5 
+	          WHERE id = $6 AND user_id = $7 
+	          RETURNING id, linked_snippet_id, desk_shelf_id, created_at, media_id`
 	
 	err = db.QueryRow(context.Background(), query, 
-		n.Title, n.Content, n.NodeType, n.DeskShelfID, id, dbUserID).Scan(&n.ID, &n.LinkedSnippetID, &n.DeskShelfID, &n.CreatedAt)
+		n.Title, n.Content, n.NodeType, n.DeskShelfID, n.MediaID, id, dbUserID).Scan(&n.ID, &n.LinkedSnippetID, &n.DeskShelfID, &n.CreatedAt, &n.MediaID)
 	
 	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
 
@@ -475,26 +471,26 @@ func ExportImpressionGraph(c *fiber.Ctx) error {
 	err := db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
 	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User not found"}) }
 
-	rows, err := db.Query(context.Background(), "SELECT id, media_id, title, content, node_type, desk_shelf_id, created_at FROM impression_nodes WHERE user_id = $1", dbUserID)
+	rows, err := db.Query(context.Background(), "SELECT id, media_id, title, content, node_type, desk_shelf_id, created_at, kg_name FROM impression_nodes WHERE user_id = $1", dbUserID)
 	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
 	defer rows.Close()
 
 	nodes := []models.ImpressionNode{}
 	for rows.Next() {
 		var n models.ImpressionNode
-		if err := rows.Scan(&n.ID, &n.MediaID, &n.Title, &n.Content, &n.NodeType, &n.DeskShelfID, &n.CreatedAt); err == nil {
+		if err := rows.Scan(&n.ID, &n.MediaID, &n.Title, &n.Content, &n.NodeType, &n.DeskShelfID, &n.CreatedAt, &n.KGName); err == nil {
 			nodes = append(nodes, n)
 		}
 	}
 
-	eRows, err := db.Query(context.Background(), "SELECT id, source_id, target_id, label, created_at FROM impression_edges WHERE user_id = $1", dbUserID)
+	eRows, err := db.Query(context.Background(), "SELECT id, source_id, target_id, label, created_at, kg_name FROM impression_edges WHERE user_id = $1", dbUserID)
 	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
 	defer eRows.Close()
 
 	edges := []models.ImpressionEdge{}
 	for eRows.Next() {
 		var e models.ImpressionEdge
-		if err := eRows.Scan(&e.ID, &e.SourceID, &e.TargetID, &e.Label, &e.CreatedAt); err == nil {
+		if err := eRows.Scan(&e.ID, &e.SourceID, &e.TargetID, &e.Label, &e.CreatedAt, &e.KGName); err == nil {
 			edges = append(edges, e)
 		}
 	}
@@ -521,27 +517,37 @@ func ImportImpressionGraph(c *fiber.Ctx) error {
 	defer tx.Rollback(ctx)
 
 	for _, n := range graph.Nodes {
+		// Clean kg_name: if empty in JSON, set to 'default'
+		kg := n.KGName
+		if kg == "" { kg = "default" }
+
 		_, err = tx.Exec(ctx, `
-			INSERT INTO impression_nodes (id, user_id, media_id, title, content, node_type, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			INSERT INTO impression_nodes (id, user_id, media_id, title, content, node_type, created_at, kg_name, desk_shelf_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 			ON CONFLICT (id) DO UPDATE SET
 				title = EXCLUDED.title,
 				content = EXCLUDED.content,
 				node_type = EXCLUDED.node_type,
-				media_id = EXCLUDED.media_id
-		`, n.ID, dbUserID, n.MediaID, n.Title, n.Content, n.NodeType, n.CreatedAt)
+				media_id = EXCLUDED.media_id,
+				kg_name = EXCLUDED.kg_name,
+				desk_shelf_id = EXCLUDED.desk_shelf_id
+		`, n.ID, dbUserID, n.MediaID, n.Title, n.Content, n.NodeType, n.CreatedAt, kg, n.DeskShelfID)
 		if err != nil { return c.Status(500).JSON(fiber.Map{"error": "Node upsert failed: " + err.Error()}) }
 	}
 
 	for _, e := range graph.Edges {
+		kg := e.KGName
+		if kg == "" { kg = "default" }
+
 		_, err = tx.Exec(ctx, `
-			INSERT INTO impression_edges (id, user_id, source_id, target_id, label, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6)
+			INSERT INTO impression_edges (id, user_id, source_id, target_id, label, created_at, kg_name)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
 			ON CONFLICT (id) DO UPDATE SET
 				label = EXCLUDED.label,
 				source_id = EXCLUDED.source_id,
-				target_id = EXCLUDED.target_id
-		`, e.ID, dbUserID, e.SourceID, e.TargetID, e.Label, e.CreatedAt)
+				target_id = EXCLUDED.target_id,
+				kg_name = EXCLUDED.kg_name
+		`, e.ID, dbUserID, e.SourceID, e.TargetID, e.Label, e.CreatedAt, kg)
 		if err != nil { return c.Status(500).JSON(fiber.Map{"error": "Edge upsert failed: " + err.Error()}) }
 	}
 
@@ -583,6 +589,106 @@ func SyncNodeToSnippet(c *fiber.Ctx) error {
 	db.Exec(context.Background(), "UPDATE snippets SET linked_node_id = $1 WHERE id = $2", id, snippetID)
 
 	return c.JSON(fiber.Map{"status": "linked", "snippetId": snippetID})
+}
+
+func DuplicateKnowledgeGraph(c *fiber.Ctx) error {
+	userClaims := c.Locals("user").(*Claims)
+	db := database.LocalDB
+	if db == nil { db = database.CloudDB }
+	if db == nil { return c.Status(503).JSON(fiber.Map{"error": "Database not connected"}) }
+
+	type DupeReq struct { Source string `json:"source"`; Target string `json:"target"` }
+	var req DupeReq
+	if err := c.BodyParser(&req); err != nil { return c.Status(400).JSON(fiber.Map{"error": "Invalid body"}) }
+
+	var dbUserID string
+	err := db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User profile not found"}) }
+
+	ctx := context.Background()
+	tx, err := db.Begin(ctx)
+	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
+	defer tx.Rollback(ctx)
+
+	// Map oldID -> newID
+	idMap := make(map[string]string)
+
+	rows, err := tx.Query(ctx, "SELECT id, media_id, title, content, node_type, desk_shelf_id FROM impression_nodes WHERE user_id = $1 AND kg_name = $2", dbUserID, req.Source)
+	if err != nil { return c.Status(500).JSON(fiber.Map{"error": "Fetch nodes failed"}) }
+	
+	type nodeRec struct { ID, MediaID, Title, Content, NodeType, DeskShelfID *string }
+	nodes := []nodeRec{}
+	for rows.Next() {
+		var r nodeRec
+		rows.Scan(&r.ID, &r.MediaID, &r.Title, &r.Content, &r.NodeType, &r.DeskShelfID)
+		nodes = append(nodes, r)
+	}
+	rows.Close()
+
+	for _, n := range nodes {
+		newID := uuid.New().String()
+		idMap[*n.ID] = newID
+		_, err = tx.Exec(ctx, `
+			INSERT INTO impression_nodes (id, user_id, media_id, title, content, node_type, desk_shelf_id, kg_name)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`, newID, dbUserID, n.MediaID, n.Title, n.Content, n.NodeType, n.DeskShelfID, req.Target)
+		if err != nil { return c.Status(500).JSON(fiber.Map{"error": "Clone nodes failed: " + err.Error()}) }
+	}
+
+	eRows, err := tx.Query(ctx, "SELECT source_id, target_id, label FROM impression_edges WHERE user_id = $1 AND kg_name = $2", dbUserID, req.Source)
+	if err == nil {
+		type edgeRec struct { Src, Tgt, Lbl string }
+		edges := []edgeRec{}
+		for eRows.Next() {
+			var er edgeRec
+			eRows.Scan(&er.Src, &er.Tgt, &er.Lbl)
+			edges = append(edges, er)
+		}
+		eRows.Close()
+
+		for _, e := range edges {
+			newSrc, ok1 := idMap[e.Src]
+			newTgt, ok2 := idMap[e.Tgt]
+			if ok1 && ok2 {
+				_, err = tx.Exec(ctx, "INSERT INTO impression_edges (user_id, source_id, target_id, label, kg_name) VALUES ($1, $2, $3, $4, $5)", dbUserID, newSrc, newTgt, e.Lbl, req.Target)
+			}
+		}
+	}
+
+	tx.Commit(ctx)
+	return c.JSON(fiber.Map{"status": "cloned", "nodes": len(nodes)})
+}
+
+func CloneImpressionNode(c *fiber.Ctx) error {
+	id := c.Params("id")
+	userClaims := c.Locals("user").(*Claims)
+	db := database.LocalDB
+	if db == nil { db = database.CloudDB }
+	if db == nil { return c.Status(503).JSON(fiber.Map{"error": "Database not connected"}) }
+
+	var dbUserID string
+	err := db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User profile not found"}) }
+
+	var n models.ImpressionNode
+	err = db.QueryRow(context.Background(), "SELECT media_id, title, content, node_type, desk_shelf_id, kg_name FROM impression_nodes WHERE id = $1 AND user_id = $2", id, dbUserID).Scan(&n.MediaID, &n.Title, &n.Content, &n.NodeType, &n.DeskShelfID, &n.KGName)
+	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "Source node not found"}) }
+
+	newID := uuid.New().String()
+	newTitle := n.Title + " - Copy"
+
+	query := `INSERT INTO impression_nodes (id, user_id, media_id, title, content, node_type, desk_shelf_id, kg_name) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`
+	err = db.QueryRow(context.Background(), query, newID, dbUserID, n.MediaID, newTitle, n.Content, n.NodeType, n.DeskShelfID, n.KGName).Scan(&n.ID)
+	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
+
+	// Duplicate edges where this node is source
+	db.Exec(context.Background(), `INSERT INTO impression_edges (user_id, source_id, target_id, label, kg_name) 
+		SELECT user_id, $1, target_id, label, kg_name FROM impression_edges WHERE source_id = $2 AND user_id = $3`, n.ID, id, dbUserID)
+	// Duplicate edges where this node is target
+	db.Exec(context.Background(), `INSERT INTO impression_edges (user_id, source_id, target_id, label, kg_name) 
+		SELECT user_id, source_id, $1, label, kg_name FROM impression_edges WHERE target_id = $2 AND user_id = $3`, n.ID, id, dbUserID)
+
+	return c.JSON(n)
 }
 
 func GetLinkedSnippet(c *fiber.Ctx) error {

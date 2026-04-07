@@ -60,7 +60,9 @@ func GetBookmarks(c *fiber.Ctx) error {
 }
 
 func CreateBookmark(c *fiber.Ctx) error {
-	userClaims := c.Locals("user").(*Claims)
+	db, userClaims, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
+
 	var b models.Bookmark
 	if err := c.BodyParser(&b); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
@@ -68,7 +70,7 @@ func CreateBookmark(c *fiber.Ctx) error {
 
 	// Resolve internal DB User ID from email
 	var dbUserID string
-	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
@@ -95,7 +97,7 @@ func CreateBookmark(c *fiber.Ctx) error {
 	}
 
 	query := "INSERT INTO bookmarks (user_id, parent_id, title, url, category, icon_url, password_id, is_folder, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, created_at"
-	err = database.LocalDB.QueryRow(context.Background(), query, b.UserID, b.ParentID, b.Title, b.URL, b.Category, b.IconURL, b.PasswordID, b.IsFolder, b.SortOrder).Scan(&b.ID, &b.CreatedAt)
+	err = db.QueryRow(context.Background(), query, b.UserID, b.ParentID, b.Title, b.URL, b.Category, b.IconURL, b.PasswordID, b.IsFolder, b.SortOrder).Scan(&b.ID, &b.CreatedAt)
 	if err != nil {
 		log.Printf("Insert bookmark failed: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to create bookmark"})

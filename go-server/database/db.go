@@ -145,8 +145,12 @@ func EnsureTables() {
 			discord_id TEXT,
 			line_id TEXT,
 			telegram_id TEXT,
+			totp_secret TEXT,
+			totp_enabled BOOLEAN DEFAULT FALSE,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT FALSE`,
 		`CREATE TABLE IF NOT EXISTS devices (
 			id TEXT PRIMARY KEY,
 			status TEXT DEFAULT 'pending',
@@ -294,6 +298,53 @@ func EnsureTables() {
 			sort_order INT DEFAULT 0,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE IF NOT EXISTS chat_logs (
+			id SERIAL PRIMARY KEY,
+			platform TEXT NOT NULL,
+			sender_id TEXT NOT NULL,
+			sender_name TEXT,
+			content TEXT,
+			msg_type TEXT,
+			media_id TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS remark_containers (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			content TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS remark_items (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			container_id UUID REFERENCES remark_containers(id) ON DELETE CASCADE, -- NULL means in staging area
+			log_id TEXT NOT NULL,
+			sort_order INT DEFAULT 0,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS bookcase (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			store_id UUID NOT NULL,
+			title TEXT NOT NULL,
+			category TEXT DEFAULT 'Book',
+			folder TEXT DEFAULT '', -- Grouping for books
+			notes TEXT DEFAULT '', -- Legacy/Single note fallback
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(user_id, store_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS bookcase_notes (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			book_id UUID REFERENCES bookcase(id) ON DELETE CASCADE,
+			title TEXT NOT NULL,
+			content TEXT DEFAULT '',
+			note_type TEXT DEFAULT 'markdown', -- markdown or txt
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
 	}
 
 	if LocalDB != nil {
@@ -323,6 +374,8 @@ func EnsureTables() {
 			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS is_folder BOOLEAN DEFAULT FALSE`,
 			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS sort_order INT DEFAULT 0`,
 			`ALTER TABLE bookmarks ALTER COLUMN url DROP NOT NULL`,
+			`ALTER TABLE remark_items ALTER COLUMN log_id TYPE TEXT`,
+			`ALTER TABLE remark_containers ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE`,
 			`ALTER TABLE impression_nodes ADD COLUMN IF NOT EXISTS desk_shelf_id UUID REFERENCES desk_shelves(id) ON DELETE SET NULL`,
 			// --- Performance Indexes ---
 			`CREATE INDEX IF NOT EXISTS idx_impression_nodes_user ON impression_nodes(user_id)`,
@@ -335,6 +388,22 @@ func EnsureTables() {
 			`CREATE INDEX IF NOT EXISTS idx_desk_items_user ON desk_items(user_id)`,
 			`CREATE INDEX IF NOT EXISTS idx_desk_items_shelf ON desk_items(shelf_id)`,
 			`CREATE INDEX IF NOT EXISTS idx_desk_shelves_user ON desk_shelves(user_id)`,
+			// --- 🚀 Multi-KG & Advanced Partitioning ---
+			`ALTER TABLE impression_nodes ADD COLUMN IF NOT EXISTS kg_name TEXT DEFAULT 'default'`,
+			`ALTER TABLE impression_edges ADD COLUMN IF NOT EXISTS kg_name TEXT DEFAULT 'default'`,
+			`CREATE INDEX IF NOT EXISTS idx_impression_nodes_kg ON impression_nodes(kg_name)`,
+			`CREATE INDEX IF NOT EXISTS idx_impression_edges_kg ON impression_edges(kg_name)`,
+			// --- Bookcase 2.0 ---
+			`ALTER TABLE bookcase ADD COLUMN IF NOT EXISTS folder TEXT DEFAULT ''`,
+			`CREATE TABLE IF NOT EXISTS bookcase_notes (
+				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				book_id UUID REFERENCES bookcase(id) ON DELETE CASCADE,
+				title TEXT NOT NULL,
+				content TEXT DEFAULT '',
+				note_type TEXT DEFAULT 'markdown',
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			)`,
 		}
 		for _, m := range migrations {
 			LocalDB.Exec(ctx, m)

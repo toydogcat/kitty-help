@@ -215,11 +215,18 @@ func (d *DiscordBot) forwardToStorehouse(s *discordgo.Session, m *discordgo.Mess
 	var lastMediaID string
 	for _, att := range m.Attachments {
 		mediaType := "photo"
-		ext := filepath.Ext(att.Filename)
+		ext := strings.ToLower(filepath.Ext(att.Filename))
+		
+		// Map extensions to media types
 		if ext == ".mp4" || ext == ".mov" || ext == ".webm" {
 			mediaType = "video"
 		} else if ext == ".mp3" || ext == ".wav" || ext == ".ogg" {
 			mediaType = "audio"
+		} else if ext == ".pdf" || ext == ".epub" || ext == ".djvu" || ext == ".txt" || ext == ".doc" || ext == ".docx" {
+			mediaType = "document"
+		} else if ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".gif" && ext != ".webp" {
+			// Fallback for other unknown file types
+			mediaType = "document"
 		}
 
 		// 1. Upload to Telegram Storehouse
@@ -231,8 +238,8 @@ func (d *DiscordBot) forwardToStorehouse(s *discordgo.Session, m *discordgo.Mess
 		defer resp.Body.Close()
 
 		// 2. Format backup message
-		backupMsg := fmt.Sprintf("📦 **Media Backup**\n\n**Source Platform**: `discord`\n**Sender ID**: `%s`\n**Chat ID**: `%s`\n**Timestamp**: `%s`\n**Username**: @%s\n**Content**: %s",
-			m.Author.ID, m.ChannelID, time.Now().Format("2006-01-02 15:04:05"), m.Author.Username, m.Content)
+		backupMsg := fmt.Sprintf("📦 **Media Backup**\n\n**Source Platform**: `discord`\n**Filename**: `%s`\n**Sender ID**: `%s`\n**Username**: @%s\n**Content**: %s",
+			att.Filename, m.Author.ID, m.Author.Username, m.Content)
 		
 		var telegramFileID string
 		if tgBot != nil && tgBot.storehouseChatID != 0 {
@@ -255,8 +262,8 @@ func (d *DiscordBot) forwardToStorehouse(s *discordgo.Session, m *discordgo.Mess
 
 		var mediaID string
 		err = targetDB.QueryRow(context.Background(),
-			"INSERT INTO media_archives (file_id, message_id, media_type, caption, source_platform, sender_name, sender_id, is_indexable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
-			telegramFileID, msgIDInt, mediaType, m.Content, "discord", m.Author.Username, m.Author.ID, true).Scan(&mediaID)
+			"INSERT INTO media_archives (file_id, message_id, media_type, title, caption, source_platform, sender_name, sender_id, is_indexable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
+			telegramFileID, msgIDInt, mediaType, att.Filename, m.Content, "discord", m.Author.Username, m.Author.ID, true).Scan(&mediaID)
 
 		if err != nil {
 			log.Printf("❌ Failed to record Discord media: %v", err)

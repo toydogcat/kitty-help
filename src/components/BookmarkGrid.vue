@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, computed } from 'vue';
 import { apiService } from '../services/api';
+import { usePin } from '../composables/usePin';
 import BookmarkTreeNode from './BookmarkTreeNode.vue';
+
+const { pinToDesk } = usePin();
 
 interface Bookmark {
   id: string;
@@ -288,18 +291,13 @@ const confirmDelete = async (bookmark: Bookmark) => {
 
 const addToDesk = async (bookmark: Bookmark) => {
   try {
-    await apiService.addDeskItem({
-      type: 'bookmark',
-      refId: bookmark.id,
-      shelfId: null,
-      sortOrder: 0
-    });
+    await pinToDesk('bookmark', bookmark.id);
     pinnedIds.value.add(bookmark.id);
     setTimeout(() => {
       pinnedIds.value.delete(bookmark.id);
     }, 2000);
   } catch (err) {
-    console.error("Failed to add to desk:", err);
+    alert("Failed to pin to desk");
   }
 };
 

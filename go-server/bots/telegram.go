@@ -204,6 +204,11 @@ func (t *TelegramBot) forwardToStorehouse(msg *telego.Message) string {
 	senderName := fmt.Sprintf("%s %s", msg.From.FirstName, msg.From.LastName)
 	senderID := fmt.Sprintf("%d", msg.From.ID)
 
+	title := ""
+	if msg.Document != nil {
+		title = msg.Document.FileName
+	}
+
 	targetDB := database.LocalDB
 	if targetDB == nil {
 		targetDB = database.CloudDB
@@ -216,8 +221,8 @@ func (t *TelegramBot) forwardToStorehouse(msg *telego.Message) string {
 
 	var mediaID string
 	err = targetDB.QueryRow(context.Background(),
-		"INSERT INTO media_archives (file_id, message_id, media_type, caption, source_platform, sender_name, sender_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
-		fileID, msg.MessageID, mediaType, caption, sourcePlatform, senderName, senderID).Scan(&mediaID)
+		"INSERT INTO media_archives (file_id, message_id, media_type, title, caption, source_platform, sender_name, sender_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
+		fileID, msg.MessageID, mediaType, title, caption, sourcePlatform, senderName, senderID).Scan(&mediaID)
 
 	if err == nil {
 		log.Printf("📦 Recorded media to storehouse: %s (%s)", fileID, sourcePlatform)

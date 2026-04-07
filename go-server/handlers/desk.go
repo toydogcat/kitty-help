@@ -16,7 +16,7 @@ func GetShelves(c *fiber.Ctx) error {
 	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
 
 	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
@@ -46,7 +46,7 @@ func CreateShelf(c *fiber.Ctx) error {
 	}
 
 	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
@@ -71,7 +71,7 @@ func UpdateShelf(c *fiber.Ctx) error {
 	}
 
 	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
@@ -90,7 +90,7 @@ func DuplicateShelf(c *fiber.Ctx) error {
 	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
 
 	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
@@ -156,36 +156,36 @@ func GetDeskItems(c *fiber.Ctx) error {
 	shelfId := c.Query("shelfId") // Can be empty for desktop items
 
 	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}
 
 	query := `
 		SELECT di.id, di.user_id, di.shelf_id, di.type, di.ref_id, di.sort_order, di.created_at,
-		CASE 
-			WHEN di.type = 'bookmark' THEN (SELECT COALESCE(title, '') FROM bookmarks WHERE id = di.ref_id)
-			WHEN di.type = 'snippet' THEN (SELECT COALESCE(name, '') FROM snippets WHERE id = di.ref_id)
-			WHEN di.type = 'media' THEN (SELECT COALESCE(title, 'Untitled Resource') FROM media_archives WHERE id = di.ref_id)
-			ELSE 'Unknown Item'
-		END as title,
-		CASE 
-			WHEN di.type = 'snippet' THEN (SELECT COALESCE(content, '') FROM snippets WHERE id = di.ref_id)
-			WHEN di.type = 'media' THEN (SELECT COALESCE(notes, '') FROM media_archives WHERE id = di.ref_id)
-			ELSE ''
-		END as content,
-		CASE 
-			WHEN di.type = 'bookmark' THEN (SELECT COALESCE(url, '') FROM bookmarks WHERE id = di.ref_id)
-			ELSE ''
-		END as url,
-		CASE 
-			WHEN di.type = 'media' THEN (SELECT COALESCE(file_id, '') FROM media_archives WHERE id = di.ref_id)
-			ELSE ''
-		END as file_id,
-		CASE 
-			WHEN di.type = 'media' THEN (SELECT COALESCE(source_platform, 'telegram') FROM media_archives WHERE id = di.ref_id)
-			ELSE ''
-		END as source
+		COALESCE(
+			(SELECT title FROM bookcase_notes WHERE id::text = di.ref_id::text),
+			(SELECT title FROM bookmarks WHERE id::text = di.ref_id::text),
+			(SELECT name FROM snippets WHERE id::text = di.ref_id::text),
+			(SELECT title FROM media_archives WHERE id::text = di.ref_id::text),
+			(SELECT name FROM remark_containers WHERE id::text = di.ref_id::text),
+			(SELECT site_name FROM passwords WHERE id::text = di.ref_id::text),
+			'Untitled Item'
+		) as title,
+		COALESCE(
+			(SELECT content FROM bookcase_notes WHERE id::text = di.ref_id::text),
+			(SELECT content FROM snippets WHERE id::text = di.ref_id::text),
+			(SELECT notes FROM media_archives WHERE id::text = di.ref_id::text),
+			(SELECT content FROM remark_containers WHERE id::text = di.ref_id::text),
+			(SELECT account FROM passwords WHERE id::text = di.ref_id::text),
+			''
+		) as content,
+		COALESCE(
+			(SELECT url FROM bookmarks WHERE id::text = di.ref_id::text),
+			''
+		) as url,
+		COALESCE((SELECT file_id FROM media_archives WHERE id::text = di.ref_id::text), '') as file_id,
+		COALESCE((SELECT source_platform FROM media_archives WHERE id::text = di.ref_id::text), '') as source
 		FROM desk_items di
 		WHERE di.user_id = $1
 	`
@@ -231,7 +231,7 @@ func AddDeskItem(c *fiber.Ctx) error {
 	}
 
 	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
 	}

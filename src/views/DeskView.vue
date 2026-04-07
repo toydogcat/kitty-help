@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { apiService } from '../services/api';
-import { marked } from 'marked';
+import UnifiedRemarkModal from '../components/UnifiedRemarkModal.vue';
+import { usePin } from '../composables/usePin';
+
+const route = useRoute();
+const router = useRouter();
+
+const { unpinFromDesk } = usePin();
 
 const props = defineProps<{
   userRole: string;
@@ -13,8 +19,9 @@ const props = defineProps<{
 // State
 const shelves = ref<any[]>([]);
 const desktopItems = ref<any[]>([]);
-const activeShelfId = ref<string | null>(null); // null means "Desktop"
+const activeShelfId = ref<string | null>(null);
 const loading = ref(true);
+const modalLoading = ref(false);
 const draggingItem = ref<any>(null);
 const dragOverShelfId = ref<string | null | 'desktop'>(null);
 
@@ -26,12 +33,64 @@ const renamingShelfId = ref<string | null>(null);
 
 // Item Editor Modal
 const showEditModal = ref(false);
+const isFullScreen = ref(false);
 const editingItem = ref<any>(null);
 const editBuffer = ref({ title: '', content: '' });
-const editMode = ref<'edit' | 'preview'>('edit');
+const editMode = ref<'edit' | 'preview'>('preview'); 
 const saving = ref(false);
+const remarkDetails = ref<any>(null); 
 
-const route = useRoute();
+// Zoom Overlay for Remark items inside modal
+const zoomedImageUrl = ref('');
+
+const activeShelfName = computed(() => {
+  if (!activeShelfId.value) return 'Main Desktop';
+  const s = shelves.value.find(s => s.id === activeShelfId.value);
+  return s ? s.name : 'Unknown Shelf';
+});
+
+// --- 🔐 2FA Security Logic ---
+const is2FAVerified = ref(false);
+const show2FAModal = ref(false);
+const totpCode = ref('');
+const totpError = ref('');
+const pendingAction = ref<(() => void) | null>(null);
+
+const check2FA = async () => {
+  try {
+    const status = await apiService.getTOTPStatus();
+    is2FAVerified.value = status.enabled && status.verified;
+    return is2FAVerified.value;
+  } catch {
+    return false;
+  }
+};
+
+const handleSensitiveAction = async (action: () => void) => {
+  const verified = await check2FA();
+  if (verified) {
+    action();
+  } else {
+    show2FAModal.value = true;
+    pendingAction.value = action;
+  }
+};
+
+const verifyTOTP = async () => {
+  totpError.value = '';
+  try {
+    await apiService.verifyTOTP(totpCode.value);
+    totpCode.value = '';
+    show2FAModal.value = false;
+    is2FAVerified.value = true;
+    if (pendingAction.value) {
+      pendingAction.value();
+      pendingAction.value = null;
+    }
+  } catch (err: any) {
+    totpError.value = err.response?.data?.error || 'Verification failed';
+  }
+};
 
 onMounted(() => {
   const shelf = route.query.shelfId as string;
@@ -109,7 +168,6 @@ const deleteShelf = async (id: string) => {
   }
 };
 
-// Drag and Drop Logic
 const onDragStart = (item: any) => {
   draggingItem.value = item;
 };
@@ -132,26 +190,31 @@ const onDropOnShelf = async (shelfId: string | null) => {
   }
 };
 
-const removeItem = async (id: string) => {
-  try {
-    await apiService.deleteDeskItem(id);
-    await fetchData();
-  } catch (err) {
-    alert("Remove failed");
+const removeItem = async (id: string, type: string = '') => {
+  const performDelete = async () => {
+    try {
+      await unpinFromDesk(id);
+      await fetchData();
+    } catch (err) {
+      alert("Remove failed");
+    }
+  };
+
+  if (type === 'password') {
+    handleSensitiveAction(performDelete);
+  } else {
+    performDelete();
   }
 };
-
-const activeShelfName = computed(() => {
-  if (!activeShelfId.value) return 'Main Desktop';
-  const s = shelves.value.find(x => x.id === activeShelfId.value);
-  return s ? s.name : 'Unknown Shelf';
-});
 
 const getIcon = (type: string) => {
   switch (type) {
     case 'bookmark': return '🔖';
     case 'snippet': return '📄';
     case 'media': return '🖼️';
+    case 'remark': return '💬';
+    case 'password': return '🔑';
+    case 'book': return '📚';
     default: return '📦';
   }
 };
@@ -164,43 +227,94 @@ const getThumbnail = (item: any, large = false) => {
   return null;
 };
 
-const openOriginal = (item: any) => {
-  if (item.type === 'bookmark' && item.url) {
-    window.open(item.url, '_blank');
-    return;
-  }
-  
-  // Open Internal Editor
-  editingItem.value = item;
-  editBuffer.value = { 
-    title: item.title, 
-    content: item.content || '' 
+// Helper removed because it is now handled inside UnifiedRemarkModal component
+
+const openOriginal = async (item: any) => {
+  const performOpen = async () => {
+    if (item.type === 'bookmark' && item.url) {
+      if (item.url.startsWith('/') && !item.url.startsWith('//')) {
+        router.push(item.url);
+      } else {
+        window.open(item.url, '_blank');
+      }
+      return;
+    }
+    
+    editingItem.value = item;
+    editBuffer.value = { 
+      title: item.title, 
+      content: item.notes || item.content || '' 
+    };
+    editMode.value = 'preview'; 
+    showEditModal.value = true;
+    isFullScreen.value = false;
+    remarkDetails.value = null;
+
+    if (item.type === 'remark') {
+      modalLoading.value = true;
+      try {
+        const data = await apiService.getRemarks();
+        const container = data.containers?.find((c: any) => c.id === item.refId);
+        remarkDetails.value = container || null;
+      } catch (err) {
+        console.error("Failed to load remark details:", err);
+      } finally {
+        modalLoading.value = false;
+      }
+    } else if (item.type === 'book') {
+      modalLoading.value = true;
+      try {
+        const books = await apiService.getBookcase();
+        const b = books.find((x: any) => x.id === item.refId);
+        if (b) {
+          editBuffer.value.content = b.notes || '';
+          editBuffer.value.title = b.title;
+        }
+      } catch (err) {
+        console.error("Failed to load book details:", err);
+      } finally {
+        modalLoading.value = false;
+      }
+    }
   };
-  showEditModal.value = true;
+
+  if (item.type === 'password') {
+    handleSensitiveAction(performOpen);
+  } else {
+    performOpen();
+  }
 };
 
-const saveItemEdit = async () => {
+const saveItemEdit = async (updatedData: { title: string, content: string }) => {
   if (!editingItem.value) return;
   saving.value = true;
   try {
     if (editingItem.value.type === 'snippet') {
       await apiService.updateSnippet(editingItem.value.refId, {
-        name: editBuffer.value.title,
-        content: editBuffer.value.content
+        name: updatedData.title,
+        content: updatedData.content
       });
     } else if (editingItem.value.type === 'media') {
       await apiService.updateStorehouseItem(editingItem.value.refId, {
-        title: editBuffer.value.title,
-        notes: editBuffer.value.content
+        title: updatedData.title,
+        notes: updatedData.content
       });
     } else if (editingItem.value.type === 'bookmark') {
       await apiService.updateBookmark(editingItem.value.refId, {
-        title: editBuffer.value.title
+        title: updatedData.title
       });
+    } else if (editingItem.value.type === 'remark') {
+      await apiService.updateRemark(editingItem.value.refId, {
+        name: updatedData.title,
+        content: updatedData.content,
+        isPinned: remarkDetails.value?.isPinned || false
+      });
+    } else if (editingItem.value.type === 'book') {
+      await apiService.updateBookNotes(editingItem.value.refId, updatedData.content);
     }
     
     showEditModal.value = false;
-    await fetchData(); // Refresh data to show updated title/content
+    await fetchData(); 
   } catch (err) {
     alert("Save failed");
   } finally {
@@ -211,11 +325,10 @@ const saveItemEdit = async () => {
 
 <template>
   <div class="desk-view">
-    <!-- Header -->
     <div class="desk-header">
       <div class="title-group">
         <h1>🖥️ Desk Explorer</h1>
-        <p class="subtitle">Current Context: <strong>{{ activeShelfName }}</strong></p>
+        <p class="subtitle">Current Context: <strong>{{ activeShelfName }}</strong> <span v-if="desktopItems.length" class="count-tag">({{ desktopItems.length }} items)</span></p>
       </div>
       <div class="actions">
         <button v-if="activeShelfId" @click="switchShelf(null)" class="back-btn">⬅ Back to Desktop</button>
@@ -223,7 +336,6 @@ const saveItemEdit = async () => {
       </div>
     </div>
 
-    <!-- Desktop Area -->
     <div 
       class="desktop-canvas" 
       :class="{ 'drop-active': draggingItem && activeShelfId !== null }"
@@ -245,7 +357,7 @@ const saveItemEdit = async () => {
           class="desk-tile"
           draggable="true"
           @dragstart="onDragStart(it)"
-          @dblclick="openOriginal(it)"
+          @click="openOriginal(it)"
         >
           <div v-if="getThumbnail(it)" class="tile-preview">
             <img :src="getThumbnail(it) || ''" loading="lazy" />
@@ -254,51 +366,32 @@ const saveItemEdit = async () => {
           
           <div class="tile-content">
             <span class="tile-title">{{ it.title }}</span>
-            <span class="tile-meta">{{ it.type.toUpperCase() }}</span>
+            <div class="tile-badges">
+              <span class="badge" :class="it.type">{{ it.type.toUpperCase() }}</span>
+            </div>
           </div>
-          <button @click.stop="removeItem(it.id)" class="remove-btn" title="Unlink from desk">×</button>
+          <button @click.stop="removeItem(it.id, it.type)" class="remove-btn" title="Unlink from desk">×</button>
         </div>
       </div>
     </div>
 
-    <!-- Shelves Area (Bottom Rail) -->
+    <!-- Shelves Area -->
     <div class="shelves-rail shadow-lg">
       <div class="rail-header">
         <span class="rail-title">📚 My Shelves</span>
         <span class="rail-hint">Drag items below to store</span>
       </div>
-      
-      <div class="shelves-container">
-        <!-- Main Desktop Entry -->
-        <div 
-          class="shelf-card desktop-link" 
-          :class="{ active: activeShelfId === null, 'drag-over': dragOverShelfId === 'desktop' }"
-          @click="switchShelf(null)"
-          @dragover.prevent="onDragOverShelf('desktop')"
-          @dragleave="onDragOverShelf(null)"
-          @drop="onDropOnShelf(null)"
-        >
+      <div class="shelves-container custom-scrollbar">
+        <div class="shelf-card desktop-link" :class="{ active: activeShelfId === null, 'drag-over': dragOverShelfId === 'desktop' }" @click="switchShelf(null)" @dragover.prevent="onDragOverShelf('desktop')" @dragleave="onDragOverShelf(null)" @drop="onDropOnShelf(null)">
           <span class="s-icon">{{ dragOverShelfId === 'desktop' ? '📥' : '🏠' }}</span>
           <span class="s-name">Desktop</span>
         </div>
-
-        <!-- Dynamic Shelves -->
-        <div 
-          v-for="s in shelves" 
-          :key="s.id"
-          class="shelf-card"
-          :class="{ active: activeShelfId === s.id, 'drag-over': dragOverShelfId === s.id }"
-          @click="switchShelf(s.id)"
-          @dblclick="switchShelf(s.id)"
-          @dragover.prevent="onDragOverShelf(s.id)"
-          @dragleave="onDragOverShelf(null)"
-          @drop="onDropOnShelf(s.id)"
-        >
+        <div v-for="s in shelves" :key="s.id" class="shelf-card" :class="{ active: activeShelfId === s.id, 'drag-over': dragOverShelfId === s.id }" @click="switchShelf(s.id)" @dragover.prevent="onDragOverShelf(s.id)" @dragleave="onDragOverShelf(null)" @drop="onDropOnShelf(s.id)">
           <div class="shelf-top">
             <span class="s-icon">{{ dragOverShelfId === s.id ? '📥' : '📁' }}</span>
             <div class="s-actions">
-              <button @click.stop="duplicateShelf(s.id)" class="s-dup" title="Duplicate Shelf">👯</button>
-              <button @click.stop="openRenameModal(s)" class="s-edit" title="Rename">✎</button>
+              <button @click.stop="duplicateShelf(s.id)" class="s-dup">👯</button>
+              <button @click.stop="openRenameModal(s)" class="s-edit">✎</button>
               <button @click.stop="deleteShelf(s.id)" class="s-del">×</button>
             </div>
           </div>
@@ -307,513 +400,172 @@ const saveItemEdit = async () => {
       </div>
     </div>
 
-    <!-- Modal for New/Rename Shelf -->
+    <!-- Modals -->
     <div v-if="showAddShelfModal || showRenameModal" class="modal-overlay" @click.self="showAddShelfModal = showRenameModal = false">
       <div class="modal-card mini">
         <h3>{{ showRenameModal ? 'Rename Shelf' : 'Create New Shelf' }}</h3>
         <input v-model="newShelfName" placeholder="Shelf Name..." @keyup.enter="showRenameModal ? handleRenameShelf() : handleAddShelf()" autoFocus />
         <div class="modal-actions">
-          <button @click="showAddShelfModal = showRenameModal = false">Cancel</button>
-          <button @click="showRenameModal ? handleRenameShelf() : handleAddShelf()" class="confirm-btn">
-            {{ showRenameModal ? 'Rename' : 'Create' }}
-          </button>
+           <button @click="showAddShelfModal = showRenameModal = false">Cancel</button>
+           <button @click="showRenameModal ? handleRenameShelf() : handleAddShelf()" class="confirm-btn">Confirm</button>
         </div>
       </div>
     </div>
 
-    <!-- Universal Item Editor Modal -->
+    <!-- UNIFIED ITEM EDITOR MODAL -->
+    <UnifiedRemarkModal 
+      :show="showEditModal"
+      :item="editingItem"
+      :details="remarkDetails"
+      :loading="modalLoading"
+      @close="showEditModal = false"
+      @save="saveItemEdit"
+      @zoom="zoomedImageUrl = $event"
+    />
+
     <Teleport to="body">
-      <div v-if="showEditModal" class="modal-overlay editor-overlay" @click.self="showEditModal = false">
-        <div class="editor-pane shadow-2xl">
-          <div class="editor-header">
-            <div class="type-badge">{{ editingItem?.type.toUpperCase() }} EDITOR</div>
-            <div class="editor-modes" v-if="editingItem?.type === 'snippet'">
-              <button :class="{ active: editMode === 'edit' }" @click="editMode = 'edit'">EDIT</button>
-              <button :class="{ active: editMode === 'preview' }" @click="editMode = 'preview'">PREVIEW</button>
-            </div>
-            <button @click="showEditModal = false" class="close-x">✕</button>
-          </div>
-
-          <div class="editor-body">
-            <!-- Media Preview -->
-            <div v-if="editingItem?.type === 'media'" class="media-large-preview">
-              <img :src="getThumbnail(editingItem, true) || ''" />
-            </div>
-
-            <!-- Title Input -->
-            <div class="field">
-              <label>Title</label>
-              <input v-model="editBuffer.title" placeholder="Item Name..." />
-            </div>
-
-            <!-- Content Area (for Snippets/Media Notes) -->
-            <div v-if="editingItem?.type !== 'bookmark'" class="field fill">
-              <label>{{ editingItem?.type === 'snippet' ? 'Content' : 'Notes / Description' }}</label>
-              
-              <div v-if="editingItem?.type === 'snippet' && editMode === 'preview'" class="markdown-preview-pane" v-html="marked.parse(editBuffer.content || '')"></div>
-              <textarea v-else v-model="editBuffer.content" placeholder="Type something here..."></textarea>
-            </div>
-            
-            <div v-if="editingItem?.type === 'bookmark'" class="bookmark-info">
-              <p>URL: <a :href="editingItem.url" target="_blank">{{ editingItem.url }}</a></p>
-            </div>
-          </div>
-
-          <div class="editor-footer">
-            <button @click="showEditModal = false" class="cancel-btn">Discard</button>
-            <button @click="saveItemEdit" class="save-btn" :disabled="saving">
-              {{ saving ? 'Saving...' : '✅ Save Changes' }}
-            </button>
-          </div>
-        </div>
+      <div v-if="zoomedImageUrl" class="global-zoom" @click="zoomedImageUrl = ''">
+         <img :src="zoomedImageUrl" />
+         <span class="close-zoom">✕</span>
       </div>
     </Teleport>
+
+    <!-- 🔐 GLOBAL 2FA VERIFY MODAL FOR DESK SENSITIVE ACTIONS -->
+    <div v-if="show2FAModal" class="modal-overlay" @click.self="show2FAModal = false">
+      <div class="modal-content card glow auth-verify">
+        <div class="modal-header center">
+          <div class="icon-circle">🔑</div>
+          <h3>Security Verification</h3>
+          <p>This action requires a 2FA challenge.</p>
+        </div>
+        
+        <div class="form-group center">
+          <label>Google Authenticator Code</label>
+          <input v-model="totpCode" class="otp-input" placeholder="000 000" maxlength="6" autofocus @keyup.enter="verifyTOTP" />
+          <p v-if="totpError" class="error-msg">{{ totpError }}</p>
+        </div>
+
+        <div class="modal-actions full">
+          <button class="btn-confirm big" @click="verifyTOTP">Confirm Action</button>
+          <button class="btn-cancel" @click="show2FAModal = false">Cancel</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.desk-view {
-  height: calc(100vh - 120px);
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  padding: 1rem;
-  position: relative;
-}
-
-.desk-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.title-group h1 { margin: 0; font-size: 1.8rem; color: var(--primary-color); }
-.subtitle { margin: 0; opacity: 0.7; font-size: 0.9rem; }
+.desk-view { height: calc(100vh - 120px); display: flex; flex-direction: column; gap: 1.5rem; padding: 1rem; position: relative; }
+.desk-header { display: flex; justify-content: space-between; align-items: center; background: rgba(var(--primary-rgb), 0.05); padding: 1.2rem; border-radius: 16px; border: 1px solid rgba(var(--primary-rgb), 0.1); }
+.title-group h1 { margin: 0; font-size: 1.6rem; color: var(--primary-color); text-shadow: 0 0 15px rgba(var(--primary-rgb), 0.3); }
+.subtitle { margin: 4px 0 0 0; opacity: 0.8; font-size: 0.85rem; display: flex; align-items: center; gap: 8px; }
+.count-tag { background: rgba(var(--primary-rgb), 0.2); color: var(--primary-color); padding: 2px 8px; border-radius: 20px; font-weight: 700; font-size: 0.75rem; border: 1px solid rgba(var(--primary-rgb), 0.3); }
 
 .actions { display: flex; gap: 0.8rem; }
-.add-shelf-btn {
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  padding: 0.6rem 1.2rem;
-  border-radius: 10px;
-  font-weight: 700;
-  cursor: pointer;
-}
+.add-shelf-btn, .back-btn { padding: 0.6rem 1.2rem; border-radius: 10px; font-weight: 700; cursor: pointer; transition: all 0.2s; }
+.add-shelf-btn { background: var(--primary-color); color: white; border: none; box-shadow: 0 4px 15px rgba(var(--primary-rgb), 0.4); }
+.add-shelf-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(var(--primary-rgb), 0.5); }
+.back-btn { background: rgba(var(--primary-rgb), 0.1); border: 1px solid var(--primary-color); color: var(--primary-color); }
 
-.back-btn {
-  background: rgba(var(--primary-rgb), 0.1);
-  border: 1px solid var(--primary-color);
-  color: var(--primary-color);
-  padding: 0.6rem 1.2rem;
-  border-radius: 10px;
-  font-weight: 700;
-  cursor: pointer;
-}
+.desktop-canvas { flex: 1; background: rgba(0, 0, 0, 0.2); border: 2px solid rgba(var(--primary-rgb), 0.1); border-radius: 24px; overflow-y: auto; padding: 2rem; position: relative; box-shadow: inset 0 0 40px rgba(0,0,0,0.3); }
+.items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1.5rem; }
 
-/* Desktop Canvas */
-.desktop-canvas {
-  flex: 1;
-  background: rgba(var(--primary-rgb), 0.03);
-  border: 2px dashed rgba(var(--primary-rgb), 0.1);
-  border-radius: 20px;
-  position: relative;
-  overflow-y: auto;
-  padding: 2rem;
-  transition: all 0.3s;
-}
+.desk-tile { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 20px; padding: 1rem; display: flex; flex-direction: column; gap: 0.8rem; cursor: pointer; position: relative; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); backdrop-filter: blur(12px); }
+.desk-tile:hover { transform: translateY(-8px); border-color: var(--primary-color); background: rgba(var(--primary-rgb), 0.05); box-shadow: 0 15px 35px rgba(0,0,0,0.4); }
 
-.desktop-canvas.drop-active {
-  background: rgba(var(--primary-rgb), 0.08);
-  border-color: var(--primary-color);
-}
+.tile-preview { width: 100%; height: 110px; border-radius: 14px; overflow: hidden; background: #000; border: 1px solid rgba(255,255,255,0.1); }
+.tile-preview img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s; }
+.desk-tile:hover .tile-preview img { transform: scale(1.1); }
 
-.desk-loader, .empty-desk {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  opacity: 0.6;
-}
+.tile-icon { width: 100%; height: 110px; display: flex; align-items: center; justify-content: center; font-size: 3rem; background: rgba(255,255,255,0.02); border-radius: 14px; border: 1px dashed rgba(255,255,255,0.1); }
 
-.empty-icon { font-size: 4rem; margin-bottom: 1rem; }
+.tile-content { flex: 1; padding: 4px; display: flex; flex-direction: column; gap: 4px; }
+.tile-title { font-weight: 700; font-size: 0.95rem; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Grid Tiles */
-.items-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 1.5rem;
-}
+.tile-badges { display: flex; gap: 6px; }
+.badge { font-size: 0.65rem; font-weight: 800; padding: 2px 8px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+.badge.bookmark { background: #4a90e2; color: #fff; }
+.badge.remark { background: #9013fe; color: #fff; }
+.badge.media { background: #2ecc71; color: #fff; }
+.badge.password { background: #f1c40f; color: #000; }
+.badge.snippet { background: #f1c40f; color: #000; }
 
-.desk-tile {
-  background: var(--card-bg);
-  border: 1px solid rgba(var(--primary-rgb), 0.2);
-  border-radius: 16px;
-  padding: 1.2rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.8rem;
-  cursor: grab;
-  position: relative;
-  transition: all 0.2s;
-  backdrop-filter: blur(10px);
-}
-
-.desk-tile:hover {
-  transform: translateY(-5px);
-  border-color: var(--primary-color);
-  box-shadow: 0 8px 25px rgba(0,0,0,0.2);
-}
-
-.desk-tile:active { cursor: grabbing; }
-
-.tile-icon { font-size: 2.5rem; }
-.tile-preview {
-  width: 100%;
-  height: 100px;
-  border-radius: 12px;
-  overflow: hidden;
-  background: rgba(0,0,0,0.2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.tile-preview img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.3s ease;
-}
-.desk-tile:hover .tile-preview img {
-  transform: scale(1.1);
-}
-
-.tile-content { text-align: center; width: 100%; }
-.tile-title {
-  display: block;
-  font-weight: 700;
-  font-size: 0.95rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.tile-meta { font-size: 0.7rem; opacity: 0.5; font-weight: 800; letter-spacing: 1px; }
-
-.remove-btn {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  background: none;
-  border: none;
-  color: #ff5f5f;
-  font-size: 1.2rem;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
+.remove-btn { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 50%; width: 24px; height: 24px; opacity: 0; transition: all 0.2s; display: flex; align-items: center; justify-content: center; z-index: 5; }
 .desk-tile:hover .remove-btn { opacity: 1; }
+.remove-btn:hover { background: #e74c3c; border-color: #e74c3c; transform: scale(1.1); }
 
-/* Shelves Rail */
-.shelves-rail {
-  background: rgba(var(--primary-rgb), 0.1);
-  backdrop-filter: blur(20px);
-  border-radius: 20px;
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  border: 1px solid rgba(255,255,255,0.05);
-}
+.shelves-rail { background: rgba(13, 17, 23, 0.9); border-radius: 24px; padding: 1.5rem; border: 1px solid rgba(var(--primary-rgb), 0.2); display: flex; flex-direction: column; gap: 1rem; box-shadow: 0 -10px 40px rgba(0,0,0,0.5); }
+.rail-header { display: flex; align-items: center; justify-content: space-between; padding: 0 8px; }
+.rail-title { color: var(--primary-color); font-weight: 800; font-size: 1.2rem; letter-spacing: 1px; }
+.rail-hint { font-size: 0.8rem; opacity: 0.5; font-style: italic; }
 
-.rail-header { display: flex; justify-content: space-between; align-items: center; padding: 0 0.5rem; }
-.rail-title { font-weight: 800; font-size: 0.9rem; letter-spacing: 1px; }
-.rail-hint { font-size: 0.75rem; opacity: 0.5; font-style: italic; }
-
-.shelves-container {
-  display: flex;
-  gap: 1rem;
-  overflow-x: auto;
-  padding: 0.5rem;
-}
-
-.shelf-card {
-  min-width: 120px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 15px;
-  padding: 0.8rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  cursor: pointer;
+.shelves-container { display: flex; gap: 1.2rem; overflow-x: auto; padding: 0.5rem; }
+.shelf-card { 
+  min-width: 160px; 
+  height: 110px; 
+  background: rgba(255, 255, 255, 0.03); 
+  border: 1px solid rgba(255, 255, 255, 0.1); 
+  border-radius: 20px; 
+  padding: 1.2rem; 
+  display: flex; 
+  flex-direction: column; 
+  align-items: center; 
+  justify-content: center; 
+  gap: 8px; 
+  cursor: pointer; 
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.shelf-card.active {
-  background: var(--primary-color);
-  border-color: transparent;
-  box-shadow: 0 0 20px rgba(var(--primary-rgb), 0.4);
-}
-
-.shelf-card.drag-over {
-  border-color: var(--primary-color);
-  background: rgba(var(--primary-rgb), 0.25);
-  transform: scale(1.08);
-  box-shadow: 0 0 15px var(--primary-color);
-}
-
-.shelf-card.desktop-link {
-  flex-direction: row;
-  justify-content: center;
-}
-
-.shelf-card:hover:not(.active):not(.drag-over) {
-  background: rgba(255,255,255,0.1);
-  border-color: var(--primary-color);
-}
-
-.shelf-top { display: flex; justify-content: space-between; width: 100%; align-items: flex-start; }
-.s-icon { font-size: 1.5rem; transition: transform 0.2s; }
-.drag-over .s-icon { transform: translateY(-2px); }
-
-.s-actions {
-  display: flex;
-  gap: 0.4rem;
-  opacity: 0.2;
-  transition: opacity 0.2s;
-}
-.shelf-card:hover .s-actions { opacity: 1; }
-
-.s-actions button {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 0.9rem;
-  padding: 2px;
-  border-radius: 4px;
-  transition: background 0.2s;
-}
-.s-actions button:hover { background: rgba(255,255,255,0.1); }
-
-.s-edit { color: var(--primary-color); }
-.s-dup { color: #facc15; }
-.s-del { color: #ff5f5f; }
-
-.s-name { font-weight: 700; font-size: 0.85rem; }
-
-.modal-overlay {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-}
-
-.modal-card.mini {
-  background: var(--card-bg);
-  padding: 2rem;
-  border-radius: 20px;
-  width: 320px;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.modal-card input {
-  padding: 0.8rem;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  background: rgba(255,255,255,0.05);
-  color: white;
-}
-
-.modal-actions { display: flex; justify-content: flex-end; gap: 1rem; }
-.confirm-btn {
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 8px;
-  font-weight: 700;
-}
-
-/* Universal Editor Styles */
-.editor-overlay {
-  backdrop-filter: blur(8px);
-  background: rgba(0,0,0,0.6);
-}
-
-.editor-pane {
-  background: var(--card-bg);
-  width: 800px;
-  max-width: 95vw;
-  max-height: 90vh;
-  border-radius: 24px;
-  border: 1px solid rgba(var(--primary-rgb), 0.3);
-  display: flex;
-  flex-direction: column;
+  position: relative;
   overflow: hidden;
-  animation: modalEnter 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-@keyframes modalEnter {
-  from { transform: scale(0.9); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
+.shelf-card.active { border-color: var(--primary-color); background: rgba(var(--primary-rgb), 0.15); box-shadow: 0 0 20px rgba(var(--primary-rgb), 0.2); }
+.shelf-card:hover { transform: translateY(-5px); background: rgba(255,255,255,0.06); }
+
+.shelf-card.drag-over { 
+  transform: scale(1.1); 
+  background: rgba(var(--primary-rgb), 0.25) !important; 
+  border: 2px dashed var(--primary-color); 
+  animation: pulse 1s infinite;
 }
 
-.editor-header {
-  padding: 1rem 1.5rem;
-  background: rgba(255,255,255,0.03);
-  border-bottom: 1px solid rgba(255,255,255,0.05);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.type-badge {
-  font-size: 0.7rem;
-  font-weight: 900;
-  letter-spacing: 2px;
-  color: var(--primary-color);
-}
-
-.editor-modes {
-  display: flex;
-  background: rgba(255,255,255,0.05);
-  padding: 3px;
-  border-radius: 10px;
-  gap: 2px;
-}
-
-.editor-modes button {
-  background: none;
-  border: none;
-  color: white;
-  padding: 0.4rem 1rem;
-  border-radius: 8px;
-  font-size: 0.75rem;
-  font-weight: 800;
-  cursor: pointer;
-  transition: all 0.2s;
-  opacity: 0.5;
-}
-
-.editor-modes button.active {
-  background: var(--primary-color);
-  opacity: 1;
-}
-
-.close-x {
-  background: none;
-  border: none;
-  color: white;
+.shelf-card.drag-over::before {
+  content: '📥';
   font-size: 1.5rem;
-  cursor: pointer;
-  opacity: 0.5;
-}
-.close-x:hover { opacity: 1; }
-
-.editor-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 2rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
+  margin-bottom: 4px;
 }
 
-.markdown-preview-pane {
-  background: rgba(0,0,0,0.1);
-  border: 1px solid rgba(255,255,255,0.05);
-  border-radius: 12px;
-  padding: 1.5rem;
-  min-height: 300px;
-  color: #ddd;
-  line-height: 1.7;
-}
-.markdown-preview-pane :deep(h1), .markdown-preview-pane :deep(h2) {
-  border-bottom: 1px solid rgba(255,255,255,0.1);
-  padding-bottom: 0.5rem;
-  margin-top: 1.5rem;
-}
-.markdown-preview-pane :deep(pre) {
-  background: rgba(0,0,0,0.3);
-  padding: 1rem;
-  border-radius: 8px;
-  overflow-x: auto;
-}
-.markdown-preview-pane :deep(code) {
-  font-family: monospace;
-  background: rgba(var(--primary-rgb), 0.1);
-  padding: 0.2rem 0.4rem;
-  border-radius: 4px;
+.shelf-card.drag-over .s-name {
+  color: var(--primary-color);
+  font-weight: 900;
 }
 
-.media-large-preview {
-  width: 100%;
-  max-height: 400px;
-  border-radius: 16px;
-  overflow: hidden;
-  display: flex;
-  justify-content: center;
-  background: #000;
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(var(--primary-rgb), 0.4); }
+  70% { box-shadow: 0 0 0 15px rgba(var(--primary-rgb), 0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--primary-rgb), 0); }
 }
 
-.media-large-preview img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
+.s-icon { font-size: 1.8rem; transition: transform 0.3s; }
+.shelf-card:hover .s-icon { transform: scale(1.2); }
+.s-name { font-weight: 700; font-size: 0.95rem; opacity: 0.9; }
 
-.field { display: flex; flex-direction: column; gap: 0.5rem; }
-.field.fill { flex: 1; }
-.field label { font-size: 0.8rem; font-weight: 700; opacity: 0.6; padding-left: 0.5rem; }
+.s-actions { position: absolute; top: 10px; right: 10px; display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s; }
+.shelf-card:hover .s-actions { opacity: 1; }
+.s-actions button { background: rgba(0,0,0,0.5); border: none; padding: 4px; border-radius: 6px; cursor: pointer; color: #fff; font-size: 0.7rem; }
 
-.field input, .field textarea {
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 12px;
-  padding: 1rem;
-  color: white;
-  font-size: 1rem;
-  font-family: inherit;
-}
+.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(var(--primary-rgb), 0.2); border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--primary-color); }
 
-.field textarea { height: 300px; resize: none; line-height: 1.6; }
-
-.editor-footer {
-  padding: 1.5rem 2rem;
-  display: flex;
-  justify-content: flex-end;
-  gap: 1rem;
-  background: rgba(255,255,255,0.02);
-}
-
-.save-btn {
-  background: var(--primary-color);
-  color: white;
-  padding: 0.8rem 2rem;
-  border-radius: 12px;
-  font-weight: 700;
-  border: none;
-  cursor: pointer;
-  box-shadow: 0 4px 15px rgba(var(--primary-rgb), 0.3);
-}
-
-.save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.cancel-btn {
-  background: none;
-  border: 1px solid rgba(255,255,255,0.1);
-  color: white;
-  padding: 0.8rem 1.5rem;
-  border-radius: 12px;
-  cursor: pointer;
-}
+/* 🔐 2FA Modal Styles (Synced with PasswordVault) */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; z-index: 2500; }
+.modal-content { width: 90%; max-width: 450px; padding: 2.5rem; background: #1e1e24; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 24px; text-align: center; }
+.center { text-align: center; }
+.icon-circle { font-size: 2.5rem; background: rgba(var(--primary-rgb), 0.1); width: 70px; height: 70px; display: flex; align-items: center; justify-content: center; border-radius: 50%; margin: 0 auto 1.5rem; }
+.otp-input { font-size: 2.2rem !important; text-align: center !important; letter-spacing: 1rem; padding: 1.2rem !important; font-weight: 800; color: var(--primary-color) !important; background: rgba(0,0,0,0.3) !important; border: 2px solid var(--border-color) !important; width: 100%; border-radius: 12px; margin-top: 1rem; }
+.modal-actions.full { display: flex; flex-direction: column; gap: 1rem; margin-top: 2rem; }
+.btn-confirm.big { background: var(--primary-color); color: white; border: none; padding: 1.2rem; border-radius: 12px; font-size: 1.1rem; font-weight: 800; cursor: pointer; transition: all 0.3s; }
+.btn-confirm.big:hover { filter: brightness(1.2); transform: translateY(-2px); box-shadow: 0 4px 15px rgba(var(--primary-rgb), 0.4); }
+.btn-cancel { background: transparent; color: white; border: 1px solid rgba(255,255,255,0.1); padding: 0.8rem; border-radius: 10px; cursor: pointer; }
+.error-msg { color: #f87171; font-size: 0.85rem; margin-top: 0.8rem; font-weight: bold; }
 </style>

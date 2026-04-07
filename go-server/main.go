@@ -105,6 +105,15 @@ func main() {
 	authShared.Get("/bot/my-status", handlers.GetMyBotStatus)
 	authShared.Post("/bot/link", handlers.LinkBotAccount)
 	authShared.Get("/chat/logs", handlers.GetChatLogs)
+	authShared.Get("/chat/photos", handlers.GetRecentPhotos)
+	authShared.Get("/chat/remarks", handlers.GetRemarks)
+	authShared.Post("/chat/remarks", handlers.CreateRemark)
+	authShared.Put("/chat/remarks/:id", handlers.UpdateRemark)
+	authShared.Delete("/chat/remarks/:id", handlers.DeleteRemark)
+	authShared.Post("/chat/remarks/toggle", handlers.ToggleIntegration)
+	authShared.Post("/chat/remarks/items", handlers.AddRemarkItem)
+	authShared.Post("/chat/remarks/move", handlers.MoveRemarkItem)
+	authShared.Delete("/chat/remarks/items/:id", handlers.RemoveRemarkItem)
 	authShared.Post("/security/challenge", handlers.RequestChallenge)
 	authShared.Get("/security/status", handlers.GetSecurityStatus)
 
@@ -112,15 +121,18 @@ func main() {
 	protected := authShared.Group("/", handlers.DeviceCheckMiddleware)
 	// 🧠 IMPRESSION GRAPH
 	protected.Get("/impression/graph", handlers.GetImpressionGraph)
+	protected.Get("/impression/kgs", handlers.GetKnowledgeGraphs)
 	protected.Get("/impression/export", handlers.ExportImpressionGraph)
 	protected.Post("/impression/import", handlers.ImportImpressionGraph)
 	protected.Get("/impression/temp", handlers.GetImpressionTemp)
-	protected.Get("/impression/search", handlers.SearchImpressionNodes)
+	protected.Get("/impression/search", handlers.SearchImpression)
 	protected.Get("/impression/random", handlers.GetRandomImpressionNodeID)
 	
 	protected.Post("/impression/nodes", handlers.CreateImpressionNode)
 	protected.Put("/impression/nodes/:id", handlers.UpdateImpressionNode)
 	protected.Delete("/impression/nodes/:id", handlers.DeleteImpressionNode)
+	protected.Post("/impression/copy", handlers.DuplicateKnowledgeGraph)
+	protected.Post("/impression/nodes/:id/clone", handlers.CloneImpressionNode)
 	protected.Post("/impression/nodes/:id/sync", handlers.SyncNodeToSnippet)
 	
 	protected.Post("/impression/links", handlers.CreateImpressionLink)
@@ -140,6 +152,20 @@ func main() {
 	protected.Post("/bookmarks", handlers.CreateBookmark)
 	protected.Put("/bookmarks/:id", handlers.UpdateBookmark)
 	protected.Delete("/bookmarks/:id", handlers.DeleteBookmark)
+
+	// 📚 BOOKCASE (Digital Library)
+	protected.Get("/bookcase", handlers.GetBookcase)
+	protected.Post("/bookcase", handlers.AddBookToBookcase)
+	protected.Put("/bookcase/:id/legacy-notes", handlers.UpdateBookNotes) // Legacy single-note endpoint
+	protected.Delete("/bookcase/:id", handlers.RemoveBook)
+	protected.Get("/bookcase/available", handlers.GetAvailableBooks)
+	protected.Put("/bookcase/:id/folder", handlers.UpdateBookFolder)
+	
+	// Bookcase Notes (One book, multiple notes)
+	protected.Get("/bookcase/:id/notes", handlers.GetBookNotes)
+	protected.Post("/bookcase/:id/notes", handlers.AddBookNote)
+	protected.Put("/bookcase/notes/:note_id", handlers.UpdateBookNote)
+	protected.Delete("/bookcase/notes/:note_id", handlers.RemoveBookNote)
 
 	// 🖥️ DESK (Work Desk & Shelves)
 	protected.Get("/desk/shelves", handlers.GetShelves)
@@ -171,9 +197,19 @@ func main() {
 	toby.Post("/bot/approve", handlers.ApproveBotRequest)
 	toby.Get("/bot/users", handlers.GetAuthorizedBotUsers)
 	toby.Post("/bot/users/delete", handlers.DeleteAuthorizedBotUser)
-	toby.Get("/passwords", handlers.GetPasswords)
-	toby.Post("/passwords", handlers.AddPassword)
 	toby.Delete("/passwords/:id", handlers.DeletePassword)
+
+	// --- 6. 🔐 2FA / TOTP Management ---
+	authShared.Get("/auth/2fa/status", handlers.GetTOTPStatus)
+	authShared.Post("/auth/2fa/setup", handlers.SetupTOTP)
+	authShared.Post("/auth/2fa/enable", handlers.VerifyAndEnableTOTP)
+	authShared.Post("/auth/2fa/verify", handlers.AuthenticateTOTP)
+
+	// 📑 PASSWORD VAULT (Protected by 2FA)
+	passVault := protected.Group("/passwords", handlers.TOTPCheckMiddleware)
+	passVault.Get("", handlers.GetPasswords)
+	passVault.Post("", handlers.AddPassword)
+	passVault.Delete("/:id", handlers.DeletePassword)
 
 	app.All("/socket.io/*", adaptor.HTTPHandler(sockets.Server))
 	migrateBotAdmins()

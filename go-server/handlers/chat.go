@@ -20,21 +20,30 @@ func GetChatLogs(c *fiber.Ctx) error {
 	endDate := c.Query("endDate")
 	limit := c.QueryInt("limit", 100)
 
-	if platform == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "platform query required"})
+	user := c.Locals("user").(*Claims)
+	userID := user.ID
+	if userID == "" {
+		userID = "00000000-0000-0000-0000-000000000000"
 	}
-
-	// 修正：使用 LEFT JOIN 聯手 media_archives 以獲取媒體真實類型
+	
 	sql := `
 		SELECT 
 			c.id, c.platform, c.sender_id, c.sender_name, c.content, c.msg_type, c.media_id, c.created_at,
-			COALESCE(m.media_type, '') as media_type
+			COALESCE(m.media_type, '') as media_type,
+			CASE WHEN ri.id IS NOT NULL THEN true ELSE false END as is_integrated
 		FROM chat_logs c
 		LEFT JOIN media_archives m ON c.media_id::text = m.id::text
-		WHERE c.platform = $1
+		LEFT JOIN remark_items ri ON c.id::text = ri.log_id::text AND ri.user_id = $1
+		WHERE 1=1
 	`
-	args := []interface{}{platform}
+	args := []interface{}{userID}
 	argIdx := 2
+
+	if platform != "" {
+		sql += fmt.Sprintf(" AND c.platform = $%d", argIdx)
+		args = append(args, platform)
+		argIdx++
+	}
 
 	if searchQuery != "" {
 		sql += fmt.Sprintf(" AND c.content ILIKE $%d", argIdx)
@@ -58,14 +67,15 @@ func GetChatLogs(c *fiber.Ctx) error {
 
 	rows, err := db.Query(context.Background(), sql, args...)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		fmt.Printf("[DB ERROR] Chat Logs: %v\n", err)
+		return c.Status(500).JSON(fiber.Map{"error": err.Error(), "sql": "chat_logs_query"})
 	}
 	defer rows.Close()
 
 	logs := []models.ChatLog{}
 	for rows.Next() {
 		var l models.ChatLog
-		err := rows.Scan(&l.ID, &l.Platform, &l.SenderID, &l.SenderName, &l.Content, &l.MsgType, &l.MediaID, &l.CreatedAt, &l.MediaType)
+		err := rows.Scan(&l.ID, &l.Platform, &l.SenderID, &l.SenderName, &l.Content, &l.MsgType, &l.MediaID, &l.CreatedAt, &l.MediaType, &l.IsIntegrated)
 		if err != nil {
 			fmt.Printf("[SCAN ERROR] %v\n", err)
 			continue
@@ -74,6 +84,32 @@ func GetChatLogs(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(logs)
+}
+
+func GetRecentPhotos(c *fiber.Ctx) error {
+	db := database.LocalDB
+	page := c.QueryInt("page", 1)
+	limit := c.QueryInt("limit", 20)
+	offset := (page - 1) * limit
+
+	sql := "SELECT id, platform, sender_id, sender_name, content, msg_type, media_id, created_at FROM chat_logs WHERE msg_type = 'image' OR content ILIKE '%[Image]%' ORDER BY created_at DESC LIMIT $1 OFFSET $2"
+	rows, err := db.Query(context.Background(), sql, limit, offset)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	defer rows.Close()
+
+	photos := []models.ChatLog{}
+	for rows.Next() {
+		var l models.ChatLog
+		rows.Scan(&l.ID, &l.Platform, &l.SenderID, &l.SenderName, &l.Content, &l.MsgType, &l.MediaID, &l.CreatedAt)
+		photos = append(photos, l)
+	}
+
+	var total int
+	db.QueryRow(context.Background(), "SELECT COUNT(*) FROM chat_logs WHERE msg_type = 'image' OR content ILIKE '%[Image]%'").Scan(&total)
+
+	return c.JSON(fiber.Map{"photos": photos, "total": total})
 }
 
 

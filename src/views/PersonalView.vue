@@ -5,6 +5,7 @@ import PasswordVault from '../components/PasswordVault.vue';
 import SecurityTimer from '../components/SecurityTimer.vue';
 import SecurityModal from '../components/SecurityModal.vue';
 import ClipBoard from '../components/ClipBoard.vue';
+import Bookcase from '../components/Bookcase.vue';
 import { auth } from '../firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 import { apiService } from '../services/api';
@@ -105,6 +106,13 @@ onMounted(() => {
         >
           📋 Clipboard
         </button>
+        <button 
+          class="tab-btn" 
+          :class="{ active: activeTab === 'bookcase' }"
+          @click="activeTab = 'bookcase'"
+        >
+          📚 Bookcase
+        </button>
       </div>
 
       <!-- Unified Explorer Area -->
@@ -123,9 +131,13 @@ onMounted(() => {
               :user-id="currentUser.uid"
             />
             <ClipBoard 
-              v-else 
+              v-else-if="activeTab === 'clipboard'" 
               :is-toby="isToby || currentUser.email?.includes('toymsi')" 
               :device-id="deviceId" 
+            />
+            <Bookcase 
+              v-else-if="activeTab === 'bookcase'"
+              :user-id="currentUser.uid"
             />
           </div>
         </Transition>

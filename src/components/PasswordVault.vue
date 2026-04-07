@@ -1,14 +1,42 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, onUnmounted } from 'vue';
 import { apiService } from '../services/api';
+import { usePin } from '../composables/usePin';
 
 const props = defineProps<{
   userId: string;
 }>();
 
+const { pinToDesk } = usePin();
+
 const passwords = ref<any[]>([]);
 const isLoading = ref(false);
 const showAddModal = ref(false);
+const totpStatus = ref({ enabled: false, verified: false, verifiedUntil: 0 });
+const showTOTPModal = ref(false);
+const showSetupModal = ref(false);
+const totpCode = ref('');
+const setupData = ref<any>(null);
+const totpError = ref('');
+
+const checkTOTP = async () => {
+  try {
+    const status = await apiService.getTOTPStatus();
+    totpStatus.value = status;
+    if (status.enabled && status.verified) {
+      if (passwords.value.length === 0) fetchPasswords();
+    }
+  } catch (err) {
+    console.warn('[Vault] 2FA check failed');
+  }
+};
+
+let statusTimer: any = null;
+onMounted(() => {
+  checkTOTP();
+  statusTimer = setInterval(checkTOTP, 30000); // Check every 30s
+});
+onUnmounted(() => { if (statusTimer) clearInterval(statusTimer); });
 const newPassword = ref({
   siteName: '',
   account: '',
@@ -25,11 +53,15 @@ const filteredPasswords = computed(() => {
 });
 
 const fetchPasswords = async () => {
+  if (!totpStatus.value.verified) return;
   isLoading.value = true;
   try {
     const res = await apiService.getPasswords();
     passwords.value = res || [];
-  } catch (err) {
+  } catch (err: any) {
+    if (err.response?.status === 403) {
+      totpStatus.value.verified = false;
+    }
     console.error('Failed to fetch passwords:', err);
     passwords.value = [];
   } finally {
@@ -68,7 +100,57 @@ const deletePassword = async (id: string) => {
 };
 
 const copyToClipboard = (text: string) => {
+  if (!totpStatus.value.verified) {
+    showTOTPModal.value = true;
+    return;
+  }
   navigator.clipboard.writeText(text);
+};
+
+const handlePin = async (pw: any) => {
+  try {
+    await pinToDesk('password', pw.id);
+    alert(`Pinned ${pw.siteName} to Desk!`);
+  } catch (err) {
+    alert('Pin failed');
+  }
+};
+
+const handleTOTPVerify = async () => {
+  totpError.value = '';
+  try {
+    await apiService.verifyTOTP(totpCode.value);
+    totpCode.value = '';
+    showTOTPModal.value = false;
+    await checkTOTP();
+    fetchPasswords();
+  } catch (err: any) {
+    totpError.value = err.response?.data?.error || 'Verification failed';
+  }
+};
+
+const handleStartSetup = async () => {
+  try {
+    const data = await apiService.setupTOTP();
+    setupData.value = data;
+    showSetupModal.value = true;
+  } catch (err) {
+    alert('Setup failed to initialize');
+  }
+};
+
+const handleCompleteSetup = async () => {
+  totpError.value = '';
+  try {
+    await apiService.enableTOTP(totpCode.value);
+    totpCode.value = '';
+    showSetupModal.value = false;
+    setupData.value = null;
+    await checkTOTP();
+    fetchPasswords();
+  } catch (err: any) {
+    totpError.value = err.response?.data?.error || 'Verification failed';
+  }
 };
 
 onMounted(fetchPasswords);
@@ -111,7 +193,25 @@ onMounted(fetchPasswords);
           </button>
         </div>
 
-        <div v-if="isLoading" class="loading-state">
+        <div v-if="!totpStatus.enabled" class="empty-state auth-wall">
+          <div class="empty-icon">🛡️</div>
+          <h3>2FA Activation Required</h3>
+          <p>Google Authenticator is mandatory to access the Password Vault.</p>
+          <button class="primary-btn-lg" @click="handleStartSetup" style="margin-top: 1rem">
+            Set Up Now
+          </button>
+        </div>
+
+        <div v-else-if="!totpStatus.verified" class="empty-state auth-wall">
+          <div class="empty-icon">🔒</div>
+          <h3>Vault Locked</h3>
+          <p>Verification window expired. Please verify to continue.</p>
+          <button class="primary-btn-lg" @click="showTOTPModal = true" style="margin-top: 1rem">
+            Unlock Vault
+          </button>
+        </div>
+
+        <div v-else-if="isLoading" class="loading-state">
           <div class="spinner"></div>
           <p>Loading your vault...</p>
         </div>
@@ -125,18 +225,72 @@ onMounted(fetchPasswords);
           <div v-for="pw in filteredPasswords" :key="pw.id" class="password-card card">
             <div class="card-header">
               <div class="favicon-wrapper">🔑</div>
-              <span class="category-tag">{{ pw.category }}</span>
+              <div class="meta-actions">
+                <button class="pin-badge" @click.stop="handlePin(pw)">📌</button>
+                <span class="category-tag">{{ pw.category }}</span>
+              </div>
             </div>
             <div class="card-body">
               <h4 class="pw-title">{{ pw.siteName }}</h4>
               <p class="pw-account">{{ pw.account }}</p>
             </div>
             <div class="card-actions">
-              <button class="action-btn" @click="copyToClipboard(pw.account)">👤 Copy</button>
-              <button class="action-btn" @click="copyToClipboard(pw.passwordRaw)">🔑 Pass</button>
+              <button class="action-btn" @click="copyToClipboard(pw.account)">👤 ID</button>
+              <button class="action-btn" @click="copyToClipboard(pw.passwordRaw)">🔑 PASS</button>
               <button class="action-btn delete" @click="deletePassword(pw.id)">🗑️</button>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 🔐 2FA SETUP MODAL -->
+    <div v-if="showSetupModal" class="modal-overlay" @click.self="showSetupModal = false">
+      <div class="modal-content card glow auth-setup">
+        <div class="modal-header center">
+          <h3>Link Google Authenticator</h3>
+          <p>Secure your sensitive information with 2FA.</p>
+        </div>
+        
+        <div class="qr-placeholder" v-if="setupData">
+          <div class="qr-box">
+             <!-- Use a more reliable QR API for cross-region stability -->
+             <img :src="`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(setupData.url)}`" alt="QR Code" />
+          </div>
+          <p class="secret-text">Secret Key: <code>{{ setupData.secret }}</code></p>
+        </div>
+
+        <div class="form-group center">
+          <label>Enter 6-digit Code</label>
+          <input v-model="totpCode" class="otp-input" placeholder="000 000" maxlength="6" @keyup.enter="handleCompleteSetup" />
+          <p v-if="totpError" class="error-msg">{{ totpError }}</p>
+        </div>
+
+        <div class="modal-actions full">
+          <button class="btn-confirm big" @click="handleCompleteSetup">Verify & Enable</button>
+          <button class="btn-cancel" @click="showSetupModal = false">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 🔐 2FA VERIFY MODAL -->
+    <div v-if="showTOTPModal" class="modal-overlay" @click.self="showTOTPModal = false">
+      <div class="modal-content card glow auth-verify">
+        <div class="modal-header center">
+          <div class="icon-circle">🔑</div>
+          <h3>Vault Verification</h3>
+          <p>Identity verification needed for this session.</p>
+        </div>
+        
+        <div class="form-group center">
+          <label>6-digit Verification Code</label>
+          <input v-model="totpCode" class="otp-input" placeholder="000 000" maxlength="6" autofocus @keyup.enter="handleTOTPVerify" />
+          <p v-if="totpError" class="error-msg">{{ totpError }}</p>
+        </div>
+
+        <div class="modal-actions full">
+          <button class="btn-confirm big" @click="handleTOTPVerify">Unlock Now</button>
+          <button class="btn-cancel" @click="showTOTPModal = false">Dismiss</button>
         </div>
       </div>
     </div>
@@ -475,9 +629,60 @@ textarea {
   to { opacity: 1; transform: translateY(0); }
 }
 
-@media (max-width: 600px) {
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
+/* 🔐 Additional 2FA Components */
+.auth-wall {
+  background: rgba(var(--primary-rgb), 0.05) !important;
+  border: 1px dashed rgba(var(--primary-rgb), 0.3) !important;
+  opacity: 1 !important;
+  border-radius: 20px;
 }
+.center { text-align: center !important; }
+.modal-header.center { margin-bottom: 2rem; }
+.icon-circle {
+  font-size: 2.5rem;
+  background: rgba(var(--primary-rgb), 0.1);
+  width: 70px; height: 70px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  margin: 0 auto 1.5rem;
+}
+
+.otp-input {
+  font-size: 2rem !important;
+  text-align: center !important;
+  letter-spacing: 1rem;
+  padding: 1rem !important;
+  font-weight: 800;
+  color: var(--primary-color) !important;
+  background: rgba(0,0,0,0.3) !important;
+  border: 2px solid var(--border-color) !important;
+}
+
+.modal-actions.full { flex-direction: column; width: 100%; }
+.btn-confirm.big { width: 100%; padding: 1.2rem; font-size: 1.1rem; }
+
+.qr-placeholder { margin-bottom: 2rem; }
+.qr-box { 
+  background: white; 
+  padding: 1rem; 
+  display: inline-block; 
+  border-radius: 12px; 
+  margin-bottom: 1rem;
+}
+.secret-text { font-size: 0.8rem; opacity: 0.6; }
+.secret-text code { background: rgba(255,255,255,0.1); padding: 0.2rem 0.4rem; border-radius: 4px; }
+
+.error-msg { color: #f87171; font-size: 0.85rem; margin-top: 0.8rem; font-weight: bold; }
+
+.meta-actions { display: flex; align-items: center; gap: 0.5rem; }
+.pin-badge {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  font-size: 0.8rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.pin-badge:hover { background: rgba(var(--primary-rgb), 0.2); border-color: var(--primary-color); }
 </style>

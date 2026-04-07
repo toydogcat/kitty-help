@@ -247,19 +247,23 @@ export const apiService = {
     const response = await axios.get(`${API_BASE}/impression/temp`);
     return response.data;
   },
-  async getImpressionGraph(centerId?: string) {
-    const response = await axios.get(`${API_BASE}/impression/graph`, { params: { centerId: centerId || '' } });
+  async getImpressionGraph(centerId?: string, kgName?: string) {
+    const params: any = { centerId: centerId || '' };
+    if (kgName) params.kgName = kgName;
+    const response = await axios.get(`${API_BASE}/impression/graph`, { params });
     return response.data;
   },
-  async searchImpressionNodes(query: string) {
-    const response = await axios.get(`${API_BASE}/impression/search`, { params: { q: query } });
+  async searchImpression(query: string, kgName?: string) {
+    const params: any = { q: query };
+    if (kgName) params.kgName = kgName;
+    const response = await axios.get(`${API_BASE}/impression/search`, { params });
     return response.data;
   },
-  async createImpressionNode(data: { mediaId?: string; title: string; content: string; nodeType: string }) {
+  async createImpressionNode(data: { mediaId?: string; title: string; content: string; nodeType: string; kgName?: string }) {
     const response = await axios.post(`${API_BASE}/impression/nodes`, data);
     return response.data;
   },
-  async createImpressionLink(data: { sourceId: string; targetId: string; label: string }) {
+  async createImpressionLink(data: { sourceId: string; targetId: string; label: string; kgName?: string }) {
     const response = await axios.post(`${API_BASE}/impression/links`, data);
     return response.data;
   },
@@ -276,6 +280,14 @@ export const apiService = {
   },
   async updateImpressionNode(id: string, data: { title: string; content: string; nodeType: string }) {
     const response = await axios.put(`${API_BASE}/impression/nodes/${id}`, data);
+    return response.data;
+  },
+  async duplicateKG(source: string, target: string) {
+    const response = await axios.post(`${API_BASE}/impression/copy`, { source, target });
+    return response.data;
+  },
+  async cloneImpressionNode(id: string) {
+    const response = await axios.post(`${API_BASE}/impression/nodes/${id}/clone`);
     return response.data;
   },
   async exportImpressionGraph() {
@@ -298,17 +310,39 @@ export const apiService = {
     const response = await axios.post(`${API_BASE}/impression/import`, data);
     return response.data;
   },
+  async getKnowledgeGraphs() {
+    const response = await axios.get(`${API_BASE}/impression/kgs`);
+    return response.data;
+  },
 
   // Security 2FA
-  async requestSecurityChallenge(_id: string, _deviceId?: string) {
-    const res = await axios.post(`${API_BASE}/security/challenge`, { id: _id, deviceId: _deviceId });
+  async getTOTPStatus() {
+    const res = await axios.get(`${API_BASE}/auth/2fa/status`);
     return res.data;
   },
-  async getSecurityStatus(_id: string, _deviceId?: string, token?: string) {
-    const res = await axios.get(`${API_BASE}/security/status`, {
-      params: { id: _id, deviceId: _deviceId, token }
-    });
+  async setupTOTP() {
+    const res = await axios.post(`${API_BASE}/auth/2fa/setup`);
     return res.data;
+  },
+  async enableTOTP(code: string) {
+    const res = await axios.post(`${API_BASE}/auth/2fa/enable`, { code });
+    if (res.data.token) setAuthToken(res.data.token);
+    return res.data;
+  },
+  async verifyTOTP(code: string) {
+    const res = await axios.post(`${API_BASE}/auth/2fa/verify`, { code });
+    if (res.data.token) setAuthToken(res.data.token);
+    return res.data;
+  },
+
+  // Legacy Security (Device Based)
+  async requestSecurityChallenge(userId: string, deviceId: string) {
+    const response = await axios.post(`${API_BASE}/security/challenge`, { userId, deviceId });
+    return response.data;
+  },
+  async getSecurityStatus(userId: string, deviceId: string, token: string = '') {
+    const response = await axios.get(`${API_BASE}/security/status`, { params: { userId, deviceId, token } });
+    return response.data;
   },
 
   // Auth
@@ -382,6 +416,93 @@ export const apiService = {
     const params = new URLSearchParams({ platform, q: query, startDate, endDate });
     const response = await axios.get(`${API_BASE}/chat/logs?${params.toString()}`);
     return response.data;
+  },
+
+  // 📸 Added for ChatView
+  async getRecentMessages(limit: number = 50) {
+    const response = await axios.get(`${API_BASE}/chat/logs?limit=${limit}`);
+    return response.data;
+  },
+  async getRecentPhotos(page: number = 1, limit: number = 20) {
+    const response = await axios.get(`${API_BASE}/chat/photos?page=${page}&limit=${limit}`);
+    return response.data;
+  },
+
+  // 📝 Integrated Remarks
+  async getRemarks() {
+    const res = await axios.get(`${API_BASE}/chat/remarks`);
+    return res.data;
+  },
+  async createRemark(data: { name: string; content?: string }) {
+    const res = await axios.post(`${API_BASE}/chat/remarks`, data);
+    return res.data;
+  },
+  async updateRemark(id: string, data: { name?: string; content?: string; isPinned?: boolean }) {
+    const res = await axios.put(`${API_BASE}/chat/remarks/${id}`, data);
+    return res.data;
+  },
+  async deleteRemark(id: string) {
+    const res = await axios.delete(`${API_BASE}/chat/remarks/${id}`);
+    return res.data;
+  },
+  async toggleIntegration(logId: string | number) {
+    const res = await axios.post(`${API_BASE}/chat/remarks/toggle`, { logId });
+    return res.data;
+  },
+  async addRemarkItem(data: { containerId: string; logId: string | number }) {
+    const res = await axios.post(`${API_BASE}/chat/remarks/items`, data);
+    return res.data;
+  },
+  async moveRemarkItem(itemId: string, containerId: string | null, sortOrder: number = 0) {
+    const res = await axios.post(`${API_BASE}/chat/remarks/move`, { itemId, containerId, sortOrder });
+    return res.data;
+  },
+  async removeRemarkItem(id: string) {
+    const res = await axios.delete(`${API_BASE}/chat/remarks/items/${id}`);
+    return res.data;
+  },
+
+  // 📚 Bookcase
+  async getBookcase() {
+    const res = await axios.get(`${API_BASE}/bookcase`);
+    return res.data;
+  },
+  async addBookToBookcase(data: { storeId: string; title: string; category?: string }) {
+    const res = await axios.post(`${API_BASE}/bookcase`, data);
+    return res.data;
+  },
+  async updateBookNotes(id: string, notes: string) {
+    const res = await axios.put(`${API_BASE}/bookcase/${id}/legacy-notes`, { notes });
+    return res.data;
+  },
+  async removeBook(id: string) {
+    const res = await axios.delete(`${API_BASE}/bookcase/${id}`);
+    return res.data;
+  },
+  async getAvailableBooks(query: string = '') {
+    const res = await axios.get(`${API_BASE}/bookcase/available`, { params: { q: query } });
+    return res.data;
+  },
+  async updateBookFolder(id: string, folder: string) {
+    const res = await axios.put(`${API_BASE}/bookcase/${id}/folder`, { folder });
+    return res.data;
+  },
+  // Bookcase Notes (One book, multiple notes)
+  async getBookNotes(bookId: string) {
+    const res = await axios.get(`${API_BASE}/bookcase/${bookId}/notes`);
+    return res.data;
+  },
+  async addBookNote(bookId: string, data: { title: string; content: string; noteType?: string }) {
+    const res = await axios.post(`${API_BASE}/bookcase/${bookId}/notes`, data);
+    return res.data;
+  },
+  async updateBookNote(noteId: string, data: { title: string; content: string; noteType: string }) {
+    const res = await axios.put(`${API_BASE}/bookcase/notes/${noteId}`, data);
+    return res.data;
+  },
+  async removeBookNote(noteId: string) {
+    const res = await axios.delete(`${API_BASE}/bookcase/notes/${noteId}`);
+    return res.data;
   }
 };
 

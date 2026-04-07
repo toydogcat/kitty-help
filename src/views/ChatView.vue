@@ -1,449 +1,487 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
-import { apiService } from '../services/api';
+import { ref, onMounted, computed } from 'vue';
+import { apiService, socket } from '../services/api';
+import { usePin } from '../composables/usePin';
+import UnifiedRemarkModal from '../components/UnifiedRemarkModal.vue';
+import { marked } from 'marked';
 
-const activePlatform = ref('line');
-const platforms = [
-  { id: 'telegram', name: 'Telegram', icon: '✈️' },
-  { id: 'discord', name: 'Discord', icon: '🎮' },
-  { id: 'line', name: 'Line', icon: '🟢' }
-];
-
-const messages = ref<any[]>([]);
-const myStatus = ref({
-  telegram: false,
-  discord: false,
-  line: false
-});
+// Search & Filters
+const recentMessages = ref<any[]>([]);
+const remarkContainers = ref<any[]>([]);
 const loading = ref(true);
+const filters = ref({
+  platform: '',
+  q: '',
+  startDate: '',
+  endDate: '',
+  limit: 100
+});
 
-// Search Filters
-const searchQuery = ref('');
-const startDate = ref('');
-const endDate = ref('');
+// Editor Toggle for Remarks in sidebar
+const remarkEditModes = ref<Record<string, 'preview' | 'edit'>>({});
 
-const fetchMyStatus = async () => {
-  try {
-    const data = await apiService.getMyBotStatus();
-    myStatus.value = data;
-  } catch (err) {
-    console.error('Failed to fetch bot status:', err);
-  }
+// Global Editor for Remarks (Unified with Desk)
+const showRemarkModal = ref(false);
+const editingRemark = ref<any>(null);
+const remarkEditBuffer = ref({ title: '', content: '' });
+const remarkModalEditMode = ref<'preview' | 'edit'>('preview');
+const remarkModalFullScreen = ref(false);
+const savingRemark = ref(false);
+const { toggleRemarkSidebarPin, pinToDesk } = usePin();
+const remarkModalDetails = ref<any>(null); // For Quoted Items
+const zoomedImageUrl = ref('');
+
+// Drag & Drop
+const dragOverRemarkId = ref<string | null>(null);
+
+const getStorehouseUrl = (mediaId: string, platform?: string) => {
+  return apiService.getStorehouseFileUrl(mediaId, platform || 'line');
 };
 
-const fetchMessages = async () => {
+const fetchRecentMessages = async () => {
   loading.value = true;
   try {
-    const data = await apiService.getChatLogs(
-      activePlatform.value,
-      searchQuery.value,
-      startDate.value,
-      endDate.value
-    );
-    messages.value = data;
+    const [msgData, remarkData] = await Promise.all([
+      apiService.getChatLogs(
+        filters.value.platform,
+        filters.value.q,
+        filters.value.startDate,
+        filters.value.endDate
+      ),
+      apiService.getRemarks()
+    ]);
+    recentMessages.value = msgData.slice(0, filters.value.limit);
+    remarkContainers.value = remarkData.containers || [];
+    
+    remarkData.containers?.forEach((c: any) => {
+      if (!remarkEditModes.value[c.id]) {
+        remarkEditModes.value[c.id] = 'preview';
+      }
+    });
   } catch (err) {
-    console.error('Failed to fetch messages:', err);
+    console.error("Fetch error:", err);
   } finally {
     loading.value = false;
   }
 };
 
-onMounted(async () => {
-  await fetchMyStatus();
-  await fetchMessages();
+onMounted(() => {
+  fetchRecentMessages();
+  socket.on('messagesUpdate', fetchRecentMessages);
 });
 
-watch([activePlatform, startDate, endDate], () => {
-  fetchMessages();
-});
-
-// Debounce search
-let searchTimeout: any;
-watch(searchQuery, () => {
-  clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(() => {
-    fetchMessages();
-  }, 500);
-});
-
-const getStorehouseUrl = (mediaId: string) => {
-  return apiService.getStorehouseFileUrl(mediaId, activePlatform.value);
+const onDragStart = (e: DragEvent, item: any, _type: string = 'media') => {
+  e.dataTransfer?.setData('application/json', JSON.stringify({ type: 'media', data: item }));
 };
 
-const formatDate = (dateStr: string) => {
-  const d = new Date(dateStr);
-  return d.toLocaleString();
+const handleDragOver = (e: DragEvent, containerId: string) => {
+  e.preventDefault();
+  dragOverRemarkId.value = containerId;
 };
+
+const handleDropOnRemark = async (e: DragEvent, containerId: string) => {
+  e.preventDefault();
+  dragOverRemarkId.value = null;
+  const raw = e.dataTransfer?.getData('application/json');
+  if (!raw) return;
+  const payload = JSON.parse(raw);
+  
+  if (payload.type === 'media') {
+    try {
+      await apiService.addRemarkItem({
+        containerId: containerId,
+        logId: payload.data.id
+      });
+      await fetchRecentMessages();
+    } catch (err) {
+      alert("Failed to add to remark");
+    }
+  }
+};
+
+const createNewRemark = async () => {
+  const name = prompt("Enter Remark Group Name:");
+  if (!name) return;
+  try {
+    await apiService.createRemark({ name, content: "" });
+    await fetchRecentMessages();
+  } catch (err) {
+    alert("Creation failed");
+  }
+};
+
+const togglePin = async (c: any) => {
+  try {
+    await toggleRemarkSidebarPin(c.id, c.isPinned);
+    await fetchRecentMessages();
+  } catch (err) {
+    alert("Pin toggle failed");
+  }
+};
+
+const deleteRemark = async (id: string) => {
+  if (!confirm("Delete this group and all its links?")) return;
+  try {
+    await apiService.deleteRemark(id);
+    await fetchRecentMessages();
+  } catch (err) {
+    alert("Delete failed");
+  }
+};
+
+const addToDesk = async (c: any) => {
+  try {
+    await pinToDesk('remark', c.id);
+    alert("Pinned to Desk! 📌");
+  } catch (err) {
+    alert("Failed to pin to desk");
+  }
+};
+
+const copyRemark = (c: any) => {
+  const text = (c.content || "") + "\n\n--- Items ---\n" + 
+               (c.items || []).map((i: any) => `[${i.log.platform}] ${i.log.senderName}: ${i.log.content}`).join("\n");
+  navigator.clipboard.writeText(text);
+  alert("Copied to clipboard!");
+};
+
+// MODAL LOGIC (Unified)
+const openRemarkModal = async (c: any) => {
+  editingRemark.value = c;
+  remarkEditBuffer.value = { title: c.name, content: c.content || '' };
+  remarkModalEditMode.value = 'preview';
+  remarkModalFullScreen.value = false;
+  showRemarkModal.value = true;
+  
+  // Reload details to ensure we have latest items
+  try {
+    const data = await apiService.getRemarks();
+    const container = data.containers?.find((x: any) => x.id === c.id);
+    remarkModalDetails.value = container || null;
+  } catch (err) {
+    console.error("Detail reload failed");
+  }
+};
+
+const saveRemarkEdit = async (updatedData: { title: string, content: string }) => {
+  if (!editingRemark.value) return;
+  savingRemark.value = true;
+  try {
+    await apiService.updateRemark(editingRemark.value.id, {
+      name: updatedData.title,
+      content: updatedData.content
+    });
+    showRemarkModal.value = false;
+    await fetchRecentMessages();
+  } catch (err) {
+    alert("Save failed");
+  } finally {
+    savingRemark.value = false;
+  }
+};
+
+const pinnedRemarks = computed(() => remarkContainers.value.filter(c => c.isPinned));
+const otherRemarks = computed(() => remarkContainers.value.filter(c => !c.isPinned));
 </script>
 
 <template>
   <div class="chat-view">
-    <header class="view-header">
-      <div class="header-content">
-        <h2>💬 Discovery History</h2>
-        <p>Browse your cross-platform conversation archives from AI assistants.</p>
+    <!-- Center Panel: Unified Search Terminal -->
+    <div class="center-panel">
+      <div class="panel-header search-header">
+        <div class="header-top">
+          <h2>🔍 Unified Chat Terminal</h2>
+          <div class="quick-stats">{{ recentMessages.length }} items found</div>
+        </div>
+        
+        <div class="filter-bar">
+          <div class="f-group">
+            <label>Platform</label>
+            <select v-model="filters.platform" @change="fetchRecentMessages">
+              <option value="">All Platforms</option>
+              <option value="discord">Discord</option>
+              <option value="telegram">Telegram</option>
+              <option value="line">LINE</option>
+            </select>
+          </div>
+          <div class="f-group">
+            <label>Start Date</label>
+            <input type="date" v-model="filters.startDate" @change="fetchRecentMessages" />
+          </div>
+          <div class="f-group">
+            <label>End Date</label>
+            <input type="date" v-model="filters.endDate" @change="fetchRecentMessages" />
+          </div>
+          <div class="f-group flex-grow">
+            <label>Search Query</label>
+            <input type="text" v-model="filters.q" placeholder="Type to search..." @keyup.enter="fetchRecentMessages" />
+          </div>
+          <div class="f-group">
+            <label>Limit</label>
+            <select v-model="filters.limit" @change="fetchRecentMessages">
+              <option :value="50">50 (Default)</option>
+              <option :value="100">100</option>
+              <option :value="200">200</option>
+            </select>
+          </div>
+        </div>
       </div>
-      
-      <div class="platform-tabs">
-        <button 
-          v-for="p in platforms" 
-          :key="p.id"
-          @click="activePlatform = p.id"
-          :class="['platform-btn', { active: activePlatform === p.id }]"
-        >
-          <span class="p-icon">{{ p.icon }}</span>
-          {{ p.name }}
-          <span v-if="myStatus[p.id as keyof typeof myStatus]" class="status-dot linked" title="Linked"></span>
-          <span v-else class="status-dot unlinked" title="Not Linked"></span>
-        </button>
-      </div>
-    </header>
 
-    <div class="search-toolbar card">
-      <div class="search-input-group">
-        <span class="search-icon">🔍</span>
-        <input 
-          v-model="searchQuery" 
-          type="text" 
-          placeholder="Search messages..." 
-          class="text-input"
-        />
-      </div>
-      
-      <div class="date-filters">
-        <div class="date-field">
-          <label>From</label>
-          <input v-model="startDate" type="date" />
-        </div>
-        <div class="date-field">
-          <label>To</label>
-          <input v-model="endDate" type="date" />
-        </div>
-        <button @click="searchQuery = ''; startDate = ''; endDate = '';" class="clear-btn" title="Clear Filters">
-          🧹
-        </button>
+      <div class="messages-list custom-scrollbar">
+         <div v-for="m in recentMessages" :key="m.id" class="msg-card" :class="m.platform">
+            <div class="msg-bubble shadow-sm" draggable="true" @dragstart="onDragStart($event, m, 'log')">
+              <div class="msg-meta">
+                <span class="platform-indicator" :class="m.platform"></span>
+                <span class="platform-name">{{ m.platform.toUpperCase() }}</span>
+                <span class="sender-name">{{ m.senderName }}</span>
+                <span class="time">{{ m.createdAt ? new Date(m.createdAt).toLocaleString([], {month: 'numeric', day: 'numeric', hour: '2-digit', minute:'2-digit'}) : '' }}</span>
+              </div>
+
+              <!-- Media Context -->
+              <div v-if="m.mediaId" class="msg-media-snippet">
+                <!-- If Image (Inclusive check for 'image', 'photo', 'attachment' OR ANY Discord with mediaId) -->
+                <div v-if="['image', 'photo', 'attachment'].includes((m.msgType || '').toLowerCase()) || ['image', 'photo', 'attachment'].includes((m.mediaType || '').toLowerCase()) || (m.content && m.content.includes('[Image]')) || m.platform === 'discord'" class="inline-thumb" @click="zoomedImageUrl = getStorehouseUrl(m.mediaId, m.platform)">
+                   <img :src="getStorehouseUrl(m.mediaId, m.platform)" loading="lazy" />
+                   <div class="zoom-overlay"><span class="icon">🔍</span></div>
+                </div>
+                <!-- If Other File -->
+                <div v-else class="file-tag">
+                   <span class="file-icon">📄</span>
+                   <span class="file-info">{{ m.mediaType || 'Attachment' }}</span>
+                </div>
+              </div>
+
+              <div class="msg-text">{{ m.content }}</div>
+            </div>
+         </div>
       </div>
     </div>
 
-    <div class="chat-container card">
-      <div v-if="!myStatus[activePlatform as keyof typeof myStatus]" class="unlinked-notice">
-        <h3>🚫 Platform Not Linked</h3>
-        <p>You haven't linked your <strong>{{ activePlatform }}</strong> account yet.</p>
-        <div class="instruction">
-          <p>To link your account:</p>
-          <ol>
-            <li v-if="activePlatform === 'telegram'">Find <strong>@super_kitty_help_bot</strong> on Telegram</li>
-            <li v-if="activePlatform === 'discord'">Invite <strong>KittyHelp</strong> to your Discord server</li>
-            <li v-if="activePlatform === 'line'">Add <strong>KittyHelp</strong> as a friend on LINE</li>
-            <li>Send the message: <code>我請求加入</code></li>
-            <li>Enter the 8-digit code in the <strong>Home</strong> page's verification portal.</li>
-            <li>Wait for AdminToby approval in the dashboard to complete binding.</li>
-          </ol>
+    <!-- Right Panel: Resource Organization (資源整合) -->
+    <div class="right-panel">
+      <div class="remarks-section">
+        <div class="remarks-header">
+          <label class="remark-group-label">Resource Repository (知識庫)</label>
+          <div class="header-main">
+            <h2>🔖 Remarks</h2>
+            <button class="add-btn" @click="createNewRemark">+ New Group</button>
+          </div>
         </div>
-      </div>
 
-      <div v-else-if="loading" class="chat-loading">
-        <div class="spinner"></div>
-        <p>Scanning archives...</p>
-      </div>
-
-      <div v-else-if="messages.length === 0" class="empty-chat">
-        <p v-if="searchQuery || startDate || endDate">No results match your filters. Try widening your search!</p>
-        <p v-else>No messages found on this platform yet. Start talking to your bot!</p>
-      </div>
-
-      <div v-else class="message-feed">
-        <div v-for="m in messages" :key="m.id" class="message-wrapper">
-          <div class="message-bubble">
-            <div class="msg-header">
-              <span class="sender">{{ m.senderName }}</span>
-              <span class="time">{{ formatDate(m.createdAt) }}</span>
+        <div class="remarks-list custom-scrollbar">
+          <div v-if="pinnedRemarks.length > 0" class="remark-group-label mini">✨ Pinned (釘選)</div>
+          <div v-for="c in pinnedRemarks" :key="c.id" 
+               class="remark-item-card" 
+               :class="{ 'drag-over': dragOverRemarkId === c.id }"
+               @dragover="handleDragOver($event, c.id)"
+               @dragleave="dragOverRemarkId = null"
+               @drop="handleDropOnRemark($event, c.id)">
+            
+            <div class="remark-card-header">
+              <div class="remark-title" @click="openRemarkModal(c)">
+                <span class="icon">⭐</span> {{ c.name }}
+              </div>
+              <div class="remark-actions">
+                <button class="act-btn" @click="togglePin(c)" title="Unpin">📌</button>
+                <button class="act-btn" @click="addToDesk(c)" title="Add to Desk">📋</button>
+                <button class="act-btn" @click="copyRemark(c)" title="Copy">📄</button>
+                <button class="act-btn del" @click="deleteRemark(c.id)" title="Delete">🗑️</button>
+              </div>
             </div>
-            <div class="msg-content">
-              <template v-if="m.msgType === 'media' && m.mediaId">
-                <!-- Smart Media Rendering: If it is an image/photo type, show preview -->
-                <div class="media-container" v-if="m.mediaType === 'image' || m.mediaType === 'photo' || m.content.includes('[Image]') || m.content.includes('[photo]')">
-                  <img :src="getStorehouseUrl(m.mediaId)" loading="lazy" />
+
+            <div class="remark-card-body">
+              <div class="body-header">
+                <span class="label">Preview</span>
+                <div class="mini-mode-switch">
+                  <button :class="{ active: remarkEditModes[c.id] === 'preview' }" @click="remarkEditModes[c.id] = 'preview'">MD</button>
+                  <button :class="{ active: remarkEditModes[c.id] === 'edit' }" @click="remarkEditModes[c.id] = 'edit'">TXT</button>
                 </div>
-                <div v-else class="file-card">
-                  <span class="file-icon">{{ m.mediaType === 'video' ? '🎬' : '📎' }}</span>
-                  <div class="file-info">
-                    <span class="file-name">{{ m.mediaType === 'video' ? 'Video Memory' : 'Media Backup' }}</span>
-                    <a :href="getStorehouseUrl(m.mediaId)" target="_blank" class="download-link">{{ m.mediaType === 'video' ? 'Watch' : 'View File' }}</a>
-                  </div>
+              </div>
+              <div v-if="remarkEditModes[c.id] === 'preview'" class="sidebar-md-box custom-scrollbar" v-html="marked.parse(c.content || 'No description.')"></div>
+              <div v-else class="sidebar-txt-box">{{ c.content || 'No description.' }}</div>
+              <div class="items-count" @click="openRemarkModal(c)">🔗 {{ c.items?.length || 0 }} items linked</div>
+            </div>
+          </div>
+
+          <!-- Other Section -->
+          <div v-if="otherRemarks.length > 0" class="remark-group-label mini">📦 All Groups (全部)</div>
+          <div v-for="c in otherRemarks" :key="c.id" 
+               class="remark-item-card" 
+               :class="{ 'drag-over': dragOverRemarkId === c.id }"
+               @dragover="handleDragOver($event, c.id)"
+               @dragleave="dragOverRemarkId = null"
+               @drop="handleDropOnRemark($event, c.id)">
+            
+            <div class="remark-card-header">
+              <div class="remark-title" @click="openRemarkModal(c)">{{ c.name }}</div>
+              <div class="remark-actions">
+                <button class="act-btn" @click="togglePin(c)" title="Pin">☆</button>
+                <button class="act-btn" @click="addToDesk(c)" title="Add to Desk">📋</button>
+                <button class="act-btn" @click="copyRemark(c)" title="Copy">📄</button>
+                <button class="act-btn del" @click="deleteRemark(c.id)" title="Delete">🗑️</button>
+              </div>
+            </div>
+
+            <div class="remark-card-body">
+              <div class="body-header">
+                <span class="label">Preview</span>
+                <div class="mini-mode-switch">
+                  <button :class="{ active: remarkEditModes[c.id] === 'preview' }" @click="remarkEditModes[c.id] = 'preview'">MD</button>
+                  <button :class="{ active: remarkEditModes[c.id] === 'edit' }" @click="remarkEditModes[c.id] = 'edit'">TXT</button>
                 </div>
-              </template>
-              <p v-else class="text-content">{{ m.content }}</p>
+              </div>
+              <div v-if="remarkEditModes[c.id] === 'preview'" class="sidebar-md-box custom-scrollbar" v-html="marked.parse(c.content || 'No description.')"></div>
+              <div v-else class="sidebar-txt-box">{{ c.content || 'No description.' }}</div>
+              <div class="items-count" @click="openRemarkModal(c)">🔗 {{ c.items?.length || 0 }} items linked</div>
             </div>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- UNIFIED REMARK EDITOR MODAL -->
+    <UnifiedRemarkModal 
+      :show="showRemarkModal"
+      :item="{ ...editingRemark, type: 'remark' }"
+      :details="remarkModalDetails"
+      :loading="savingRemark"
+      @close="showRemarkModal = false"
+      @save="saveRemarkEdit"
+      @zoom="zoomedImageUrl = $event"
+    />
+
+    <Teleport to="body">
+      <div v-if="zoomedImageUrl" class="global-zoom" @click="zoomedImageUrl = ''">
+         <img :src="zoomedImageUrl" />
+         <span class="close-zoom">✕</span>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <style scoped>
-.chat-view {
-  display: flex;
-  flex-direction: column;
+.chat-view { display: flex; height: calc(100vh - 100px); gap: 1rem; padding: 1rem; }
+
+.center-panel { flex: 1.5; background: rgba(0,0,0,0.2); border-radius: 24px; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; overflow: hidden; }
+.search-header { 
+  padding: 1.5rem 2rem; 
+  background: rgba(255,255,255,0.02); 
+  border-bottom: 1px solid rgba(255,255,255,0.05); 
+  display: flex; 
+  flex-direction: column; 
   gap: 1.2rem;
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 1rem;
 }
+.header-top { display: flex; justify-content: space-between; align-items: center; }
+.header-top h2 { font-size: 1.3rem; font-weight: 800; color: #fff; }
+.quick-stats { font-size: 0.75rem; opacity: 0.4; font-weight: 800; color: var(--primary-color); text-transform: uppercase; }
 
-.view-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  border-bottom: 2px solid rgba(var(--primary-rgb), 0.2);
-  padding-bottom: 1.5rem;
+.filter-bar { display: flex; gap: 0.8rem; flex-wrap: wrap; align-items: flex-end; }
+.f-group { display: flex; flex-direction: column; gap: 0.4rem; min-width: 110px; }
+.f-group label { font-size: 0.6rem; font-weight: 900; opacity: 0.3; text-transform: uppercase; letter-spacing: 1px; color: #fff; }
+.f-group select, .f-group input { 
+  background: rgba(255,255,255,0.03); 
+  border: 1px solid rgba(255,255,255,0.06); 
+  border-radius: 10px; 
+  padding: 0.6rem 0.8rem; 
+  color: #fff; 
+  font-size: 0.85rem; 
+  outline: none;
+  transition: all 0.2s;
 }
+.f-group select:focus, .f-group input:focus { border-color: var(--primary-color); background: rgba(0,0,0,0.4); }
+.flex-grow { flex: 1; min-width: 180px; }
 
-.header-content h2 { font-size: 1.8rem; margin-bottom: 0.2rem; }
-.header-content p { opacity: 0.6; font-size: 0.9rem; }
+.messages-list { flex: 1; padding: 2rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1.2rem; }
 
-.platform-tabs {
-  display: flex;
-  gap: 0.8rem;
+.msg-card { display: flex; flex-direction: column; align-items: flex-start; width: 100%; }
+.msg-bubble { 
+  max-width: 90%; 
+  background: rgba(255,255,255,0.04); 
+  border-radius: 20px; 
+  padding: 1rem 1.4rem; 
+  border: 1px solid rgba(255,255,255,0.06); 
+  display: flex; 
+  flex-direction: column; 
+  gap: 0.4rem;
+  transition: all 0.2s;
 }
+.msg-bubble:hover { border-color: rgba(var(--primary-rgb), 0.3); background: rgba(255,255,255,0.06); }
 
-.platform-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.6rem 1.2rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-color);
-  border-radius: 20px;
-  color: var(--text-color);
-  cursor: pointer;
-  font-weight: 600;
-  transition: all 0.2s ease;
+.msg-meta { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 2px; }
+.platform-indicator { width: 8px; height: 8px; border-radius: 50%; }
+.platform-indicator.discord { background: #5865F2; box-shadow: 0 0 10px #5865F2; }
+.platform-indicator.telegram { background: #0088cc; box-shadow: 0 0 10px #0088cc; }
+.platform-indicator.line { background: #00B900; box-shadow: 0 0 10px #00B900; }
+
+.platform-name { font-size: 0.65rem; font-weight: 900; opacity: 0.4; letter-spacing: 1.5px; text-transform: uppercase; }
+.sender-name { font-weight: 800; color: #fff; font-size: 0.9rem; }
+.time { font-size: 0.75rem; opacity: 0.3; margin-left: auto; letter-spacing: 0.5px; }
+
+.msg-media-snippet { margin: 0.6rem 0; border-radius: 14px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05); background: #000; }
+.inline-thumb { position: relative; height: 180px; cursor: zoom-in; overflow: hidden; }
+.inline-thumb img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s; }
+.inline-thumb:hover img { transform: scale(1.08); }
+.zoom-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; opacity: 0; transition: 0.2s; }
+.inline-thumb:hover .zoom-overlay { opacity: 1; }
+
+.file-tag { padding: 1.2rem; background: rgba(255,255,255,0.03); display: flex; align-items: center; gap: 1rem; }
+.file-info { font-weight: 800; color: var(--primary-color); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; }
+
+.msg-text { font-size: 1rem; color: #eee; line-height: 1.6; word-break: break-word; }
+
+/* Right Panel Refactored */
+.right-panel { width: 450px; display: flex; flex-direction: column; }
+.remarks-section { flex: 1; min-height: 0; background: rgba(0,0,0,0.2); border-radius: 24px; padding: 1.5rem; display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.05); }
+.remarks-list { flex: 1; overflow-y: auto; padding-right: 8px; display: flex; flex-direction: column; gap: 1.2rem; margin-top: 1rem; }
+
+.remark-group-label { font-size: 0.75rem; font-weight: 900; opacity: 0.4; letter-spacing: 2px; color: var(--primary-color); text-transform: uppercase; margin-bottom: 0.5rem; }
+
+.remark-item-card { 
+  background: rgba(255,255,255,0.03); 
+  border: 1px solid rgba(255,255,255,0.06); 
+  border-radius: 20px; 
+  padding: 1.4rem; 
+  transition: all 0.3s; 
   position: relative;
 }
-
-.platform-btn.active {
-  background: var(--primary-color);
-  color: white;
-  border-color: var(--primary-color);
-  box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
+.remark-item-card.drag-over { 
+  background: rgba(var(--primary-rgb), 0.08); 
+  border-color: var(--primary-color); 
+  box-shadow: 0 0 30px rgba(var(--primary-rgb), 0.3); 
+  transform: scale(1.02);
 }
 
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  position: absolute;
-  top: 5px;
-  right: 10px;
-}
-.status-dot.linked { background: #2ecc71; box-shadow: 0 0 5px #2ecc71; }
-.status-dot.unlinked { background: #95a5a6; }
+.remark-card-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem; }
+.remark-title { font-weight: 800; font-size: 1.1rem; color: #fff; cursor: pointer; }
+.remark-title:hover { color: var(--primary-color); text-shadow: 0 0 10px rgba(var(--primary-rgb), 0.5); }
 
-/* Search Toolbar */
-.search-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1.5rem;
-  padding: 1rem 1.5rem;
-  background: rgba(var(--primary-rgb), 0.05);
-}
+.remark-actions { display: flex; gap: 8px; }
+.act-btn { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; color: #fff; }
+.act-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); transform: translateY(-2px); }
+.act-btn.del:hover { background: rgba(231, 76, 60, 0.2); border-color: #e74c3c; color: #e74c3c; }
 
-.search-input-group {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-  background: rgba(0,0,0,0.2);
-  padding: 0.6rem 1rem;
-  border-radius: 10px;
-  border: 1px solid var(--border-color);
-}
+.remark-card-body { background: rgba(0,0,0,0.3); border-radius: 14px; padding: 1.2rem; border: 1px solid rgba(255,255,255,0.03); }
+.body-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.body-header .label { font-size: 0.65rem; opacity: 0.3; font-weight: 900; text-transform: uppercase; color: #fff; }
 
-.search-input-group input {
-  background: transparent;
-  border: none;
-  color: white;
-  width: 100%;
-  outline: none;
-}
+.mini-mode-switch { display: flex; gap: 2px; background: rgba(0,0,0,0.3); padding: 4px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05); }
+.mini-mode-switch button { background: none; border: none; font-size: 0.65rem; color: #fff; padding: 4px 10px; border-radius: 6px; cursor: pointer; opacity: 0.4; font-weight: 800; }
+.mini-mode-switch button.active { background: var(--primary-color); opacity: 1; box-shadow: 0 4px 10px rgba(var(--primary-rgb), 0.3); }
 
-.date-filters {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
+.sidebar-md-box { font-size: 0.95rem; color: #ddd; line-height: 1.6; max-height: 200px; overflow-y: auto; }
+.sidebar-md-box :deep(h1), .sidebar-md-box :deep(h2) { font-size: 1.1rem; margin: 1rem 0 0.5rem; color: var(--primary-color); }
+.sidebar-txt-box { font-size: 0.95rem; opacity: 0.7; color: #eee; white-space: pre-wrap; }
 
-.date-field {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
+.items-count { margin-top: 15px; font-size: 0.75rem; font-weight: 900; color: var(--primary-color); cursor: pointer; opacity: 0.6; transition: 0.2s; text-transform: uppercase; letter-spacing: 0.5px; }
+.items-count:hover { opacity: 1; text-decoration: underline; letter-spacing: 1px; }
 
-.date-field label { font-size: 0.75rem; opacity: 0.6; text-transform: uppercase; }
+/* SIDEBAR SPECIFIC STYLES */
 
-.date-field input {
-  background: rgba(0,0,0,0.3);
-  border: 1px solid var(--border-color);
-  color: white;
-  padding: 0.4rem 0.6rem;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  outline: none;
-}
+.global-zoom { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.92); z-index: 6000; display: flex; align-items: center; justify-content: center; cursor: zoom-out; backdrop-filter: blur(20px); }
+.global-zoom img { max-width: 92vw; max-height: 92vh; border-radius: 16px; box-shadow: 0 0 100px rgba(0,0,0,0.8); }
+.close-zoom { position: absolute; top: 3rem; right: 3rem; font-size: 2.5rem; color: #fff; cursor: pointer; opacity: 0.5; transition: 0.2s; }
+.close-zoom:hover { opacity: 1; transform: rotate(90deg); }
 
-.clear-btn {
-  background: rgba(255,255,255,0.05);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 0.4rem 0.6rem;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-.clear-btn:hover { background: rgba(255,255,255,0.1); }
-
-/* Chat Container */
-.chat-container {
-  min-height: 60vh;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.message-feed {
-  flex: 1;
-  padding: 2rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  overflow-y: auto;
-  max-height: 70vh;
-  background: radial-gradient(circle at top right, rgba(var(--primary-rgb), 0.05), transparent 400px);
-}
-
-.message-wrapper {
-  display: flex;
-  width: 100%;
-  justify-content: center; /* Center the bubbles */
-}
-
-.message-bubble {
-  background: rgba(255, 255, 255, 0.03);
-  padding: 1.2rem;
-  border-radius: 20px;
-  border: 1px solid var(--border-color);
-  width: 100%;
-  max-width: 800px; /* Better width for reading */
-  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-  transition: transform 0.2s ease;
-}
-
-.message-bubble:hover {
-  transform: translateY(-2px);
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.msg-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 0.8rem;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
-  padding-bottom: 0.5rem;
-}
-
-.sender { font-weight: 800; color: var(--primary-color); font-size: 0.9rem; }
-.time { opacity: 0.5; font-size: 0.8rem; }
-
-.text-content {
-  line-height: 1.6;
-  white-space: pre-wrap;
-  color: rgba(255,255,255,0.9);
-}
-
-.media-container img {
-  max-width: 100%;
-  border-radius: 12px;
-  margin-top: 0.5rem;
-  border: 1px solid rgba(255,255,255,0.1);
-}
-
-.file-card {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  background: rgba(0,0,0,0.3);
-  padding: 1rem;
-  border-radius: 12px;
-  border: 1px dashed rgba(var(--primary-rgb), 0.3);
-}
-
-.file-icon { font-size: 1.5rem; }
-.file-info { display: flex; flex-direction: column; gap: 0.2rem; }
-.file-name { font-size: 0.9rem; font-weight: 600; }
-
-.download-link {
-  color: var(--primary-color);
-  text-decoration: none;
-  font-size: 0.85rem;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-.download-link:hover { text-decoration: underline; }
-
-.chat-loading, .empty-chat {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem;
-  text-align: center;
-}
-
-.spinner {
-  width: 50px;
-  height: 50px;
-  border: 4px solid rgba(var(--primary-rgb), 0.1);
-  border-top-color: var(--primary-color);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 1.5rem;
-}
-
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.unlinked-notice {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem;
-}
-
-.instruction {
-  background: rgba(0,0,0,0.25);
-  padding: 2rem;
-  border-radius: 16px;
-  margin-top: 2rem;
-  max-width: 500px;
-  text-align: left;
-}
-
-.instruction li { margin-bottom: 0.8rem; color: rgba(255,255,255,0.8); }
-
-/* Custom Scrollbar */
-.message-feed::-webkit-scrollbar { width: 6px; }
-.message-feed::-webkit-scrollbar-track { background: transparent; }
-.message-feed::-webkit-scrollbar-thumb {
-  background: rgba(var(--primary-rgb), 0.2);
-  border-radius: 10px;
-}
-.message-feed::-webkit-scrollbar-thumb:hover {
-  background: rgba(var(--primary-rgb), 0.4);
-}
+.custom-scrollbar::-webkit-scrollbar { width: 8px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 10px; }
 </style>
