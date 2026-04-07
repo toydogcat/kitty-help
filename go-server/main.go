@@ -131,6 +131,8 @@ func main() {
 	protected.Post("/impression/nodes", handlers.CreateImpressionNode)
 	protected.Put("/impression/nodes/:id", handlers.UpdateImpressionNode)
 	protected.Delete("/impression/nodes/:id", handlers.DeleteImpressionNode)
+	protected.Post("/impression/copy", handlers.DuplicateKnowledgeGraph)
+	protected.Post("/impression/nodes/:id/clone", handlers.CloneImpressionNode)
 	protected.Post("/impression/nodes/:id/sync", handlers.SyncNodeToSnippet)
 	
 	protected.Post("/impression/links", handlers.CreateImpressionLink)

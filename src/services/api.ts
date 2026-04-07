@@ -282,6 +282,14 @@ export const apiService = {
     const response = await axios.put(`${API_BASE}/impression/nodes/${id}`, data);
     return response.data;
   },
+  async duplicateKG(source: string, target: string) {
+    const response = await axios.post(`${API_BASE}/impression/copy`, { source, target });
+    return response.data;
+  },
+  async cloneImpressionNode(id: string) {
+    const response = await axios.post(`${API_BASE}/impression/nodes/${id}/clone`);
+    return response.data;
+  },
   async exportImpressionGraph() {
     const response = await axios.get(`${API_BASE}/impression/export`);
     return response.data;

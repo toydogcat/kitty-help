@@ -9,6 +9,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/google/uuid"
 	"github.com/toydogcat/kitty-help/go-server/database"
 	"github.com/toydogcat/kitty-help/go-server/models"
 )
@@ -521,15 +522,16 @@ func ImportImpressionGraph(c *fiber.Ctx) error {
 		if kg == "" { kg = "default" }
 
 		_, err = tx.Exec(ctx, `
-			INSERT INTO impression_nodes (id, user_id, media_id, title, content, node_type, created_at, kg_name)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			INSERT INTO impression_nodes (id, user_id, media_id, title, content, node_type, created_at, kg_name, desk_shelf_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 			ON CONFLICT (id) DO UPDATE SET
 				title = EXCLUDED.title,
 				content = EXCLUDED.content,
 				node_type = EXCLUDED.node_type,
 				media_id = EXCLUDED.media_id,
-				kg_name = EXCLUDED.kg_name
-		`, n.ID, dbUserID, n.MediaID, n.Title, n.Content, n.NodeType, n.CreatedAt, kg)
+				kg_name = EXCLUDED.kg_name,
+				desk_shelf_id = EXCLUDED.desk_shelf_id
+		`, n.ID, dbUserID, n.MediaID, n.Title, n.Content, n.NodeType, n.CreatedAt, kg, n.DeskShelfID)
 		if err != nil { return c.Status(500).JSON(fiber.Map{"error": "Node upsert failed: " + err.Error()}) }
 	}
 
@@ -587,6 +589,106 @@ func SyncNodeToSnippet(c *fiber.Ctx) error {
 	db.Exec(context.Background(), "UPDATE snippets SET linked_node_id = $1 WHERE id = $2", id, snippetID)
 
 	return c.JSON(fiber.Map{"status": "linked", "snippetId": snippetID})
+}
+
+func DuplicateKnowledgeGraph(c *fiber.Ctx) error {
+	userClaims := c.Locals("user").(*Claims)
+	db := database.LocalDB
+	if db == nil { db = database.CloudDB }
+	if db == nil { return c.Status(503).JSON(fiber.Map{"error": "Database not connected"}) }
+
+	type DupeReq struct { Source string `json:"source"`; Target string `json:"target"` }
+	var req DupeReq
+	if err := c.BodyParser(&req); err != nil { return c.Status(400).JSON(fiber.Map{"error": "Invalid body"}) }
+
+	var dbUserID string
+	err := db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User profile not found"}) }
+
+	ctx := context.Background()
+	tx, err := db.Begin(ctx)
+	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
+	defer tx.Rollback(ctx)
+
+	// Map oldID -> newID
+	idMap := make(map[string]string)
+
+	rows, err := tx.Query(ctx, "SELECT id, media_id, title, content, node_type, desk_shelf_id FROM impression_nodes WHERE user_id = $1 AND kg_name = $2", dbUserID, req.Source)
+	if err != nil { return c.Status(500).JSON(fiber.Map{"error": "Fetch nodes failed"}) }
+	
+	type nodeRec struct { ID, MediaID, Title, Content, NodeType, DeskShelfID *string }
+	nodes := []nodeRec{}
+	for rows.Next() {
+		var r nodeRec
+		rows.Scan(&r.ID, &r.MediaID, &r.Title, &r.Content, &r.NodeType, &r.DeskShelfID)
+		nodes = append(nodes, r)
+	}
+	rows.Close()
+
+	for _, n := range nodes {
+		newID := uuid.New().String()
+		idMap[*n.ID] = newID
+		_, err = tx.Exec(ctx, `
+			INSERT INTO impression_nodes (id, user_id, media_id, title, content, node_type, desk_shelf_id, kg_name)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`, newID, dbUserID, n.MediaID, n.Title, n.Content, n.NodeType, n.DeskShelfID, req.Target)
+		if err != nil { return c.Status(500).JSON(fiber.Map{"error": "Clone nodes failed: " + err.Error()}) }
+	}
+
+	eRows, err := tx.Query(ctx, "SELECT source_id, target_id, label FROM impression_edges WHERE user_id = $1 AND kg_name = $2", dbUserID, req.Source)
+	if err == nil {
+		type edgeRec struct { Src, Tgt, Lbl string }
+		edges := []edgeRec{}
+		for eRows.Next() {
+			var er edgeRec
+			eRows.Scan(&er.Src, &er.Tgt, &er.Lbl)
+			edges = append(edges, er)
+		}
+		eRows.Close()
+
+		for _, e := range edges {
+			newSrc, ok1 := idMap[e.Src]
+			newTgt, ok2 := idMap[e.Tgt]
+			if ok1 && ok2 {
+				_, err = tx.Exec(ctx, "INSERT INTO impression_edges (user_id, source_id, target_id, label, kg_name) VALUES ($1, $2, $3, $4, $5)", dbUserID, newSrc, newTgt, e.Lbl, req.Target)
+			}
+		}
+	}
+
+	tx.Commit(ctx)
+	return c.JSON(fiber.Map{"status": "cloned", "nodes": len(nodes)})
+}
+
+func CloneImpressionNode(c *fiber.Ctx) error {
+	id := c.Params("id")
+	userClaims := c.Locals("user").(*Claims)
+	db := database.LocalDB
+	if db == nil { db = database.CloudDB }
+	if db == nil { return c.Status(503).JSON(fiber.Map{"error": "Database not connected"}) }
+
+	var dbUserID string
+	err := db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User profile not found"}) }
+
+	var n models.ImpressionNode
+	err = db.QueryRow(context.Background(), "SELECT media_id, title, content, node_type, desk_shelf_id, kg_name FROM impression_nodes WHERE id = $1 AND user_id = $2", id, dbUserID).Scan(&n.MediaID, &n.Title, &n.Content, &n.NodeType, &n.DeskShelfID, &n.KGName)
+	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "Source node not found"}) }
+
+	newID := uuid.New().String()
+	newTitle := n.Title + " - Copy"
+
+	query := `INSERT INTO impression_nodes (id, user_id, media_id, title, content, node_type, desk_shelf_id, kg_name) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`
+	err = db.QueryRow(context.Background(), query, newID, dbUserID, n.MediaID, newTitle, n.Content, n.NodeType, n.DeskShelfID, n.KGName).Scan(&n.ID)
+	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
+
+	// Duplicate edges where this node is source
+	db.Exec(context.Background(), `INSERT INTO impression_edges (user_id, source_id, target_id, label, kg_name) 
+		SELECT user_id, $1, target_id, label, kg_name FROM impression_edges WHERE source_id = $2 AND user_id = $3`, n.ID, id, dbUserID)
+	// Duplicate edges where this node is target
+	db.Exec(context.Background(), `INSERT INTO impression_edges (user_id, source_id, target_id, label, kg_name) 
+		SELECT user_id, source_id, $1, label, kg_name FROM impression_edges WHERE target_id = $2 AND user_id = $3`, n.ID, id, dbUserID)
+
+	return c.JSON(n)
 }
 
 func GetLinkedSnippet(c *fiber.Ctx) error {

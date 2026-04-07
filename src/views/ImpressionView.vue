@@ -133,12 +133,12 @@ const initGraph = () => {
             const nodeId = params.nodes[0] as string;
             const nodeData = nodes.get(nodeId) as any;
             const nodeName = nodeData?.label || nodeId;
-            if (confirm(`Destroy "${nodeName}"? This is irreversible.`)) {
+            if (confirm(`⚠️ CRITICAL: Are you ABSOLUTELY sure you want to permanently destroy "${nodeName}"? This action cannot be undone.`)) {
                 await apiService.deleteImpressionNode(nodeId);
                 await loadGraph();
             }
         } else if (params.edges.length > 0) {
-            if (confirm(`Sever link ${params.edges[0]}?`)) {
+            if (confirm(`⚠️ SEVER BOND: Permanently disconnect this relationship?`)) {
                 await apiService.deleteImpressionLink(params.edges[0]);
                 await loadGraph();
             }
@@ -150,6 +150,16 @@ const initGraph = () => {
                 await loadGraph(res.id);
             }
         }
+    }
+  });
+
+  network.value.on('doubleClick', async (params) => {
+    if (interactionMode.value === 'edit' && params.nodes.length > 0) {
+        const nodeId = params.nodes[0];
+        try {
+            const res = await apiService.cloneImpressionNode(nodeId);
+            await loadGraph(res.id);
+        } catch (e) { console.error(e); }
     }
   });
 
@@ -424,8 +434,15 @@ const executeCommand = async () => {
                 commandResults.value = all;
             }
         } else if (cmd === '/kg') {
-            if (!args[0]) throw new Error('KG name required. Usage: /kg [name]');
-            switchKG(args[0]);
+            if (!args[0]) throw new Error('KG name required. Usage: /kg [name] OR /kg copy [src] [tgt]');
+            
+            if (args[0] === 'copy') {
+                if (args.length < 3) throw new Error('Source and Target names required. Usage: /kg copy [source] [target]');
+                await apiService.duplicateKG(args[1], args[2]);
+                commandResults.value = [{ id: 'kg-c', title: `Universe "${args[1]}" cloned to "${args[2]}".`, resultType: 'info' }];
+            } else {
+                switchKG(args[0]);
+            }
             commandInput.value = '';
         } else if (cmd === '/pin') {
             await pinToDesk();
@@ -668,13 +685,13 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
                 <ul>
                     <li><code>/model [view/edit]</code> - 切換互動模式 (點擊與長按的手勢功能會改變)</li>
                     <li><code>[VIEW 模式]</code> - 點擊節點置中焦點；長按節點開啟編輯面版</li>
-                    <li><code>[EDIT 模式]</code> - 點擊兩個點進行連線；長按節點或邊線可立即刪除</li>
+                    <li><code>[EDIT 模式]</code> - 按住空白處創點；連點兩下複製點及邊；長按刪除</li>
                     <li><code>/add point [標題]</code> - 建立一個新的知識點 (Concept Node)</li>
-                    <li><code>/add edge "[起點]" "[終點]" [標籤]</code> - 透過標題連結兩個點 (含空格標題請用雙引號)</li>
+                    <li><code>/add edge "[起點]" "[終點]" [標籤]</code> - 透過標題連結兩個點</li>
                     <li><code>/search [關鍵字]</code> - 同時搜尋當前圖譜中的節點與連線</li>
                     <li><code>/list [point/edge/kg]</code> - 分類列出所有節點、邊或是現有的知識宇宙 (KG)</li>
-                    <li><code>/kg [名稱]</code> - 切換至指定的知識宇宙，若名稱不存在則會建立新圖譜</li>
-                    <li><code>/pin</code> - 將目前的圖譜固定至 Desk 工作台，方便從其他畫面快速進入</li>
+                    <li><code>/kg [名稱]</code> - 切換知識宇宙；<code>/kg copy [源] [目]</code> - 複製整個宇宙</li>
+                    <li><code>/pin</code> - 將目前的圖譜固定至 Desk 工作台</li>
                     <li><code>/help</code> - 切換顯示此專業說明手冊</li>
                 </ul>
             </div>
@@ -827,9 +844,23 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
                         '#be123c', '#ca8a04'
                     ]" :key="c" :style="{ background: c }"
                         @click="exportBgColor = c; exportBgImage = null" class="c-dot"
-                        :class="{ active: exportBgColor === c }"></div>
+                        :class="{ active: exportBgColor === c && !exportBgImage }"></div>
                 </div>
-                <button class="confirm-link-btn" @click="exportAsImage">Download Art</button>
+
+                <div class="texture-label">Cosmic Textures</div>
+                <div class="texture-grid">
+                    <div v-for="(img, name) in {
+                        'Deep Space': 'https://images.unsplash.com/photo-1464802686167-b939a6910659?q=80&w=1000',
+                        'Blueprint': 'https://images.unsplash.com/photo-1581092160562-40aa08e78837?q=80&w=1000',
+                        'Cyberpunk': 'https://images.unsplash.com/photo-1605810230434-7631ac76ec81?q=80&w=1000',
+                        'Silk': 'https://images.unsplash.com/photo-1557683316-973673baf926?q=80&w=1000'
+                    }" :key="name" class="t-item" @click="exportBgImage = img; exportBgColor = '#ffffff'" :class="{ active: exportBgImage === img }">
+                        <img :src="img" />
+                        <span class="t-name">{{ name }}</span>
+                    </div>
+                </div>
+
+                <button class="confirm-link-btn" @click="exportAsImage">Render & Download</button>
             </div>
         </div>
     </div>
@@ -915,18 +946,32 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
 
 .snapshot-panel { position: absolute; top: 95px; right: 25px; width: 280px; padding: 25px; z-index: 2200; box-shadow: 0 15px 50px rgba(0,0,0,0.8); }
 .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-.panel-head h4 { margin: 0; font-size: 0.9rem; letter-spacing: 1px; color: #f1f5f9; }
-.close-p { background: none; border: none; color: #475569; font-size: 1.5rem; cursor: pointer; }
-.color-picker-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 25px; }
+.panel-head h4 { margin: 0; font-size: 0.9rem; letter-spacing: 2px; color: #f1f5f9; text-transform: uppercase; font-weight: 900; }
+.close-p { background: none; border: none; color: #475569; font-size: 1.5rem; cursor: pointer; transition: 0.2s; }
+.close-p:hover { color: #f1f5f9; }
+
+.texture-label { font-size: 0.65rem; color: #64748b; font-weight: 800; text-transform: uppercase; margin: 15px 0 10px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px; }
+.texture-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 25px; }
+.t-item { height: 60px; border-radius: 12px; overflow: hidden; position: relative; cursor: pointer; border: 2px solid transparent; transition: 0.2s; }
+.t-item img { width: 100%; height: 100%; object-fit: cover; opacity: 0.5; transition: 0.3s; }
+.t-item:hover img { opacity: 0.8; }
+.t-item.active { border-color: #22d3ee; }
+.t-item.active img { opacity: 1; }
+.t-name { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 900; color: white; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
+
+.color-picker-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 15px; }
 .c-dot { aspect-ratio: 1; border-radius: 50%; cursor: pointer; border: 2px solid rgba(255,255,255,0.1); transition: 0.2s; position: relative; }
 .c-dot:hover { transform: scale(1.15); border-color: rgba(34, 211, 238, 0.4); }
 .c-dot.active { border-color: #22d3ee; transform: scale(1.15); box-shadow: 0 0 15px rgba(34, 211, 238, 0.4); }
 
 .in-field { margin-bottom: 25px; }
 .in-field label { display: block; font-size: 0.7rem; color: #64748b; font-weight: 800; text-transform: uppercase; margin-bottom: 8px; }
-.premium-select, .premium-textarea, .m-input { width: 100%; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 14px; border-radius: 12px; font-family: inherit; }
+.premium-select, .premium-textarea, .m-input { width: 100%; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 14px; border-radius: 12px; font-family: inherit; transition: 0.3s; }
+.premium-select:focus, .premium-textarea:focus, .m-input:focus { border-color: #22d3ee; background: rgba(0,0,0,0.5); outline: none; }
 .premium-textarea { height: 180px; resize: none; }
-.confirm-link-btn { width: 100%; height: 48px; background: #22d3ee; color: #080c14; border: none; border-radius: 12px; font-weight: 800; cursor: pointer; margin-top: auto; }
+.confirm-link-btn { width: 100%; height: 48px; background: #22d3ee; color: #080c14; border: none; border-radius: 12px; font-weight: 800; cursor: pointer; margin-top: auto; transition: 0.3s; }
+.confirm-link-btn:hover { background: #67e8f9; transform: translateY(-2px); box-shadow: 0 10px 20px rgba(34, 211, 238, 0.3); }
+.confirm-link-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
 .loading-overlay { position: fixed; inset: 0; background: rgba(11, 15, 26, 0.8); display: flex; align-items: center; justify-content: center; z-index: 5000; }
 .spin { width: 40px; height: 40px; border: 3px solid rgba(34, 211, 238, 0.1); border-top-color: #22d3ee; border-radius: 50%; animation: spin 0.8s linear infinite; }
