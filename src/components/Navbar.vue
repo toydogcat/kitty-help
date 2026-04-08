@@ -37,6 +37,7 @@ const navItems = computed(() => {
   // 3. Admin level items (Admin, SuperAdmin)
   if (['admin', 'superadmin', 'toby'].includes(role)) {
     items.push({ name: 'storehouse', label: 'Store', icon: '📦', path: '/storehouse' });
+    items.push({ name: 'obsidian', label: 'Vault', icon: '📑', path: '/obsidian' });
   }
 
   // 4. SuperAdmin level items (SuperAdmin Only)

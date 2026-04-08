@@ -182,6 +182,10 @@ export const apiService = {
     }
     return url;
   },
+  async listObsidianFiles(path: string = '') {
+    const res = await axios.get(`${API_BASE}/obsidian/list`, { params: { path } });
+    return res.data;
+  },
   getAbsoluteUrl(path: string) {
     if (!path) return '';
     if (path.startsWith('http')) return path;

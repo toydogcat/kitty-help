@@ -175,7 +175,7 @@ func GetStorehouseItems(c *fiber.Ctx) error {
 		})
 	}
 
-	if (platform == "" || platform == "local") && query != "" {
+	if platform == "local" || (platform == "" && query != "") {
 		// Only show local files if specifically requested or if there's a search query
 		// to avoid cluttering the main view with thousands of vault files
 		root := "/root/obsidian"
@@ -371,4 +371,37 @@ func GetFileProxy(c *fiber.Ctx) error {
 	c.Set("Content-Type", contentType)
 	c.Set("Content-Length", fmt.Sprintf("%d", len(bodyBytes)))
 	return c.Send(bodyBytes)
+}
+
+func ListObsidianFiles(c *fiber.Ctx) error {
+	relPath := c.Query("path", "")
+	root := "/root/obsidian"
+	targetDir := filepath.Join(root, relPath)
+
+	// Security: prevent directory traversal
+	if !strings.HasPrefix(filepath.Clean(targetDir), filepath.Clean(root)) {
+		return c.Status(403).JSON(fiber.Map{"error": "Forbidden path"})
+	}
+
+	entries, err := os.ReadDir(targetDir)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	files := []fiber.Map{}
+	for _, entry := range entries {
+		info, _ := entry.Info()
+		files = append(files, fiber.Map{
+			"name":    entry.Name(),
+			"isDir":   entry.IsDir(),
+			"size":    info.Size(),
+			"modTime": info.ModTime(),
+			"path":    filepath.Join(relPath, entry.Name()),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"currentPath": relPath,
+		"files":       files,
+	})
 }

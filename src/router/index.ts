@@ -6,6 +6,7 @@ const StorehouseView = () => import('../views/StorehouseView.vue');
 const ChatView = () => import('../views/ChatView.vue');
 const ImpressionView = () => import('../views/ImpressionView.vue');
 const DeskView = () => import('../views/DeskView.vue');
+const ObsidianView = () => import('../views/ObsidianView.vue');
 
 const routes = [
   { 
@@ -34,6 +35,10 @@ const routes = [
   },
   { 
     path: '/admin', name: 'admin', component: AdminView, 
+    meta: { requiredRoles: ['admin', 'superadmin'] } 
+  },
+  { 
+    path: '/obsidian', name: 'obsidian', component: ObsidianView, 
     meta: { requiredRoles: ['admin', 'superadmin'] } 
   },
 ];
