@@ -172,7 +172,7 @@ func (c *BaseChannel) GetNewsFromWorker(args string) (string, error) {
 	}
 	if err := json.Unmarshal(resBody, &result); err == nil {
 		if result.Error != "" {
-			return "", fmt.Errorf(result.Error)
+			return "", fmt.Errorf("%s", result.Error)
 		}
 		if result.Output != "" { return result.Output, nil }
 		if result.Reply != "" { return result.Reply, nil }

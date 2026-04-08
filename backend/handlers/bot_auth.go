@@ -39,8 +39,6 @@ func GetPendingBotRequests(c *fiber.Ctx) error {
 		userEmail := ""; if uemail != nil { userEmail = *uemail }
 		userName := ""; if uname != nil { userName = *uname }
 
-		fmt.Printf("[GET REQUESTS DEBUG] Token: [%s] | UserID: [%s] | Email: [%s]\n", token, userID, userEmail)
-		
 		requests = append(requests, fiber.Map{
 			"id": id,
 			"token": token,
@@ -54,7 +52,6 @@ func GetPendingBotRequests(c *fiber.Ctx) error {
 			"expires_at": expiresAt,
 		})
 	}
-	fmt.Printf("[GET REQUESTS DEBUG] Total requests sent: %d\n", len(requests))
 	return c.JSON(requests)
 }
 
@@ -266,18 +263,12 @@ func LinkBotAccount(c *fiber.Ctx) error {
 	}
 
 	// 3. Mark request as submitted-and-linked
-	fmt.Printf("[BOT LINK DEBUG] Attempting to link Token: [%s] to UserID: [%s]\n", body.Token, user.ID)
-	
-	result, err := database.LocalDB.Exec(context.Background(),
+	_, err = database.LocalDB.Exec(context.Background(),
 		"UPDATE bot_auth_requests SET user_id = $1 WHERE token = $2", user.ID, body.Token)
 	
 	if err != nil {
-		fmt.Printf("[BOT LINK ERROR] DB Update failed: %v\n", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to link request"})
 	}
 	
-	rowsAffected := result.RowsAffected()
-	fmt.Printf("[BOT LINK SUCCESS] Rows affected: %d\n", rowsAffected)
-
 	return c.JSON(fiber.Map{"success": true, "platform": platform, "name": accountName})
 }

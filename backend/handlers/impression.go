@@ -58,15 +58,9 @@ func GetImpressionTemp(c *fiber.Ctx) error {
 		db.Exec(context.Background(), "UPDATE users SET discord_id = NULL WHERE discord_id = '840468194456371211' AND email != $1", userClaims.Email)
 		
 		// Step B: Upsert Toby with the correct info
-		_, err := db.Exec(context.Background(), 
+		db.Exec(context.Background(), 
 			"INSERT INTO users (id, name, email, role, discord_id) VALUES ('82507694-4205-49d4-8099-9e18ba997581', 'Master Admin', $1, 'superadmin', '840468194456371211') ON CONFLICT (email) DO UPDATE SET discord_id = '840468194456371211', role = 'superadmin'", 
 			userClaims.Email)
-		
-		if err != nil {
-			log.Printf("[DB DEBUG] Forced Toby Migration failed: %v", err)
-		} else {
-			log.Printf("[DB DEBUG] Forced Toby Migration SUCCESS for identity: %s", userClaims.Email)
-		}
 	}
 
 	// 1. Resolve System User ID from email
@@ -564,9 +558,12 @@ func SyncNodeToSnippet(c *fiber.Ctx) error {
 	if db == nil { db = database.CloudDB }
 	if db == nil { return c.Status(503).JSON(fiber.Map{"error": "Database not connected"}) }
 
-	var dbUserID string
-	err := db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
-	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User not found"}) }
+	dbUserID := userClaims.ID
+	var err error
+	if dbUserID == "" {
+		err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+		if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User not found"}) }
+	}
 
 	// 1. Fetch node AND check if already linked
 	var n models.ImpressionNode
@@ -578,15 +575,28 @@ func SyncNodeToSnippet(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "existing", "snippetId": *n.LinkedSnippetID})
 	}
 
-	// 2. Create Snippet
+	// 2. Start Transaction for atomic creation and linking
+	ctx := context.Background()
+	tx, err := db.Begin(ctx)
+	if err != nil { return c.Status(500).JSON(fiber.Map{"error": "Transaction failed: " + err.Error()}) }
+	defer tx.Rollback(ctx)
+
+	// A. Create Snippet
 	var snippetID string
 	snippetQuery := `INSERT INTO snippets (user_id, name, content) VALUES ($1, $2, $3) RETURNING id`
-	err = db.QueryRow(context.Background(), snippetQuery, dbUserID, n.Title, n.Content).Scan(&snippetID)
-	if err != nil { return c.Status(500).JSON(fiber.Map{"error": "Failed to create: " + err.Error()}) }
+	err = tx.QueryRow(ctx, snippetQuery, dbUserID, n.Title, n.Content).Scan(&snippetID)
+	if err != nil { return c.Status(500).JSON(fiber.Map{"error": "Failed to create snippet: " + err.Error()}) }
 
-	// 3. Update Link IDs
-	db.Exec(context.Background(), "UPDATE impression_nodes SET linked_snippet_id = $1 WHERE id = $2", snippetID, id)
-	db.Exec(context.Background(), "UPDATE snippets SET linked_node_id = $1 WHERE id = $2", id, snippetID)
+	// B. Update Link IDs in both tables
+	_, err = tx.Exec(ctx, "UPDATE impression_nodes SET linked_snippet_id = $1 WHERE id = $2", snippetID, id)
+	if err != nil { return c.Status(500).JSON(fiber.Map{"error": "Failed to update node link: " + err.Error()}) }
+	
+	_, err = tx.Exec(ctx, "UPDATE snippets SET linked_node_id = $1 WHERE id = $2", id, snippetID)
+	if err != nil { return c.Status(500).JSON(fiber.Map{"error": "Failed to update snippet link: " + err.Error()}) }
+
+	if err := tx.Commit(ctx); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Commit failed: " + err.Error()})
+	}
 
 	return c.JSON(fiber.Map{"status": "linked", "snippetId": snippetID})
 }
