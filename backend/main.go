@@ -110,6 +110,7 @@ func main() {
 	authShared.Get("/bot/my-status", handlers.GetMyBotStatus)
 	authShared.Post("/bot/link", handlers.LinkBotAccount)
 	authShared.Post("/bot/send", handlers.SendBotMessage)
+	authShared.Get("/bot/uploads", handlers.ListUploads)
 	authShared.Get("/chat/logs", handlers.GetChatLogs)
 	authShared.Get("/chat/photos", handlers.GetRecentPhotos)
 	authShared.Get("/chat/remarks", handlers.GetRemarks)

@@ -437,6 +437,16 @@ export const apiService = {
     const response = await axios.get(`${API_BASE}/chat/photos?page=${page}&limit=${limit}`);
     return response.data;
   },
+  async getBotUploads() {
+    const response = await axios.get(`${API_BASE}/bot/uploads`);
+    return response.data;
+  },
+  async sendBotMessageMulti(formData: FormData) {
+    const response = await axios.post(`${API_BASE}/bot/send`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  },
   async sendBotMessage(platform: string, content: string, file: File | null = null, targetId: string = '') {
     const formData = new FormData();
     formData.append('platform', platform);

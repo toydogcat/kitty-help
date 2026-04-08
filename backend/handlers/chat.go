@@ -159,10 +159,41 @@ func GetMyBotStatus(c *fiber.Ctx) error {
 
 	return c.JSON(status)
 }
+
+// ListUploads returns a list of files in the standardized uploads directory
+func ListUploads(c *fiber.Ctx) error {
+	workspacePath := "/root/.kitty-help/workspace"
+	uploadDir := filepath.Join(workspacePath, "uploads")
+	if _, err := os.Stat(workspacePath); err != nil {
+		uploadDir = "../uploads"
+	}
+
+	files, err := os.ReadDir(uploadDir)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	result := []fiber.Map{}
+	for _, f := range files {
+		if !f.IsDir() {
+			info, _ := f.Info()
+			result = append(result, fiber.Map{
+				"name": f.Name(),
+				"size": info.Size(),
+				"time": info.ModTime(),
+				"type": strings.ToLower(filepath.Ext(f.Name())),
+			})
+		}
+	}
+	return c.JSON(result)
+}
+
 func SendBotMessage(c *fiber.Ctx) error {
+	userClaims, _ := c.Locals("user").(*Claims)
 	platform := c.FormValue("platform")
 	content := c.FormValue("content")
 	targetID := c.FormValue("targetId")
+	selectedFiles := c.FormValue("selectedFiles")
 
 	if platform == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "Platform is required"})
@@ -170,65 +201,75 @@ func SendBotMessage(c *fiber.Ctx) error {
 
 	botIf, ok := bots.BotManager.Get(platform)
 	if !ok {
-		return c.Status(404).JSON(fiber.Map{"error": "Bot for this platform not found"})
+		return c.Status(404).JSON(fiber.Map{"error": "Bot platform missing"})
 	}
 
-	// 1. Resolve Target ID (Lookup DB first, then fallback to ENV)
+	// 1. Resolve Target ID (PRIORITY: 1. Manual Input -> 2. Database Link -> 3. Environment Fallback)
+	resolvedMethod := "Manual"
+	if targetID == "" && userClaims != nil {
+		err := database.LocalDB.QueryRow(context.Background(),
+			"SELECT account_id FROM bot_authorized_users WHERE user_id = $1 AND platform = $2",
+			userClaims.ID, platform).Scan(&targetID)
+		if err == nil && targetID != "" {
+			resolvedMethod = "Database"
+		}
+	}
+
 	if targetID == "" {
-		claims, ok := c.Locals("user").(*Claims)
-		if ok && claims != nil {
-			err := database.LocalDB.QueryRow(context.Background(),
-				"SELECT account_id FROM bot_authorized_users WHERE user_id = $1 AND platform = $2",
-				claims.ID, platform).Scan(&targetID)
-			if err != nil {
-				fmt.Printf("[BOT SEND] No DB link found for User %s on %s, using ENV fallback\n", claims.ID, platform)
-				switch platform {
-				case "telegram":
-					targetID = os.Getenv("TELEGRAM_STOREHOUSE_CHAT_ID")
-				case "discord":
-					targetID = os.Getenv("DISCORD_ADMIN_CHANNEL_ID")
-				case "line":
-					targetID = os.Getenv("ADMIN_LINE_ID")
-				}
+		switch platform {
+		case "telegram": targetID = os.Getenv("TELEGRAM_STOREHOUSE_CHAT_ID")
+		case "discord": targetID = os.Getenv("DISCORD_ADMIN_CHANNEL_ID")
+		case "line": targetID = os.Getenv("ADMIN_LINE_ID")
+		}
+		if targetID != "" {
+			resolvedMethod = "Environment"
+		}
+	}
+
+	if targetID == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "No target ID found. Please link your account via /link command in bot."})
+	}
+	fmt.Printf("🤖 [BOT DISPATCH] Platform: %s | Target: %s | Method: %s\n", platform, targetID, resolvedMethod)
+
+	// 2. Handle Files (Multi-mode)
+	workspacePath := "/root/.kitty-help/workspace"
+	uploadDir := filepath.Join(workspacePath, "uploads")
+	if _, err := os.Stat(workspacePath); err != nil {
+		uploadDir = "../uploads"
+	}
+	os.MkdirAll(uploadDir, 0755)
+
+	var finalFileNames []string
+
+	// A. Direct Uploads (Multiple)
+	form, err := c.MultipartForm()
+	if err == nil {
+		for _, file := range form.File["files"] {
+			tempPath := filepath.Join(uploadDir, file.Filename)
+			if err := c.SaveFile(file, tempPath); err == nil {
+				finalFileNames = append(finalFileNames, file.Filename)
 			}
 		}
 	}
 
-	if targetID == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "Target ID is missing and no default available in .env"})
-	}
-
-	// 2. Handle File Upload (Optional)
-	file, err := c.FormFile("file")
-	var mediaID *string = nil
-	msgType := "text"
-	var tempPath string
-
-	if err == nil {
-		// Standardized path for Docker and Local
-		workspacePath := "/root/.kitty-help/workspace"
-		uploadDir := filepath.Join(workspacePath, "uploads")
-		
-		// If workspace exists, ensure uploads exists inside it
-		if _, err := os.Stat(workspacePath); err == nil {
-			os.MkdirAll(uploadDir, 0755)
-		} else {
-			// Fallback for local development
-			uploadDir = "../uploads"
-			os.MkdirAll(uploadDir, 0755)
-		}
-		
-		tempPath = filepath.Join(uploadDir, file.Filename)
-		if err := c.SaveFile(file, tempPath); err == nil {
-			msgType = "media"
-			mediaID = &file.Filename // 這裡要存檔名，前端才能顯示
+	// B. Selected from Existing
+	if selectedFiles != "" {
+		for _, f := range strings.Split(selectedFiles, ",") {
+			trimmedFile := strings.TrimSpace(f)
+			if trimmedFile != "" {
+				finalFileNames = append(finalFileNames, trimmedFile)
+			}
 		}
 	}
 
-	// 3. Send via Bot
-	if msgType == "media" {
-		// Detect actual media type for Telegram/LINE
-		ext := strings.ToLower(filepath.Ext(file.Filename))
+	// 3. Dispatch
+	if content != "" {
+		_ = botIf.SendMessage(targetID, content)
+	}
+
+	for _, filename := range finalFileNames {
+		tempPath := filepath.Join(uploadDir, filename)
+		ext := strings.ToLower(filepath.Ext(filename))
 		botMediaType := "document"
 		if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".webp" {
 			botMediaType = "photo"
@@ -236,24 +277,19 @@ func SendBotMessage(c *fiber.Ctx) error {
 			botMediaType = "video"
 		}
 
-		err = botIf.SendMedia(targetID, botMediaType, tempPath, content)
-	} else {
-		err = botIf.SendMessage(targetID, content)
+		err := botIf.SendMedia(targetID, botMediaType, tempPath, "")
+		if err != nil {
+			fmt.Printf("[BOT SEND FAIL] %s error: %v (Target: %s)\n", platform, err, targetID)
+			return c.Status(500).JSON(fiber.Map{"error": "Send failed to "+targetID+": " + err.Error()})
+		}
+
+		// Log to DB
+		botName := "Bot Dispatcher (" + platform + ")"
+		mediaID := filename
+		_, _ = database.LocalDB.Exec(context.Background(),
+			"INSERT INTO chat_logs (platform, sender_id, sender_name, content, msg_type, media_id) VALUES ($1, $2, $3, $4, $5, $6)",
+			platform, "bot-api", botName, "(File: "+filename+")", "media", &mediaID)
 	}
 
-	if err != nil {
-		fmt.Printf("[BOT SEND FAIL] %s send error: %v\n", platform, err)
-		return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Send failed: %v", err)})
-	}
-
-	// 4. Log to DB
-	botName := "KittyBot (" + platform + ")"
-	_, err = database.LocalDB.Exec(context.Background(),
-		"INSERT INTO chat_logs (platform, sender_id, sender_name, content, msg_type, media_id) VALUES ($1, $2, $3, $4, $5, $6)",
-		platform, "bot-api", botName, content, msgType, mediaID)
-	if err != nil {
-		fmt.Printf("[DB ERROR] Log chat failed: %v\n", err)
-	}
-
-	return c.JSON(fiber.Map{"status": "success", "message": "Sent to " + platform + " (" + targetID + ")"})
+	return c.JSON(fiber.Map{"status": "success", "count": len(finalFileNames)})
 }
