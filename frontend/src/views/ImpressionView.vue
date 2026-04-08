@@ -892,16 +892,14 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
                 <button class="close-help" @click="showCommandHelp = false">×</button>
                 <h3>Knowledge Terminal 知識圖譜終端機控制台</h3>
                 <ul>
-                    <li><code>/model [view/edit]</code> - 切換互動模式 (點擊與長按的手勢功能會改變)</li>
-                    <li><code>[VIEW 模式]</code> - 點擊節點置中焦點；點擊連線修改關係；長按節點開啟編輯面版</li>
-                    <li><code>[EDIT 模式]</code> - 按住空白處創點；連點兩下複製點及邊；長按刪除</li>
-                    <li><code>/add point [標題]</code> - 建立一個新的知識點 (Concept Node)</li>
+                    <li><code>🔭 [VIEW 模式]</code> - 單擊標記/取消標記並開啟詳情；拖拽觸發「智慧局部物理」(拉動一串鈴鐺)</li>
+                    <li><code>🛠️ [EDIT 模式]</code> - 點擊選中(藍圈)並編輯；雙擊設為候選點(橘光)後雙擊第二點連線；長按刪除</li>
+                    <li><code>/layout [tree/force]</code> - 切換結構化層級佈局或自由力學模式</li>
+                    <li><code>/rank [centrality/pagerank]</code> - 執行節點權重分析，自動縮放重要節點</li>
                     <li><code>/edit [標題]</code> - 快速跳轉至節點並開啟編輯面板</li>
-                    <li><code>/add edge "[起點]" "[終點]" [標籤]</code> - 透過標題連結兩個點</li>
-                    <li><code>/search [關鍵字]</code> - 同時搜尋當前圖譜中的節點與連線</li>
                     <li><code>/kg [名稱]</code> - 切換知識宇宙；<code>/kg copy [源] [目]</code> - 複製整個宇宙</li>
-                    <li><code>/pin</code> - 將目前的圖譜固定至 Desk 工作台</li>
-                    <li><code>/help</code> - 切換顯示此專業說明手冊</li>
+                    <li><code>[全局操作]</code> - 空白處長按開關【全局物理】；滾輪縮放與平移位置會自動記憶</li>
+                    <li><code>λ 指令系統</code> - 支援 /add, /search, /list, /pin 等所有進階管理功能</li>
                 </ul>
             </div>
         </div>
