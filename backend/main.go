@@ -104,6 +104,7 @@ func main() {
 	authShared := api.Group("/", handlers.JWTMiddleware)
 	authShared.Get("/bot/my-status", handlers.GetMyBotStatus)
 	authShared.Post("/bot/link", handlers.LinkBotAccount)
+	authShared.Post("/bot/send", handlers.SendBotMessage)
 	authShared.Get("/chat/logs", handlers.GetChatLogs)
 	authShared.Get("/chat/photos", handlers.GetRecentPhotos)
 	authShared.Get("/chat/remarks", handlers.GetRemarks)

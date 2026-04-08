@@ -437,6 +437,18 @@ export const apiService = {
     const response = await axios.get(`${API_BASE}/chat/photos?page=${page}&limit=${limit}`);
     return response.data;
   },
+  async sendBotMessage(platform: string, content: string, file: File | null = null, targetId: string = '') {
+    const formData = new FormData();
+    formData.append('platform', platform);
+    formData.append('content', content);
+    if (file) formData.append('file', file);
+    if (targetId) formData.append('targetId', targetId);
+    
+    const response = await axios.post(`${API_BASE}/bot/send`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  },
 
   // 📝 Integrated Remarks
   async getRemarks() {

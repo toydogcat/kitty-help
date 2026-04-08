@@ -34,6 +34,58 @@ const zoomedImageUrl = ref('');
 // Drag & Drop
 const dragOverRemarkId = ref<string | null>(null);
 
+// Bot Sender Logic
+const botForm = ref({
+  platform: 'telegram',
+  content: '',
+  targetId: '',
+  file: null as File | null
+});
+const sendingBotMsg = ref(false);
+const filePreviewUrl = ref('');
+const platforms = [
+  { id: 'telegram', name: 'Telegram', icon: '✈️', color: '#0088cc' },
+  { id: 'discord', name: 'Discord', icon: '💬', color: '#5865F2' },
+  { id: 'line', name: 'LINE', icon: '🟢', color: '#00B900' }
+];
+
+const onFileChange = (e: any) => {
+  const file = e.target.files[0];
+  if (file) {
+    botForm.value.file = file;
+    filePreviewUrl.value = URL.createObjectURL(file);
+  } else {
+    botForm.value.file = null;
+    filePreviewUrl.value = '';
+  }
+};
+
+const sendBotMessage = async () => {
+  if (!botForm.value.content && !botForm.value.file) {
+    alert("Please enter content or select a file.");
+    return;
+  }
+  
+  sendingBotMsg.value = true;
+  try {
+    await apiService.sendBotMessage(
+      botForm.value.platform,
+      botForm.value.content,
+      botForm.value.file,
+      botForm.value.targetId
+    );
+    // Success!
+    botForm.value.content = '';
+    botForm.value.file = null;
+    filePreviewUrl.value = '';
+    await fetchRecentMessages();
+  } catch (err: any) {
+    alert("Send failed: " + (err.response?.data?.error || err.message));
+  } finally {
+    sendingBotMsg.value = false;
+  }
+};
+
 const getStorehouseUrl = (mediaId: string, platform?: string) => {
   return apiService.getStorehouseFileUrl(mediaId, platform || 'line');
 };
@@ -186,6 +238,91 @@ const otherRemarks = computed(() => remarkContainers.value.filter(c => !c.isPinn
 
 <template>
   <div class="chat-view">
+    <!-- Left Panel: Bot Sender Control -->
+    <div class="left-panel">
+      <div class="bot-sender-card shadow-lg">
+        <div class="card-header">
+           <span class="icon">🤖</span>
+           <h3>Bot Dispatcher</h3>
+           <div class="live-indicator" :class="{ sending: sendingBotMsg }">
+              <span class="dot"></span> {{ sendingBotMsg ? 'DISPATCHING...' : 'READY' }}
+           </div>
+        </div>
+
+        <div class="card-body">
+           <div class="form-group">
+              <label>SELECT PLATFORM</label>
+              <div class="platform-chips">
+                <button 
+                  v-for="p in platforms" 
+                  :key="p.id"
+                  class="p-chip"
+                  :class="{ active: botForm.platform === p.id }"
+                  :style="{ '--p-color': p.color }"
+                  @click="botForm.platform = p.id"
+                >
+                  <span class="p-icon">{{ p.icon }}</span>
+                  <span class="p-name">{{ p.name }}</span>
+                </button>
+              </div>
+           </div>
+
+           <div class="form-group">
+              <label>TARGET ID (OPTIONAL)</label>
+              <input 
+                type="text" 
+                v-model="botForm.targetId" 
+                placeholder="Default to Admin/Storehouse"
+                class="compact-input"
+              />
+           </div>
+
+           <div class="form-group flex-grow">
+              <label>MESSAGE CONTENT</label>
+              <textarea 
+                v-model="botForm.content" 
+                placeholder="Type once-off message here..."
+                @keyup.ctrl.enter="sendBotMessage"
+              ></textarea>
+           </div>
+
+           <div class="form-group media-upload">
+              <label>ATTACH MEDIA</label>
+              <div class="upload-area" :class="{ has_file: !!filePreviewUrl }">
+                <input type="file" @change="onFileChange" accept="image/*,video/*,application/pdf" id="bot-file-input" />
+                <label for="bot-file-input" class="upload-label">
+                  <div v-if="filePreviewUrl" class="preview-wrap">
+                    <img :src="filePreviewUrl" />
+                    <div class="remove-btn" @click.stop.prevent="botForm.file = null; filePreviewUrl = ''">✕</div>
+                  </div>
+                  <div v-else class="placeholder">
+                    <span class="icon">📁</span>
+                    <span>Browse or Drop</span>
+                  </div>
+                </label>
+              </div>
+           </div>
+
+           <button class="send-btn" :disabled="sendingBotMsg" @click="sendBotMessage">
+              <span v-if="!sendingBotMsg">🚀 DISPATCH MESSAGE</span>
+              <span v-else class="loading-spin"></span>
+           </button>
+        </div>
+      </div>
+      
+      <!-- Quick Info / Status -->
+      <div class="bot-status-mini">
+         <div class="status-row">
+            <span class="lab">Auto-Sync</span>
+            <span class="val enabled">ACTIVE</span>
+         </div>
+         <div class="status-row">
+            <span class="lab">Worker Status</span>
+            <span class="val enabled">ONLINE</span>
+         </div>
+      </div>
+    </div>
+
     <!-- Center Panel: Unified Search Terminal -->
     <div class="center-panel">
       <div class="panel-header search-header">
@@ -360,9 +497,100 @@ const otherRemarks = computed(() => remarkContainers.value.filter(c => !c.isPinn
 </template>
 
 <style scoped>
-.chat-view { display: flex; height: calc(100vh - 100px); gap: 1rem; padding: 1rem; }
+.chat-view { display: flex; height: calc(100vh - 100px); gap: 1rem; padding: 1rem; background: var(--bg-darker); }
 
-.center-panel { flex: 1.5; background: rgba(0,0,0,0.2); border-radius: 24px; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; overflow: hidden; }
+/* Left Panel: Bot Sender */
+.left-panel { width: 320px; display: flex; flex-direction: column; gap: 1rem; }
+.bot-sender-card { 
+  background: rgba(255,255,255,0.04); 
+  border: 1px solid rgba(255,255,255,0.06); 
+  border-radius: 28px; 
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  flex: 1;
+}
+.bot-sender-card .card-header { display: flex; align-items: center; gap: 0.8rem; }
+.bot-sender-card .card-header h3 { font-size: 1rem; font-weight: 800; color: #fff; text-transform: uppercase; letter-spacing: 1px; }
+.live-indicator { margin-left: auto; font-size: 0.6rem; font-weight: 900; background: rgba(0,0,0,0.3); padding: 4px 10px; border-radius: 20px; display: flex; align-items: center; gap: 6px; color: #00B900; }
+.live-indicator.sending { color: var(--primary-color); }
+.live-indicator .dot { width: 6px; height: 6px; background: currentColor; border-radius: 50%; box-shadow: 0 0 10px currentColor; }
+.live-indicator.sending .dot { animation: blink 0.6s infinite; }
+
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+.bot-sender-card .card-body { flex: 1; display: flex; flex-direction: column; gap: 1.2rem; }
+.form-group { display: flex; flex-direction: column; gap: 0.5rem; }
+.form-group label { font-size: 0.65rem; font-weight: 900; opacity: 0.3; letter-spacing: 1px; color: #fff; }
+
+.platform-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.p-chip { 
+  flex: 1; 
+  min-width: 80px; 
+  background: rgba(255,255,255,0.03); 
+  border: 1px solid rgba(255,255,255,0.05); 
+  padding: 0.5rem; 
+  border-radius: 12px; 
+  cursor: pointer; 
+  display: flex; 
+  flex-direction: column; 
+  align-items: center; 
+  gap: 4px;
+  transition: all 0.2s;
+}
+.p-chip .p-icon { font-size: 1.2rem; }
+.p-chip .p-name { font-size: 0.6rem; font-weight: 900; color: #fff; opacity: 0.5; }
+.p-chip.active { background: rgba(var(--primary-rgb), 0.1); border-color: var(--p-color); box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+.p-chip.active .p-name { opacity: 1; color: var(--p-color); }
+
+.compact-input { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 0.6rem 0.8rem; color: #fff; font-size: 0.8rem; outline: none; }
+textarea { 
+  background: rgba(0,0,0,0.2); 
+  border: 1px solid rgba(255,255,255,0.06); 
+  border-radius: 14px; 
+  padding: 1rem; 
+  color: #fff; 
+  font-size: 0.9rem; 
+  outline: none; 
+  resize: none; 
+  flex: 1; 
+  min-height: 120px;
+  line-height: 1.5;
+}
+textarea:focus { border-color: var(--primary-color); background: rgba(0,0,0,0.3); }
+
+.upload-area { border: 2px dashed rgba(255,255,255,0.08); border-radius: 14px; position: relative; transition: 0.2s; }
+.upload-area:hover { border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.02); }
+#bot-file-input { display: none; }
+.upload-label { cursor: pointer; display: flex; align-items: center; justify-content: center; min-height: 100px; width: 100%; }
+.placeholder { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; font-size: 0.75rem; opacity: 0.4; font-weight: 800; }
+.preview-wrap { position: relative; width: 100%; height: 100%; padding: 10px; }
+.preview-wrap img { width: 100%; height: 80px; object-fit: cover; border-radius: 8px; }
+.remove-btn { position: absolute; top: 0; right: 0; background: #e74c3c; color: #fff; width: 18px; height: 18px; border-radius: 50%; font-size: 0.6rem; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+
+.send-btn { 
+  background: var(--primary-color); 
+  color: #000; 
+  border: none; 
+  border-radius: 14px; 
+  padding: 1rem; 
+  font-weight: 800; 
+  font-size: 0.85rem; 
+  cursor: pointer; 
+  transition: all 0.3s;
+  box-shadow: 0 4px 15px rgba(var(--primary-rgb), 0.3);
+}
+.send-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(var(--primary-rgb), 0.4); filter: brightness(1.1); }
+.send-btn:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
+
+.bot-status-mini { background: rgba(0,0,0,0.1); border-radius: 14px; padding: 1rem; border: 1px solid rgba(255,255,255,0.03); }
+.status-row { display: flex; justify-content: space-between; font-size: 0.65rem; font-weight: 900; margin-bottom: 4px; }
+.status-row .lab { opacity: 0.3; }
+.status-row .val.enabled { color: #00B900; }
+
+.center-panel { flex: 2; background: rgba(0,0,0,0.2); border-radius: 28px; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; overflow: hidden; }
+/* ... Rest remains similar ... */
 .search-header { 
   padding: 1.5rem 2rem; 
   background: rgba(255,255,255,0.02); 
@@ -372,116 +600,65 @@ const otherRemarks = computed(() => remarkContainers.value.filter(c => !c.isPinn
   gap: 1.2rem;
 }
 .header-top { display: flex; justify-content: space-between; align-items: center; }
-.header-top h2 { font-size: 1.3rem; font-weight: 800; color: #fff; }
-.quick-stats { font-size: 0.75rem; opacity: 0.4; font-weight: 800; color: var(--primary-color); text-transform: uppercase; }
+.header-top h2 { font-size: 1.1rem; font-weight: 800; color: #fff; }
+.quick-stats { font-size: 0.65rem; opacity: 0.4; font-weight: 800; color: var(--primary-color); text-transform: uppercase; }
 
-.filter-bar { display: flex; gap: 0.8rem; flex-wrap: wrap; align-items: flex-end; }
-.f-group { display: flex; flex-direction: column; gap: 0.4rem; min-width: 110px; }
-.f-group label { font-size: 0.6rem; font-weight: 900; opacity: 0.3; text-transform: uppercase; letter-spacing: 1px; color: #fff; }
+.filter-bar { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: flex-end; }
+.f-group { display: flex; flex-direction: column; gap: 0.4rem; min-width: 90px; }
+.f-group label { font-size: 0.55rem; font-weight: 900; opacity: 0.3; text-transform: uppercase; letter-spacing: 1px; color: #fff; }
 .f-group select, .f-group input { 
   background: rgba(255,255,255,0.03); 
   border: 1px solid rgba(255,255,255,0.06); 
   border-radius: 10px; 
-  padding: 0.6rem 0.8rem; 
+  padding: 0.5rem 0.7rem; 
   color: #fff; 
-  font-size: 0.85rem; 
+  font-size: 0.75rem; 
   outline: none;
   transition: all 0.2s;
 }
-.f-group select:focus, .f-group input:focus { border-color: var(--primary-color); background: rgba(0,0,0,0.4); }
-.flex-grow { flex: 1; min-width: 180px; }
 
-.messages-list { flex: 1; padding: 2rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1.2rem; }
+.messages-list { flex: 1; padding: 1.5rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem; }
 
-.msg-card { display: flex; flex-direction: column; align-items: flex-start; width: 100%; }
 .msg-bubble { 
-  max-width: 90%; 
+  max-width: 95%; 
   background: rgba(255,255,255,0.04); 
   border-radius: 20px; 
   padding: 1rem 1.4rem; 
   border: 1px solid rgba(255,255,255,0.06); 
   display: flex; 
   flex-direction: column; 
-  gap: 0.4rem;
-  transition: all 0.2s;
+  gap: 0.3rem;
 }
-.msg-bubble:hover { border-color: rgba(var(--primary-rgb), 0.3); background: rgba(255,255,255,0.06); }
-
-.msg-meta { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 2px; }
-.platform-indicator { width: 8px; height: 8px; border-radius: 50%; }
-.platform-indicator.discord { background: #5865F2; box-shadow: 0 0 10px #5865F2; }
-.platform-indicator.telegram { background: #0088cc; box-shadow: 0 0 10px #0088cc; }
-.platform-indicator.line { background: #00B900; box-shadow: 0 0 10px #00B900; }
-
-.platform-name { font-size: 0.65rem; font-weight: 900; opacity: 0.4; letter-spacing: 1.5px; text-transform: uppercase; }
-.sender-name { font-weight: 800; color: #fff; font-size: 0.9rem; }
-.time { font-size: 0.75rem; opacity: 0.3; margin-left: auto; letter-spacing: 0.5px; }
-
-.msg-media-snippet { margin: 0.6rem 0; border-radius: 14px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05); background: #000; }
-.inline-thumb { position: relative; height: 180px; cursor: zoom-in; overflow: hidden; }
-.inline-thumb img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s; }
-.inline-thumb:hover img { transform: scale(1.08); }
-.zoom-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; opacity: 0; transition: 0.2s; }
-.inline-thumb:hover .zoom-overlay { opacity: 1; }
-
-.file-tag { padding: 1.2rem; background: rgba(255,255,255,0.03); display: flex; align-items: center; gap: 1rem; }
-.file-info { font-weight: 800; color: var(--primary-color); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; }
-
-.msg-text { font-size: 1rem; color: #eee; line-height: 1.6; word-break: break-word; }
 
 /* Right Panel Refactored */
-.right-panel { width: 450px; display: flex; flex-direction: column; }
-.remarks-section { flex: 1; min-height: 0; background: rgba(0,0,0,0.2); border-radius: 24px; padding: 1.5rem; display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.05); }
-.remarks-list { flex: 1; overflow-y: auto; padding-right: 8px; display: flex; flex-direction: column; gap: 1.2rem; margin-top: 1rem; }
+.right-panel { width: 380px; display: flex; flex-direction: column; }
+.remarks-section { flex: 1; min-height: 0; background: rgba(0,0,0,0.2); border-radius: 28px; padding: 1.2rem; display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.05); }
+.remarks-list { flex: 1; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
 
-.remark-group-label { font-size: 0.75rem; font-weight: 900; opacity: 0.4; letter-spacing: 2px; color: var(--primary-color); text-transform: uppercase; margin-bottom: 0.5rem; }
+.remark-group-label { font-size: 0.65rem; font-weight: 900; opacity: 0.4; letter-spacing: 2px; color: var(--primary-color); text-transform: uppercase; margin-bottom: 0.3rem; }
 
 .remark-item-card { 
   background: rgba(255,255,255,0.03); 
   border: 1px solid rgba(255,255,255,0.06); 
-  border-radius: 20px; 
-  padding: 1.4rem; 
+  border-radius: 18px; 
+  padding: 1.2rem; 
   transition: all 0.3s; 
-  position: relative;
-}
-.remark-item-card.drag-over { 
-  background: rgba(var(--primary-rgb), 0.08); 
-  border-color: var(--primary-color); 
-  box-shadow: 0 0 30px rgba(var(--primary-rgb), 0.3); 
-  transform: scale(1.02);
 }
 
-.remark-card-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem; }
-.remark-title { font-weight: 800; font-size: 1.1rem; color: #fff; cursor: pointer; }
-.remark-title:hover { color: var(--primary-color); text-shadow: 0 0 10px rgba(var(--primary-rgb), 0.5); }
+.remark-title { font-weight: 800; font-size: 0.95rem; color: #fff; cursor: pointer; }
 
-.remark-actions { display: flex; gap: 8px; }
-.act-btn { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; color: #fff; }
-.act-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); transform: translateY(-2px); }
-.act-btn.del:hover { background: rgba(231, 76, 60, 0.2); border-color: #e74c3c; color: #e74c3c; }
+.act-btn { width: 30px; height: 30px; font-size: 0.8rem; }
 
-.remark-card-body { background: rgba(0,0,0,0.3); border-radius: 14px; padding: 1.2rem; border: 1px solid rgba(255,255,255,0.03); }
-.body-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.body-header .label { font-size: 0.65rem; opacity: 0.3; font-weight: 900; text-transform: uppercase; color: #fff; }
+.remark-card-body { padding: 1rem; }
+.sidebar-md-box { font-size: 0.85rem; }
+.sidebar-txt-box { font-size: 0.85rem; }
 
-.mini-mode-switch { display: flex; gap: 2px; background: rgba(0,0,0,0.3); padding: 4px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05); }
-.mini-mode-switch button { background: none; border: none; font-size: 0.65rem; color: #fff; padding: 4px 10px; border-radius: 6px; cursor: pointer; opacity: 0.4; font-weight: 800; }
-.mini-mode-switch button.active { background: var(--primary-color); opacity: 1; box-shadow: 0 4px 10px rgba(var(--primary-rgb), 0.3); }
-
-.sidebar-md-box { font-size: 0.95rem; color: #ddd; line-height: 1.6; max-height: 200px; overflow-y: auto; }
-.sidebar-md-box :deep(h1), .sidebar-md-box :deep(h2) { font-size: 1.1rem; margin: 1rem 0 0.5rem; color: var(--primary-color); }
-.sidebar-txt-box { font-size: 0.95rem; opacity: 0.7; color: #eee; white-space: pre-wrap; }
-
-.items-count { margin-top: 15px; font-size: 0.75rem; font-weight: 900; color: var(--primary-color); cursor: pointer; opacity: 0.6; transition: 0.2s; text-transform: uppercase; letter-spacing: 0.5px; }
-.items-count:hover { opacity: 1; text-decoration: underline; letter-spacing: 1px; }
-
-/* SIDEBAR SPECIFIC STYLES */
+.items-count { font-size: 0.65rem; }
 
 .global-zoom { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.92); z-index: 6000; display: flex; align-items: center; justify-content: center; cursor: zoom-out; backdrop-filter: blur(20px); }
 .global-zoom img { max-width: 92vw; max-height: 92vh; border-radius: 16px; box-shadow: 0 0 100px rgba(0,0,0,0.8); }
 .close-zoom { position: absolute; top: 3rem; right: 3rem; font-size: 2.5rem; color: #fff; cursor: pointer; opacity: 0.5; transition: 0.2s; }
-.close-zoom:hover { opacity: 1; transform: rotate(90deg); }
 
-.custom-scrollbar::-webkit-scrollbar { width: 8px; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar { width: 6px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
 </style>

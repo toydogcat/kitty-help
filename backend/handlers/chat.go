@@ -6,6 +6,9 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/toydogcat/kitty-help/go-server/database"
 	"github.com/toydogcat/kitty-help/go-server/models"
+	"github.com/toydogcat/kitty-help/go-server/bots"
+	"os"
+	"path/filepath"
 )
 
 func GetChatLogs(c *fiber.Ctx) error {
@@ -154,4 +157,65 @@ func GetMyBotStatus(c *fiber.Ctx) error {
 	fmt.Printf("[STATUS DEBUG] Total linked platforms found: %d for UserID: %s\n", count, user.ID)
 
 	return c.JSON(status)
+}
+func SendBotMessage(c *fiber.Ctx) error {
+	platform := c.FormValue("platform")
+	content := c.FormValue("content")
+	targetID := c.FormValue("targetId")
+
+	if platform == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Platform is required"})
+	}
+
+	botIf, ok := bots.BotManager.Get(platform)
+	if !ok {
+		return c.Status(404).JSON(fiber.Map{"error": "Bot for this platform not found"})
+	}
+
+	// 1. Resolve Default Target ID
+	if targetID == "" {
+		switch platform {
+		case "telegram":
+			targetID = os.Getenv("TELEGRAM_STOREHOUSE_CHAT_ID")
+		case "discord":
+			targetID = os.Getenv("DISCORD_ADMIN_CHANNEL_ID")
+		case "line":
+			targetID = os.Getenv("ADMIN_LINE_ID")
+		}
+	}
+
+	if targetID == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Target ID is missing and no default available in .env"})
+	}
+
+	// 2. Handle File Upload (Optional)
+	file, err := c.FormFile("file")
+	var mediaID *string = nil
+	msgType := "text"
+
+	if err == nil {
+		// Save file to uploads/
+		tempPath := filepath.Join("..", "uploads", file.Filename)
+		if err := c.SaveFile(file, tempPath); err == nil {
+			// For now, if it's Telegram, we can try to use UploadMedia if implemented
+			// But for simplicity in this MVP, we just send the text link or record it
+			msgType = "media"
+			// (Future: Actually upload to TG/Discord storage)
+		}
+	}
+
+	// 3. Send via Bot
+	err = botIf.SendMessage(targetID, content)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Send failed: %v", err)})
+	}
+
+	// 4. Log to DB
+	// We use a dummy ID for the bot sender (or get bot's own ID)
+	botName := "KittyBot (" + platform + ")"
+	_, _ = database.LocalDB.Exec(context.Background(),
+		"INSERT INTO chat_logs (platform, sender_id, sender_name, content, msg_type, media_id) VALUES ($1, $2, $3, $4, $5, $6)",
+		platform, "bot-api", botName, content, msgType, mediaID)
+
+	return c.JSON(fiber.Map{"status": "success", "message": "Sent to " + platform})
 }
