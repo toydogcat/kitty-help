@@ -54,9 +54,19 @@ func CreateShelf(c *fiber.Ctx) error {
 		}
 	}
 
-	query := "INSERT INTO desk_shelves (user_id, name, color, sort_order) VALUES ($1, $2, $3, $4) RETURNING id, created_at"
-	err = db.QueryRow(context.Background(), query, dbUserID, s.Name, s.Color, s.SortOrder).Scan(&s.ID, &s.CreatedAt)
+	query := `
+		INSERT INTO desk_shelves (id, user_id, name, color, sort_order) 
+		VALUES (COALESCE(NULLIF($1, ''), gen_random_uuid()::text), $2, $3, $4, $5)
+		ON CONFLICT (id) DO UPDATE SET
+			name = EXCLUDED.name,
+			color = EXCLUDED.color,
+			sort_order = EXCLUDED.sort_order,
+			updated_at = NOW()
+		RETURNING id, created_at
+	`
+	err = db.QueryRow(context.Background(), query, s.ID, dbUserID, s.Name, s.Color, s.SortOrder).Scan(&s.ID, &s.CreatedAt)
 	if err != nil {
+		log.Printf("CreateShelf error: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to create shelf"})
 	}
 	s.UserID = dbUserID
@@ -275,8 +285,16 @@ func AddDeskItem(c *fiber.Ctx) error {
 		sId = nil
 	}
 
-	query := "INSERT INTO desk_items (user_id, shelf_id, type, ref_id, sort_order) VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at"
-	err = db.QueryRow(context.Background(), query, dbUserID, sId, it.Type, it.RefID, it.SortOrder).Scan(&it.ID, &it.CreatedAt)
+	query := `
+		INSERT INTO desk_items (id, user_id, shelf_id, type, ref_id, sort_order) 
+		VALUES (COALESCE(NULLIF($1, ''), gen_random_uuid()::text), $2, $3, $4, $5, $6)
+		ON CONFLICT (id) DO UPDATE SET
+			shelf_id = EXCLUDED.shelf_id,
+			sort_order = EXCLUDED.sort_order,
+			updated_at = NOW()
+		RETURNING id, created_at
+	`
+	err = db.QueryRow(context.Background(), query, it.ID, dbUserID, sId, it.Type, it.RefID, it.SortOrder).Scan(&it.ID, &it.CreatedAt)
 	if err != nil {
 		log.Printf("AddDeskItem SQL error: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to add item to desk"})

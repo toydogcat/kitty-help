@@ -98,8 +98,20 @@ func CreateBookmark(c *fiber.Ctx) error {
 		b.PasswordID = nil
 	}
 
-	query := "INSERT INTO bookmarks (user_id, parent_id, title, url, category, icon_url, password_id, is_folder, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, created_at"
-	err = db.QueryRow(context.Background(), query, b.UserID, b.ParentID, b.Title, b.URL, b.Category, b.IconURL, b.PasswordID, b.IsFolder, b.SortOrder).Scan(&b.ID, &b.CreatedAt)
+	query := `
+		INSERT INTO bookmarks (id, user_id, parent_id, title, url, category, icon_url, password_id, is_folder, sort_order) 
+		VALUES (COALESCE(NULLIF($1, ''), gen_random_uuid()::text), $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (id) DO UPDATE SET
+			title = EXCLUDED.title,
+			url = EXCLUDED.url,
+			category = EXCLUDED.category,
+			parent_id = EXCLUDED.parent_id,
+			sort_order = EXCLUDED.sort_order,
+			updated_at = NOW()
+		RETURNING id, created_at
+	`
+	err = db.QueryRow(context.Background(), query, 
+		b.ID, b.UserID, b.ParentID, b.Title, b.URL, b.Category, b.IconURL, b.PasswordID, b.IsFolder, b.SortOrder).Scan(&b.ID, &b.CreatedAt)
 	if err != nil {
 		log.Printf("Insert bookmark failed: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to create bookmark"})
