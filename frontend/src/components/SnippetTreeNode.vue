@@ -21,10 +21,25 @@ const select = () => {
 };
 
 const isDropOver = ref(false);
+const dropPosition = ref<'inside' | 'before' | 'after'>('inside');
 
 const handleDragOver = (e: DragEvent) => {
-  if (!props.node.isFolder) return;
   e.preventDefault();
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const y = e.clientY - rect.top;
+  const threshold = rect.height / 3;
+
+  if (y < threshold) {
+    dropPosition.value = 'before';
+  } else if (y > rect.height - threshold) {
+    dropPosition.value = 'after';
+  } else {
+    if (props.node.isFolder) {
+      dropPosition.value = 'inside';
+    } else {
+      dropPosition.value = y < rect.height / 2 ? 'before' : 'after';
+    }
+  }
   isDropOver.value = true;
 };
 
@@ -36,7 +51,7 @@ const handleDragStart = (_e: DragEvent) => {
   emit('drag-start', props.node);
 };
 
-const handleDrop = (_e: DragEvent) => {
+const handleDrop = () => {
   isDropOver.value = false;
   if (dropPosition.value === 'inside') {
     emit('drop-on-node', { targetNode: props.node });

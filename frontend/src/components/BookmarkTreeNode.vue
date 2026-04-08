@@ -52,7 +52,7 @@ const handleDragStart = (_e: DragEvent) => {
   emit('drag-start', props.node);
 };
 
-const handleDrop = (e: DragEvent) => {
+const handleDrop = () => {
   isDropOver.value = false;
   if (dropPosition.value === 'inside') {
     emit('drop-on-node', { targetNode: props.node });

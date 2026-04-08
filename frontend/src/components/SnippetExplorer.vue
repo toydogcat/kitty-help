@@ -284,7 +284,6 @@ const handleDragLeave = (item: any) => { if (dropTargetId.value === item.id) dro
 const handleDrop = async (targetItem: any | 'root') => {
   if (!draggedItem.value) return;
   const targetId = targetItem === 'root' ? null : targetItem.id;
-  const targetIsFolder = targetItem === 'root' ? true : targetItem.isFolder;
   if (draggedItem.value.id === targetId) { handleDragEnd(); return; }
   try {
     loading.value = true;
