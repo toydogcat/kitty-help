@@ -63,7 +63,10 @@ watch(() => props.userId, (newVal) => {
 const treeData = computed(() => {
   const map: any = {};
   const roots: any[] = [];
-  const items = allSnippets.value.map(item => ({ ...item, children: [], isOpen: false }));
+  // Sort by sortOrder first
+  const sortedRaw = [...allSnippets.value].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+  const items = sortedRaw.map(item => ({ ...item, children: [], isOpen: false }));
+  
   items.forEach(item => { map[item.id] = item; });
   items.forEach(item => {
     if (item.parentId) {
@@ -250,8 +253,32 @@ const toggleVoice = (target: 'name' | 'content') => {
 };
 
 const handleDragStart = (item: any) => { draggedItem.value = item; };
-const handleDragEnd = () => { draggedItem.value = null; dropTargetId.value = null; isDropOverRoot.value = false; };
-const handleDragOver = (item: any) => { if (draggedItem.value?.id === item.id) return; dropTargetId.value = item.id; };
+const handleDragEnd = () => { draggedItem.value = null; dropTargetId.value = null; isDropOverRoot.value = false; dropPosition.value = 'inside'; };
+
+const dropPosition = ref<'inside' | 'before' | 'after'>('inside');
+
+const handleDragOver = (e: DragEvent, item: any) => {
+  e.preventDefault();
+  if (draggedItem.value?.id === item.id) return;
+  
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const y = e.clientY - rect.top;
+  const threshold = rect.height / 3;
+
+  if (y < threshold) {
+    dropPosition.value = 'before';
+  } else if (y > rect.height - threshold) {
+    dropPosition.value = 'after';
+  } else {
+    if (item.isFolder) {
+      dropPosition.value = 'inside';
+    } else {
+      dropPosition.value = y < rect.height / 2 ? 'before' : 'after';
+    }
+  }
+  dropTargetId.value = item.id;
+};
+
 const handleDragLeave = (item: any) => { if (dropTargetId.value === item.id) dropTargetId.value = null; };
 
 const handleDrop = async (targetItem: any | 'root') => {
@@ -261,28 +288,46 @@ const handleDrop = async (targetItem: any | 'root') => {
   if (draggedItem.value.id === targetId) { handleDragEnd(); return; }
   try {
     loading.value = true;
-    if (targetIsFolder) {
-      await apiService.updateSnippet(draggedItem.value.id, {
-        name: draggedItem.value.name,
-        content: draggedItem.value.content,
-        parentId: targetId,
-        sortOrder: 0
-      });
-    } else {
-      let newOrder = targetItem.sortOrder + 1;
-      await apiService.updateSnippet(draggedItem.value.id, {
-        name: draggedItem.value.name,
-        content: draggedItem.value.content,
-        parentId: targetItem.parentId,
-        sortOrder: newOrder
-      });
-    }
+    await apiService.updateSnippet(draggedItem.value.id, {
+        ...draggedItem.value,
+        parentId: targetId
+    });
   } catch (err) {
     console.error("Drop failed:", err);
   } finally {
     handleDragEnd();
     await fetchData();
   }
+};
+
+const handleReorder = async (data: { targetNode: any, position: 'before' | 'after' }) => {
+    if (!draggedItem.value) return;
+    const target = data.targetNode;
+    if (draggedItem.value.id === target.id) return;
+
+    try {
+        loading.value = true;
+        const parentId = target.parentId;
+        const siblings = allSnippets.value
+            .filter(s => s.parentId === parentId && s.id !== draggedItem.value.id)
+            .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+
+        const targetIdx = siblings.findIndex(s => s.id === target.id);
+        const insertIdx = data.position === 'before' ? targetIdx : targetIdx + 1;
+        
+        siblings.splice(insertIdx, 0, { ...draggedItem.value, parentId });
+
+        const updates = siblings.map((node, i) => {
+            return apiService.updateSnippet(node.id, { ...node, sortOrder: i });
+        });
+
+        await Promise.all(updates);
+        await fetchData();
+    } catch (err) {
+        console.error("Reorder failed:", err);
+    } finally {
+        handleDragEnd();
+    }
 };
 
 const addToDesk = async (item: any) => {
@@ -315,7 +360,8 @@ const addToDesk = async (item: any) => {
             :node="node" 
             :current-id="currentFolderId"
             @select="enterFolder"
-            @drop-on-node="(data) => handleDrop(data.targetNode)"
+            @drop-on-node="(data: any) => handleDrop(data.targetNode)"
+            @drop-reorder="handleReorder"
             @drag-start="handleDragStart"
             @drag-end="handleDragEnd"
           />
@@ -353,13 +399,16 @@ const addToDesk = async (item: any) => {
           class="item-row" 
           :class="{ 
             'is-dragging': draggedItem?.id === item.id,
-            'is-drop-target': dropTargetId === item.id
+            'is-drop-target': dropTargetId === item.id,
+            'drop-before': dropTargetId === item.id && dropPosition === 'before',
+            'drop-after': dropTargetId === item.id && dropPosition === 'after',
+            'drop-inside': dropTargetId === item.id && dropPosition === 'inside'
           }"
           draggable="true"
           @dragstart="handleDragStart(item)"
-          @dragover.prevent="handleDragOver(item)"
+          @dragover.prevent="handleDragOver($event, item)"
           @dragleave="handleDragLeave(item)"
-          @drop="handleDrop(item)"
+          @drop="dropPosition === 'inside' ? handleDrop(item) : handleReorder({ targetNode: item, position: dropPosition })"
           @dragend="handleDragEnd"
           @click="item.isFolder ? enterFolder(item) : openEditModal(item)"
         >
@@ -458,6 +507,19 @@ const addToDesk = async (item: any) => {
 .explorer-body { flex: 1; padding: 1rem; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; }
 .item-row { display: flex; align-items: center; padding: 1rem; border-radius: 12px; background: rgba(255,255,255,0.03); border: 1px solid transparent; cursor: pointer; transition: all 0.2s; position: relative; }
 .item-row:hover { background: rgba(255,255,255,0.06); border-color: var(--primary-color); transform: translateX(5px); }
+
+.item-row.drop-inside {
+  background: rgba(var(--primary-rgb),0.2) !important;
+  border: 1px dashed var(--primary-color);
+}
+
+.item-row.drop-before {
+  border-top: 4px solid var(--primary-color);
+}
+
+.item-row.drop-after {
+  border-bottom: 4px solid var(--primary-color);
+}
 
 .item-content { flex: 1; }
 .snippet-name { font-weight: 700; color: #fff; }

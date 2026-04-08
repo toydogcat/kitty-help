@@ -90,7 +90,7 @@ const handleDragEnd = () => {
       @drop="handleDrop"
       @dragend="handleDragEnd"
     >
-      <span class="toggle-icon" @click.stop="toggle" v-if="node.isFolder">
+      <span class="toggle-icon" @click.stop="toggle" v-if="node.isFolder" style="pointer-events: auto;">
         {{ isOpen ? '▼' : '▶' }}
       </span>
       <span class="type-icon">{{ node.isFolder ? '📁' : '🔗' }}</span>
@@ -150,12 +150,18 @@ const handleDragEnd = () => {
   transform: scale(1.05);
 }
 
+.node-content > span:not(.toggle-icon) {
+  pointer-events: none;
+}
+
 .node-content.drop-before {
-  border-top: 2px solid var(--primary-color);
+  border-top: 4px solid var(--primary-color);
+  margin-top: -2px;
 }
 
 .node-content.drop-after {
-  border-bottom: 2px solid var(--primary-color);
+  border-bottom: 4px solid var(--primary-color);
+  margin-bottom: -2px;
 }
 
 .toggle-icon {
