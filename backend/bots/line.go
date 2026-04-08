@@ -415,3 +415,18 @@ func (l *LineBot) SendMedia(targetID string, mediaType string, filePath string, 
 	}
 	return nil
 }
+
+func (l *LineBot) GetWebhookURL() string {
+	// 🎯 REAL-TIME RESOLUTION:
+	// Priority 1: The dynamic state file from tunnel-manager
+	stateFile := "/root/.kitty-help/workspace/state/webhook_line.url"
+	if data, err := os.ReadFile(stateFile); err == nil {
+		url := strings.TrimSpace(string(data))
+		if url != "" {
+			return url
+		}
+	}
+
+	// Priority 2: Fallback to Environment Variable
+	return os.Getenv("VITE_API_URL")
+}
