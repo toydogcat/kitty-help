@@ -27,6 +27,9 @@ const searchTerm = ref('');
 const newFolderName = ref('');
 const customFolders = ref<string[]>([]);
 const dragOverFolder = ref<string | null>(null);
+const dropTargetId = ref<string | null>(null);
+const dropPosition = ref<'before' | 'after' | 'inside' | null>(null);
+const draggedItem = ref<any>(null);
 const collapsedFolders = ref<Set<string>>(new Set());
 
 // EPUB Reader State
@@ -297,8 +300,72 @@ const folders = computed(() => {
   return groups;
 });
 
-const onDragStart = (event: DragEvent, bookId: string) => {
-  if (event.dataTransfer) { event.dataTransfer.setData('bookId', bookId); event.dataTransfer.effectAllowed = 'move'; }
+const onDragStart = (item: any) => {
+  draggedItem.value = item;
+};
+
+const handleDragOver = (event: DragEvent, target: any, position: 'before' | 'after' | 'inside') => {
+  event.preventDefault();
+  dropTargetId.value = target.id || target; // target can be folder name string or book object
+  dropPosition.value = position;
+};
+
+const handleDragLeave = () => {
+    dropTargetId.value = null;
+    dropPosition.value = null;
+};
+
+const handleReorder = async (data: { targetBook: any, position: 'before' | 'after' }) => {
+    if (!draggedItem.value) return;
+    const target = data.targetBook;
+    if (draggedItem.value.id === target.id) return;
+
+    try {
+        isLoading.value = true;
+        const folder = target.folder || '';
+        const siblings = [...books.value]
+            .filter(b => (b.folder || '') === folder && b.id !== draggedItem.value.id)
+            .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+        
+        const targetIdx = siblings.findIndex(b => b.id === target.id);
+        const insertIdx = data.position === 'before' ? targetIdx : targetIdx + 1;
+
+        // Create a clean version of the dragged book to avoid Vue proxy issues in the array
+        const cleanDragged = { ...draggedItem.value, folder: folder };
+        siblings.splice(insertIdx, 0, cleanDragged);
+
+        const updates = [];
+        for (let i = 0; i < siblings.length; i++) {
+            updates.push(syncService.moveBook(siblings[i].id, i));
+            // Also ensure the folder is updated if moved between folders via reorder
+            if ((siblings[i].folder || '') !== folder) {
+                updates.push(syncService.updateBookFolder(siblings[i].id, folder));
+            }
+        }
+
+        await Promise.all(updates);
+    } catch (err) {
+        console.error("Book reorder failed:", err);
+    } finally {
+        isLoading.value = false;
+        dropTargetId.value = null;
+        dropPosition.value = null;
+        draggedItem.value = null;
+    }
+};
+
+const onDropIntoFolder = async (folderName: string) => {
+  const folder = folderName === 'Uncategorized' ? '' : folderName;
+  if (!draggedItem.value) return;
+  
+  try { 
+    await syncService.updateBookFolder(draggedItem.value.id, folder); 
+  } catch (e) { 
+    console.error("Folder update failed", e);
+  } finally {
+    dragOverFolder.value = null;
+    draggedItem.value = null;
+  }
 };
 
 const getFileUrl = (book: any) => { if (!book || !book.storeId) return ''; return `${import.meta.env.VITE_API_URL}/api/storehouse/file/${book.storeId}`; };
@@ -313,14 +380,33 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
       <div class="sidebar-header"><input v-model="searchTerm" placeholder="Filter Intel..." /><button @click="showAddModal = true" class="add-btn">+</button></div>
       <div class="folder-list">
         <div v-for="(folderBooks, folderName) in folders" :key="folderName" class="folder-group" 
-             :class="{ 'drop-target': dragOverFolder === folderName }" @dragover.prevent="dragOverFolder = String(folderName)" @dragleave="dragOverFolder = null" @drop="onDropIntoFolder($event, String(folderName))">
+             :class="{ 'drop-over': dropTargetId === String(folderName) && dropPosition === 'inside' }" 
+             @dragover.prevent="handleDragOver($event, String(folderName), 'inside')" 
+             @dragleave="handleDragLeave" 
+             @drop="onDropIntoFolder(String(folderName))">
           <div class="folder-header" @click="collapsedFolders.has(String(folderName)) ? collapsedFolders.delete(String(folderName)) : collapsedFolders.add(String(folderName))">
             <span class="fold-arrow">{{ collapsedFolders.has(String(folderName)) ? '▶' : '▼' }}</span>
             <span class="folder-name">{{ folderName }}</span>
             <span class="count">{{ folderBooks.length }}</span>
           </div>
           <div v-show="!collapsedFolders.has(String(folderName))" class="folder-content">
-            <div v-for="book in folderBooks" :key="book.id" class="book-item" :class="{ active: activeBook?.id === book.id }" draggable="true" @dragstart="onDragStart($event, book.id)" @click="selectBook(book)">
+            <div 
+              v-for="book in folderBooks" 
+              :key="book.id" 
+              class="book-item" 
+              :class="{ 
+                active: activeBook?.id === book.id,
+                'drop-before': dropTargetId === book.id && dropPosition === 'before',
+                'drop-after': dropTargetId === book.id && dropPosition === 'after',
+                'is-dragging': draggedItem?.id === book.id
+              }" 
+              draggable="true" 
+              @dragstart="onDragStart(book)" 
+              @dragover.prevent="handleDragOver($event, book, $event.clientY < $event.currentTarget.getBoundingClientRect().top + $event.currentTarget.getBoundingClientRect().height / 2 ? 'before' : 'after')"
+              @dragleave="handleDragLeave"
+              @drop="handleReorder({ targetBook: book, position: dropPosition })"
+              @click="selectBook(book)"
+            >
               <div class="item-icon">🔖</div>
               <div class="item-info">
                 <div class="item-title">{{ book.title }}</div>
@@ -411,8 +497,12 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 .folder-header { padding: 0.75rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; border-radius: 6px; font-weight: 700; color: #e2e8f0; font-size: 0.85rem; }
 .folder-header:hover { background: #11151a; }
 .count { margin-left: auto; font-size: 0.7rem; color: #fbbf24; background: #fbbf2411; padding: 2px 6px; border-radius: 4px; }
-.book-item { padding: 0.65rem 0.65rem 0.65rem 1.5rem; display: flex; gap: 0.6rem; cursor: pointer; border-radius: 6px; margin-bottom: 2px; }
+.book-item { padding: 0.65rem 0.65rem 0.65rem 1.5rem; display: flex; gap: 0.6rem; cursor: pointer; border-radius: 6px; margin-bottom: 2px; transition: all 0.2s; position: relative; }
 .book-item.active { background: #d977061a; border: 1px solid #d9770633; color: #fff; }
+.book-item.is-dragging { opacity: 0.4; background: #222; }
+.book-item.drop-before { border-top: 2px solid #fbbf24; }
+.book-item.drop-after { border-bottom: 2px solid #fbbf24; }
+.folder-group.drop-over { background: rgba(217, 119, 6, 0.1); }
 .item-title { font-size: 0.8rem; text-align: left; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
 .item-meta { font-size: 0.6rem; opacity: 0.4; }
 .sort-actions { display: none; flex-direction: column; gap: 0; margin-left: auto; }

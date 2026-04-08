@@ -390,7 +390,7 @@ export const syncService = reactive({
                             }
                             if (action.data.sortOrder !== undefined) {
                                 await apiService.updateBookSortOrder(action.entityId, action.data.sortOrder);
-                                console.log('✅ Book sortOrder updated on server');
+                                console.log(`✅ Book [${action.entityId}] sortOrder updated: ${action.data.sortOrder}`);
                             }
                             await db.bookcase.update(action.entityId, { syncStatus: 'synced' });
                         } else if (action.action === 'DELETE') {
