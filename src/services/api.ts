@@ -182,8 +182,8 @@ export const apiService = {
     }
     return url;
   },
-  async listObsidianFiles(path: string = '') {
-    const res = await axios.get(`${API_BASE}/obsidian/list`, { params: { path } });
+  async listObsidianFiles(path: string = '', showHidden: boolean = false) {
+    const res = await axios.get(`${API_BASE}/obsidian/list`, { params: { path, showHidden } });
     return res.data;
   },
   async getObsidianFileContent(path: string) {

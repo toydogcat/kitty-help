@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -320,7 +321,11 @@ func GetFileProxy(c *fiber.Ctx) error {
 
 	if platform == "local" {
 		root := "/root/obsidian"
-		fullPath := filepath.Join(root, fileID)
+		decodedID, err := url.PathUnescape(fileID)
+		if err != nil {
+			decodedID = fileID
+		}
+		fullPath := filepath.Join(root, decodedID)
 		// Security check: ensure path is within root
 		if !strings.HasPrefix(filepath.Clean(fullPath), filepath.Clean(root)) {
 			return c.Status(403).JSON(fiber.Map{"error": "Forbidden path"})
@@ -383,6 +388,7 @@ func ListObsidianFiles(c *fiber.Ctx) error {
 		return c.Status(403).JSON(fiber.Map{"error": "Forbidden path"})
 	}
 
+	showHidden := c.Query("showHidden", "false") == "true"
 	entries, err := os.ReadDir(targetDir)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -390,13 +396,17 @@ func ListObsidianFiles(c *fiber.Ctx) error {
 
 	files := []fiber.Map{}
 	for _, entry := range entries {
+		name := entry.Name()
+		if !showHidden && strings.HasPrefix(name, ".") {
+			continue
+		}
 		info, _ := entry.Info()
 		files = append(files, fiber.Map{
-			"name":    entry.Name(),
+			"name":    name,
 			"isDir":   entry.IsDir(),
 			"size":    info.Size(),
 			"modTime": info.ModTime(),
-			"path":    filepath.Join(relPath, entry.Name()),
+			"path":    filepath.Join(relPath, name),
 		})
 	}
 

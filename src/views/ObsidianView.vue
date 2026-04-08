@@ -9,29 +9,36 @@ const loading = ref(true);
 const selectedFile = ref<any | null>(null);
 const markdownContent = ref('');
 const fetchingContent = ref(false);
+const showHidden = ref(false);
+const errorMsg = ref('');
 
 const loadFiles = async (path: string = '') => {
   loading.value = true;
+  errorMsg.value = '';
   try {
-    const data = await apiService.listObsidianFiles(path);
+    const data = await apiService.listObsidianFiles(path, showHidden.value);
     currentPath.value = data.currentPath || '';
     files.value = (data.files || []).sort((a: any, b: any) => {
-      // Directories first, then name
       if (a.isDir && !b.isDir) return -1;
       if (!a.isDir && b.isDir) return 1;
       return a.name.localeCompare(b.name);
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error("Failed to load obsidian files:", err);
+    errorMsg.value = `載入列表失敗: ${err.response?.data?.error || err.message}`;
   } finally {
     loading.value = false;
   }
 };
 
+watch(showHidden, () => {
+  loadFiles(currentPath.value);
+});
+
 const navigateTo = (file: any) => {
   if (file.isDir) {
     loadFiles(file.path);
-  } else if (file.name.endsWith('.md')) {
+  } else if (file.name.toLowerCase().endsWith('.md')) {
     openFile(file);
   }
 };
@@ -46,12 +53,16 @@ const goBack = () => {
 const openFile = async (file: any) => {
   selectedFile.value = file;
   fetchingContent.value = true;
+  markdownContent.value = '';
   try {
     const text = await apiService.getObsidianFileContent(file.path);
-    markdownContent.value = await marked(text);
-  } catch (err) {
+    // Explicitly handle if text is an object (axios auto-parse?)
+    const content = typeof text === 'string' ? text : JSON.stringify(text, null, 2);
+    markdownContent.value = await marked(content);
+  } catch (err: any) {
     console.error("Failed to fetch obsidian content:", err);
-    markdownContent.value = '<p class="error">無法載入筆記內容</p>';
+    const detail = err.response?.data?.error || err.message;
+    markdownContent.value = `<p class="error-box">⚠️ 無法載入筆記內容<br/><small>${detail}</small></p>`;
   } finally {
     fetchingContent.value = false;
   }
@@ -67,7 +78,13 @@ onMounted(() => {
     <header class="view-header">
       <div class="header-content">
         <h2>📑 Obsidian Vault</h2>
-        <p>本地知識庫直接存取 (Path: /root/obsidian/{{ currentPath }})</p>
+        <div class="header-meta">
+          <p>本地知識庫直接存取 (Path: /root/obsidian/{{ currentPath }})</p>
+          <label class="toggle-hidden">
+            <input type="checkbox" v-model="showHidden" />
+            顯示隱藏檔案 (.)
+          </label>
+        </div>
       </div>
       <button v-if="currentPath" @click="goBack" class="btn-back">⬅️ 返回上一層</button>
     </header>
@@ -78,6 +95,7 @@ onMounted(() => {
         <div v-if="loading" class="loader">
           <div class="spinner"></div>
         </div>
+        <div v-else-if="errorMsg" class="error-msg">{{ errorMsg }}</div>
         <div v-else class="file-list">
           <div 
             v-for="file in files" 
@@ -123,6 +141,9 @@ onMounted(() => {
 }
 
 .view-header { display: flex; justify-content: space-between; align-items: flex-end; }
+.header-meta { display: flex; align-items: center; gap: 2rem; font-size: 0.9rem; opacity: 0.8; }
+.toggle-hidden { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: var(--primary-color); }
+
 .btn-back {
   padding: 0.6rem 1.2rem; border-radius: 12px;
   background: rgba(var(--primary-rgb), 0.1); border: 1px solid var(--primary-color);
@@ -136,7 +157,7 @@ onMounted(() => {
 
 @media (max-width: 900px) {
   .layout-container { grid-template-columns: 1fr; }
-  .file-browser { display: none; } /* Hide on mobile for now */
+  .file-browser { display: none; }
 }
 
 .file-browser { 
@@ -147,8 +168,24 @@ onMounted(() => {
 .file-item {
   display: flex; align-items: center; gap: 0.8rem; padding: 0.8rem;
   border-radius: 10px; cursor: pointer; transition: all 0.2s;
-  border: 1px solid transparent;
+  border: 1px solid transparent; text-align: left;
 }
+.file-item:hover { background: rgba(255,255,255,0.05); border-color: rgba(var(--primary-rgb), 0.3); }
+.file-item.active { background: var(--primary-color); border-color: white; }
+.file-icon { font-size: 1.2rem; }
+.file-name { font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.content-preview { 
+  overflow-y: auto; padding: 0; display: flex; flex-direction: column; background: rgba(var(--primary-rgb), 0.02);
+}
+
+.markdown-body { padding: 3rem; text-align: left; }
+.file-header { margin-bottom: 1.5rem; }
+.file-header h3 { margin: 0 0 0.5rem 0; color: var(--primary-color); font-size: 1.8rem; }
+.file-meta { font-size: 0.85rem; opacity: 0.6; }
+
+.error-box { padding: 2rem; background: rgba(255, 0, 0, 0.1); border: 1px solid red; border-radius: 10px; color: #ff6666; text-align: center; }
+.error-msg { padding: 1rem; color: #ff6666; font-size: 0.9rem; text-align: center; }
 .file-item:hover { background: rgba(255,255,255,0.05); border-color: rgba(var(--primary-rgb), 0.3); }
 .file-item.active { background: var(--primary-color); border-color: white; }
 .file-icon { font-size: 1.2rem; }
