@@ -584,15 +584,15 @@ const executeCommand = async () => {
             } else {
                 // Global Shuffle: Disable hierarchy and unfreeze everyone temporarily
                 network.value.setOptions({ layout: { hierarchical: { enabled: false } } });
-                const allIds = nodes.value.getIds();
-                nodes.value.update(allIds.map(id => ({ id, physics: true })));
+                const allIds = nodes.value.getIds() as string[];
+                nodes.value.update(allIds.map((id: string) => ({ id, physics: true })));
                 
                 commandResults.value = [{ id: 'l-f', title: 'Global Force Shuffle: Unfreezing for 5s...', resultType: 'info' }];
                 
                 // Freeze again after stabilization
                 setTimeout(() => {
-                    const latestIds = nodes.value.getIds();
-                    nodes.value.update(latestIds.map(id => ({ id, physics: false })));
+                    const latestIds = nodes.value.getIds() as string[];
+                    nodes.value.update(latestIds.map((id: string) => ({ id, physics: false })));
                     commandResults.value = [{ id: 'l-f2', title: 'Layout Stabilized & Frozen.', resultType: 'info' }];
                 }, 5000);
             }
@@ -613,6 +613,21 @@ const executeCommand = async () => {
         }
     } catch (e: any) {
         alert(`${e.message}`);
+    }
+};
+
+const COMMAND_LIST = ['/add', '/edit', '/model', '/search', '/list', '/kg', '/layout', '/rank', '/pin', '/help'];
+
+const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Tab') {
+        e.preventDefault(); // Prevent focus change
+        const input = commandInput.value.trim().toLowerCase();
+        if (!input) return;
+
+        const match = COMMAND_LIST.find(c => c.startsWith(input));
+        if (match) {
+            commandInput.value = match + ' ';
+        }
     }
 };
 
@@ -883,6 +898,7 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
                     v-model="commandInput" 
                     placeholder="Enter command... (/add, /search, /list, /kg, /help)" 
                     @keyup.enter="executeCommand"
+                    @keydown="handleKeyDown"
                     @input="commandResults = []"
                     spellcheck="false"
                 />
