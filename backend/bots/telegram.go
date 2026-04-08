@@ -53,6 +53,12 @@ func (t *TelegramBot) Start(ctx context.Context) error {
 					return
 				}
 				if update.Message != nil {
+					// 🚫 SELF-FILTER: Ignore messages sent by this bot itself
+					// This prevents infinite loops or double-recording when other bots 
+					// (Discord/Line) use this bot for cloud storage in the same group.
+					if update.Message.From != nil && update.Message.From.ID == t.bot.ID() {
+						continue
+					}
 					t.handleMessage(ctx, update.Message)
 				}
 			}

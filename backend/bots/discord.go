@@ -214,6 +214,13 @@ func (d *DiscordBot) forwardToStorehouse(s *discordgo.Session, m *discordgo.Mess
 
 	var lastMediaID string
 	for _, att := range m.Attachments {
+		if att.Filename == "" {
+			log.Printf("⚠️ Skipping Discord attachment with empty filename (possible embed/thumbnail)")
+			continue
+		}
+
+		log.Printf("📎 Processing Discord attachment: %s (%d bytes)", att.Filename, att.Size)
+
 		mediaType := "photo"
 		ext := strings.ToLower(filepath.Ext(att.Filename))
 		

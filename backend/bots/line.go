@@ -107,6 +107,9 @@ func (l *LineBot) HandleFiberWebhook(c *fiber.Ctx) error {
 			case *linebot.AudioMessage:
 				id := l.forwardToStorehouse(event, "audio")
 				l.LogChat(context.Background(), event.Source.UserID, senderName, "[Audio]", "media", &id)
+			case *linebot.FileMessage:
+				id := l.forwardToStorehouse(event, "document")
+				l.LogChat(context.Background(), event.Source.UserID, senderName, "[File] "+message.FileName, "media", &id)
 			}
 		} else {
 			log.Printf("ℹ️ Non-message LINE event: %s", event.Type)
@@ -268,10 +271,11 @@ func (l *LineBot) forwardToStorehouse(event *linebot.Event, mediaType string) st
 	switch msg := event.Message.(type) {
 	case *linebot.ImageMessage:
 		messageID = msg.ID
-	case *linebot.VideoMessage:
-		messageID = msg.ID
 	case *linebot.AudioMessage:
 		messageID = msg.ID
+	case *linebot.FileMessage:
+		messageID = msg.ID
+		caption = msg.FileName
 	}
 
 	contentResp, err := l.Bot.GetMessageContent(messageID).Do()
