@@ -6,7 +6,7 @@ const props = defineProps<{
   currentId: string | 'root';
 }>();
 
-const emit = defineEmits(['select', 'drop-on-node', 'drag-start', 'drag-end']);
+const emit = defineEmits(['select', 'drop-on-node', 'drop-reorder', 'drag-start', 'drag-end']);
 
 const isOpen = ref(false);
 
@@ -21,10 +21,26 @@ const select = () => {
 };
 
 const isDropOver = ref(false);
+const dropPosition = ref<'inside' | 'before' | 'after'>('inside');
 
 const handleDragOver = (e: DragEvent) => {
-  if (!props.node.isFolder) return;
   e.preventDefault();
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const y = e.clientY - rect.top;
+  const threshold = rect.height / 3;
+
+  if (y < threshold) {
+    dropPosition.value = 'before';
+  } else if (y > rect.height - threshold) {
+    dropPosition.value = 'after';
+  } else {
+    // Only allow 'inside' if it's a folder
+    if (props.node.isFolder) {
+      dropPosition.value = 'inside';
+    } else {
+      dropPosition.value = y < rect.height / 2 ? 'before' : 'after';
+    }
+  }
   isDropOver.value = true;
 };
 
@@ -36,10 +52,16 @@ const handleDragStart = (_e: DragEvent) => {
   emit('drag-start', props.node);
 };
 
-const handleDrop = (_e: DragEvent) => {
-  if (!props.node.isFolder) return;
+const handleDrop = (e: DragEvent) => {
   isDropOver.value = false;
-  emit('drop-on-node', { targetNode: props.node });
+  if (dropPosition.value === 'inside') {
+    emit('drop-on-node', { targetNode: props.node });
+  } else {
+    emit('drop-reorder', { 
+        targetNode: props.node, 
+        position: dropPosition.value 
+    });
+  }
 };
 
 const handleDragEnd = () => {
@@ -55,7 +77,10 @@ const handleDragEnd = () => {
       :class="{ 
         active: node.id === currentId, 
         'is-folder': node.isFolder,
-        'drop-over': isDropOver
+        'drop-over': isDropOver,
+        'drop-before': isDropOver && dropPosition === 'before',
+        'drop-after': isDropOver && dropPosition === 'after',
+        'drop-inside': isDropOver && dropPosition === 'inside'
       }"
       draggable="true"
       @click="select"
@@ -80,6 +105,7 @@ const handleDragEnd = () => {
         :current-id="currentId"
         @select="(n) => emit('select', n)"
         @drop-on-node="(data) => emit('drop-on-node', data)"
+        @drop-reorder="(data) => emit('drop-reorder', data)"
         @drag-start="(n) => emit('drag-start', n)"
         @drag-end="() => emit('drag-end')"
       />
@@ -115,9 +141,21 @@ const handleDragEnd = () => {
 }
 
 .node-content.drop-over {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.node-content.drop-inside {
   background: rgba(var(--primary-rgb), 0.3) !important;
   border: 1px dashed var(--primary-color);
   transform: scale(1.05);
+}
+
+.node-content.drop-before {
+  border-top: 2px solid var(--primary-color);
+}
+
+.node-content.drop-after {
+  border-bottom: 2px solid var(--primary-color);
 }
 
 .toggle-icon {

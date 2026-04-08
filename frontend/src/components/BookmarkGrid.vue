@@ -80,7 +80,10 @@ const fetchBookmarks = async () => {
 const treeData = computed(() => {
   const map: any = {};
   const roots: any[] = [];
-  const items = allBookmarks.value.map(b => ({ ...b, children: [] }));
+  // Sort all bookmarks first
+  const sortedRaw = [...allBookmarks.value].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+  const items = sortedRaw.map(b => ({ ...b, children: [] }));
+  
   items.forEach(b => map[b.id] = b);
   items.forEach(b => {
     if (b.parentId && map[b.parentId]) {
@@ -167,6 +170,37 @@ const handleDrop = async (targetId: string | 'root') => {
     dropTargetId.value = null;
     isDropOverRoot.value = false;
   }
+};
+
+const handleReorder = async (data: { targetNode: Bookmark, position: 'before' | 'after' }) => {
+    if (!draggedItem.value) return;
+    const target = data.targetNode;
+    if (draggedItem.value.id === target.id) return;
+
+    try {
+        // 1. Get siblings
+        const parentId = target.parentId;
+        const siblings = allBookmarks.value
+            .filter(b => b.parentId === parentId && b.id !== draggedItem.value.id)
+            .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+
+        // 2. Insert dragged item
+        const targetIdx = siblings.findIndex(b => b.id === target.id);
+        const insertIdx = data.position === 'before' ? targetIdx : targetIdx + 1;
+        siblings.splice(insertIdx, 0, { ...draggedItem.value, parentId }); // Update parent if moving across levels too
+
+        // 3. Update all siblings' sort order
+        const updates = siblings.map((node, i) => {
+            return apiService.updateBookmark(node.id, { ...node, sortOrder: i });
+        });
+
+        await Promise.all(updates);
+        fetchBookmarks();
+    } catch (err) {
+        console.error("Reorder failed:", err);
+    } finally {
+        draggedItem.value = null;
+    }
 };
 
 const fetchVault = async () => {
@@ -338,6 +372,7 @@ export default {
             :current-id="currentFolderId"
             @select="goBack"
             @drop-on-node="(data: any) => handleDrop(data.targetNode.id)"
+            @drop-reorder="handleReorder"
             @drag-start="handleDragStart"
             @drag-end="handleDragEnd"
           />
@@ -430,12 +465,14 @@ export default {
             <template v-if="!bm.isFolder">
               <a :href="bm.url || '#'" target="_blank" class="action-btn launch" title="Open Link">🚀 Open</a>
               <button @click="copyToClipboard(bm)" class="action-btn copy" :class="{ 'verify-needed': bm.passwordId && !hasSecurityTrust }" title="Copy URL">
-                {{ bm.passwordId && !hasSecurityTrust && !isWithinGracePeriod(bm) ? '🔑 Verify' : '📋 Copy' }}
+                {{ bm.passwordId && !hasSecurityTrust && !isWithinGracePeriod(bm) ? '🔑' : '📋' }}
               </button>
             </template>
             <template v-else>
-              <button @click="enterFolder(bm)" class="action-btn launch">📂 Open Folder</button>
+              <button @click="enterFolder(bm)" class="action-btn launch">📂 Open</button>
             </template>
+            
+            <button @click="openEditModal(bm)" class="action-btn edit" title="Edit Bookmark">✏️</button>
             <button @click="addToDesk(bm)" class="action-btn pin" title="Add to Desk">
               {{ pinnedIds.has(bm.id) ? '✅' : '📌' }}
             </button>
@@ -692,10 +729,24 @@ export default {
 .action-btn:hover {
   background: var(--primary-color);
   border-color: var(--primary-color);
+  box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
 }
+
+.action-btn.copy { flex: 0 0 45px; }
+.action-btn.edit { flex: 0 0 45px; transition: transform 0.2s; }
+.action-btn.edit:hover { 
+  background: #10b981; 
+  border-color: #10b981; 
+  transform: scale(1.1) translateY(-2px);
+  color: white;
+}
+.action-btn.pin { flex: 0 0 45px; }
+.action-btn.delete { flex: 0 0 45px; }
 
 .action-btn.delete:hover {
   background: #ff5757;
+  border-color: #ff5757;
+  box-shadow: 0 4px 12px rgba(255, 87, 87, 0.3);
 }
 
 .modal-overlay {
