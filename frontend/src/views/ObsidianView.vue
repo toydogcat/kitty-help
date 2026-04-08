@@ -56,9 +56,27 @@ const openFile = async (file: any) => {
   markdownContent.value = '';
   try {
     const text = await apiService.getObsidianFileContent(file.path);
-    // Explicitly handle if text is an object (axios auto-parse?)
-    const content = typeof text === 'string' ? text : JSON.stringify(text, null, 2);
-    markdownContent.value = await marked(content);
+    let content = typeof text === 'string' ? text : JSON.stringify(text, null, 2);
+
+    // 1. Resolve Obsidian Wikilinks [[Note Name]]
+    // For now, we just highlight them. Real navigation would require a map.
+    content = content.replace(/\[\[([^\]]+)\]\]/g, '<strong>🔗 $1</strong>');
+
+    // 2. Setup Custom Renderer for Images
+    const renderer = new marked.Renderer();
+    const noteDir = file.path.split('/').slice(0, -1).join('/');
+
+    renderer.image = (href, title, text) => {
+      if (!href.startsWith('http')) {
+        // Resolve relative paths for images in Obsidian
+        const fullImagePath = noteDir ? `${noteDir}/${href}` : href;
+        const proxiedUrl = apiService.getStorehouseFileUrl(fullImagePath, 'local');
+        return `<img src="${proxiedUrl}" alt="${text || ''}" title="${title || ''}" />`;
+      }
+      return `<img src="${href}" alt="${text || ''}" />`;
+    };
+
+    markdownContent.value = marked.parse(content, { renderer });
   } catch (err: any) {
     console.error("Failed to fetch obsidian content:", err);
     const detail = err.response?.data?.error || err.message;

@@ -336,7 +336,26 @@ func GetFileProxy(c *fiber.Ctx) error {
 			return c.Status(404).JSON(fiber.Map{"error": "Local file not found"})
 		}
 		
-		c.Set("Content-Type", "text/markdown; charset=utf-8")
+		ext := strings.ToLower(filepath.Ext(fullPath))
+		contentType := "application/octet-stream"
+		switch ext {
+		case ".md", ".markdown", ".txt":
+			contentType = "text/markdown; charset=utf-8"
+		case ".png":
+			contentType = "image/png"
+		case ".jpg", ".jpeg":
+			contentType = "image/jpeg"
+		case ".gif":
+			contentType = "image/gif"
+		case ".svg":
+			contentType = "image/svg+xml"
+		case ".webp":
+			contentType = "image/webp"
+		case ".pdf":
+			contentType = "application/pdf"
+		}
+		
+		c.Set("Content-Type", contentType)
 		if c.Query("download") == "1" {
 			c.Set("Content-Disposition", "attachment; filename=" + filepath.Base(fullPath))
 		} else {

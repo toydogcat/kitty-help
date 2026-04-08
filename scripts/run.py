@@ -156,6 +156,33 @@ def import_db():
     except Exception as e:
         print(f"{Colors.FAIL}❌ Error during restoration: {e}{Colors.ENDC}")
 
+def get_obsidian_path():
+    """Extract LOCAL_OBSIDIAN_PATH from .env."""
+    if not os.path.exists(ENV_FILE): return None
+    with open(ENV_FILE, "r") as f:
+        for line in f:
+            if line.startswith("LOCAL_OBSIDIAN_PATH="):
+                return line.split("=", 1)[1].strip()
+    return None
+
+def sync_obsidian():
+    """Run git pull in the local obsidian vault directory."""
+    path = get_obsidian_path()
+    if not path:
+        print(f"{Colors.FAIL}[ERROR]{Colors.ENDC} LOCAL_OBSIDIAN_PATH not found in .env")
+        return
+    
+    print_step(f"🔄 Syncing Obsidian Vault: {path}")
+    if not os.path.exists(path):
+        print(f"{Colors.FAIL}[ERROR]{Colors.ENDC} Directory does not exist: {path}")
+        return
+    
+    try:
+        subprocess.run(f"cd {path} && git pull", shell=True, check=True)
+        print(f"{Colors.OKGREEN}✅ Obsidian Vault synced successfully!{Colors.ENDC}")
+    except Exception as e:
+        print(f"{Colors.FAIL}❌ Git Sync failed: {e}{Colors.ENDC}")
+
 def main():
     parser = argparse.ArgumentParser(description='🚀 Kitty-Help Full Stack Orchestrator')
     
@@ -166,17 +193,23 @@ def main():
     parser.add_argument('-e', '--export', action='store_true', help='Backup/Export Database to SQL')
     parser.add_argument('-i', '--import-db', action='store_true', help='Restore/Import Database from SQL')
     parser.add_argument('-f', '--fix', type=str, help='Purify EPUB file (remove res:/// and scripts)')
+    parser.add_argument('-obs', '--obsidian', action='store_true', help='Sync Obsidian Vault (git pull)')
     parser.add_argument('-all', '--full', action='store_true', help='Run everything (default if no flags)')
     parser.add_argument('--kill', action='store_true', help='Force kill port 3000')
 
     args = parser.parse_args()
     
-    db_ops = args.export or args.import_db or args.fix
+    db_ops = args.export or args.import_db or args.fix or args.obsidian
     run_all = not db_ops and (args.full or not any([args.docker, args.catch, args.build, args.deploy]))
 
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    # Set working directory to project root (parent of scripts/)
+    os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
     print(f"{Colors.HEADER}{Colors.BOLD}--- 🐱 Kitty-Help Unified Management System ---{Colors.ENDC}\n")
+
+    if args.obsidian:
+        sync_obsidian()
+        if not args.full: return
 
     if args.fix:
         fix_epub_file(args.fix)
@@ -198,17 +231,17 @@ def main():
         time.sleep(1)
 
     if args.docker or run_all:
-        run_command("docker compose down", "1/4: Stopping containers...")
-        run_command("docker compose up -d --build", "1/4: Rebuilding and starting Backend...")
+        run_command("docker compose -f infra/docker-compose.yml down", "1/4: Stopping containers...")
+        run_command("docker compose -f infra/docker-compose.yml up -d --build", "1/4: Rebuilding and starting Backend...")
 
     if args.catch or run_all:
         catch_tunnel_url()
 
     if args.build or run_all:
-        run_command("npm run build", "3/4: Building Frontend assets...")
+        run_command("cd frontend && npm run build", "3/4: Building Frontend assets...")
 
     if args.deploy or run_all:
-        run_command("firebase deploy --only hosting", "4/4: Deploying to Firebase...")
+        run_command("firebase deploy --config frontend/firebase.json --only hosting", "4/4: Deploying to Firebase...")
 
     end_time = time.time()
     print(f"\n{Colors.OKGREEN}{Colors.BOLD}✅ [SUCCESS]{Colors.ENDC} Completed in {int(end_time - start_time)}s\n")

@@ -1,0 +1,2 @@
+#!/bin/bash
+conda run -n toby python3 scripts/run.py "$@"
