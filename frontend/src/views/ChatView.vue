@@ -161,6 +161,29 @@ const openRemarkModal = (c: any) => {
 const pinnedRemarks = computed(() => remarkContainers.value.filter(c => c.isPinned));
 const otherRemarks = computed(() => remarkContainers.value.filter(c => !c.isPinned));
 
+// --- Missing Interaction Functions ---
+const togglePin = async (c: any) => {
+  try {
+    await toggleRemarkSidebarPin(c.id, c.isPinned);
+    await fetchRecentMessages();
+  } catch (err) { alert("Pin toggle failed"); }
+};
+
+const addToDesk = async (c: any) => {
+  try {
+    await pinToDesk('remark', c.id);
+    alert("Pinned to Desk! 📌");
+  } catch (err) { alert("Failed to pin to desk"); }
+};
+
+const deleteRemark = async (id: string) => {
+  if (!confirm("Delete this group?")) return;
+  try {
+    await apiService.deleteRemark(id);
+    await fetchRecentMessages();
+  } catch (err) { alert("Delete failed"); }
+};
+
 const formatSize = (bytes: number) => {
   if (bytes === 0) return '0 B';
   const k = 1024;
