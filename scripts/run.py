@@ -319,6 +319,14 @@ def main():
         catch_tunnel_url()
 
     if args.build or run_all:
+        # Step 3: Ensure .env files are synced to frontend
+        for env_name in [ENV_FILE, ENV_PROD_FILE]:
+            src = env_name
+            dst = os.path.join("frontend", env_name)
+            if os.path.exists(src):
+                shutil.copy2(src, dst)
+                print(f"{Colors.OKCYAN}🚀 Synced {src} -> {dst} (Prep for Build){Colors.ENDC}")
+        
         run_command("cd frontend && npm run build", "3/4: Building Frontend assets...")
 
     if (args.deploy or run_all) and not args.preview:

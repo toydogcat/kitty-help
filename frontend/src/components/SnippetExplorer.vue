@@ -388,6 +388,7 @@ const handleReorder = async (data: { targetNode: any, position: 'before' | 'afte
     } catch (err) {
         console.error("Reorder failed:", err);
     } finally {
+        loading.value = false;
         handleDragEnd();
     }
 };
