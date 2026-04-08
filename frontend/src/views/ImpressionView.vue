@@ -48,6 +48,9 @@ const commandResults = ref<any[]>([]);
 const availableKGsList = ref<string[]>([]);
 const showCommandHelp = ref(false);
 
+// Event Timers
+let clickTimer: any = null;
+
 // Advanced Interactive Buffers
 const candidateNodeId = ref<string | null>(null);
 const highlightedNodes = ref(new Set<string>());
@@ -122,64 +125,66 @@ const initGraph = async () => {
   }
 
   network.value.on('click', (params: any) => {
-    if (interactionMode.value === 'view') {
-        isLinkingMode.value = false;
-        
-        if (params.nodes.length > 0) {
-            const nid = params.nodes[0];
-            const isH = highlightedNodes.value.has(nid);
+    // Wait to see if it becomes a double-click
+    clearTimeout(clickTimer);
+    clickTimer = setTimeout(() => {
+        if (interactionMode.value === 'view') {
+            isLinkingMode.value = false;
             
-            if (isH) {
-                highlightedNodes.value.delete(nid);
-                nodes.value.update({ id: nid, size: 30, color: { border: undefined }, borderWidth: 3 });
-            } else {
-                highlightedNodes.value.add(nid);
-                nodes.value.update({ id: nid, size: 55, color: { border: '#fbbf24' }, borderWidth: 8 });
-            }
-            // Also focus in view mode
-            handleNodeClick(nid);
-        } else if (params.edges.length > 0) {
-            const eid = params.edges[0];
-            const isH = highlightedEdges.value.has(eid);
-            
-            if (isH) {
-                highlightedEdges.value.delete(eid);
-                edges.value.update({ id: eid, width: 2, color: { color: 'rgba(255,255,255,0.15)' } });
-            } else {
-                highlightedEdges.value.add(eid);
-                edges.value.update({ id: eid, width: 8, color: { color: '#fbbf24' } });
-            }
-        }
-    } else {
-        // --- EDIT MODE CLICK ---
-        if (params.nodes.length > 0) {
-            const nid = params.nodes[0];
-            resetSelection(); // Clear previous selection styling
-            selectedSourceNodeId.value = nid;
-            nodes.value.update({ id: nid, borderWidth: 6, color: { border: '#22d3ee' } });
-            
-            // Edit Mode: Single Click opens card
-            handleNodeClick(nid);
-            isEditingNode.value = true;
-        } else if (params.edges.length > 0) {
-            // Edit Mode: Single Click Edge opens card
-            const eid = params.edges[0];
-            const edgeData = edges.value.get(eid) as any;
-            if (edgeData) {
-                selectedEdgeDetails.value = { id: eid, label: edgeData.label || '' };
-                edgeEditForm.value.label = edgeData.label || '';
-                isEditingEdge.value = true;
-                selectedNodeDetails.value = null;
+            if (params.nodes.length > 0) {
+                const nid = params.nodes[0];
+                const isH = highlightedNodes.value.has(nid);
+                
+                if (isH) {
+                    highlightedNodes.value.delete(nid);
+                    nodes.value.update({ id: nid, size: 30, color: { border: undefined }, borderWidth: 3 });
+                } else {
+                    highlightedNodes.value.add(nid);
+                    nodes.value.update({ id: nid, size: 55, color: { border: '#fbbf24' }, borderWidth: 8 });
+                }
+                handleNodeClick(nid);
+            } else if (params.edges.length > 0) {
+                const eid = params.edges[0];
+                const isH = highlightedEdges.value.has(eid);
+                
+                if (isH) {
+                    highlightedEdges.value.delete(eid);
+                    edges.value.update({ id: eid, width: 2, color: { color: 'rgba(255,255,255,0.15)' } });
+                } else {
+                    highlightedEdges.value.add(eid);
+                    edges.value.update({ id: eid, width: 8, color: { color: '#fbbf24' } });
+                }
             }
         } else {
-            resetSelection();
-            selectedNodeDetails.value = null;
-            selectedEdgeDetails.value = null;
+            // --- EDIT MODE CLICK ---
+            if (params.nodes.length > 0) {
+                const nid = params.nodes[0];
+                resetSelection();
+                selectedSourceNodeId.value = nid;
+                nodes.value.update({ id: nid, borderWidth: 6, color: { border: '#22d3ee' } });
+                handleNodeClick(nid);
+                isEditingNode.value = true;
+            } else if (params.edges.length > 0) {
+                const eid = params.edges[0];
+                const edgeData = edges.value.get(eid) as any;
+                if (edgeData) {
+                    selectedEdgeDetails.value = { id: eid, label: edgeData.label || '' };
+                    edgeEditForm.value.label = edgeData.label || '';
+                    isEditingEdge.value = true;
+                    selectedNodeDetails.value = null;
+                }
+            } else {
+                resetSelection();
+                selectedNodeDetails.value = null;
+                selectedEdgeDetails.value = null;
+            }
         }
-    }
+    }, 250); // 250ms is standard human double click threshold
   });
 
   network.value.on('doubleClick', async (params: any) => {
+    clearTimeout(clickTimer); // 🛑 STOP the single click from firing!
+    
     if (interactionMode.value === 'view') {
         if (params.nodes.length > 0) {
             const nid = params.nodes[0];
@@ -577,8 +582,19 @@ const executeCommand = async () => {
                 network.value.setOptions({ layout: { hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed' } } });
                 commandResults.value = [{ id: 'l-t', title: 'Switched to Hierarchical Layout.', resultType: 'info' }];
             } else {
+                // Global Shuffle: Disable hierarchy and unfreeze everyone temporarily
                 network.value.setOptions({ layout: { hierarchical: { enabled: false } } });
-                commandResults.value = [{ id: 'l-f', title: 'Switched back to Force Layout.', resultType: 'info' }];
+                const allIds = nodes.value.getIds();
+                nodes.value.update(allIds.map(id => ({ id, physics: true })));
+                
+                commandResults.value = [{ id: 'l-f', title: 'Global Force Shuffle: Unfreezing for 5s...', resultType: 'info' }];
+                
+                // Freeze again after stabilization
+                setTimeout(() => {
+                    const latestIds = nodes.value.getIds();
+                    nodes.value.update(latestIds.map(id => ({ id, physics: false })));
+                    commandResults.value = [{ id: 'l-f2', title: 'Layout Stabilized & Frozen.', resultType: 'info' }];
+                }, 5000);
             }
             commandInput.value = '';
         } else if (cmd === '/rank') {
