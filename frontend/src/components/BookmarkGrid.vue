@@ -232,7 +232,7 @@ const handleReorder = async (data: { targetNode: Bookmark, position: 'before' | 
 };
 
 const fetchVault = async () => {
-  if (!props.userId) return;
+  if (!props.userId || !props.hasSecurityTrust) return;
   try {
     const res = await apiService.getPasswords();
     vaultPasswords.value = res;
@@ -371,6 +371,10 @@ onMounted(() => {
 watch(() => props.userId, () => {
   fetchBookmarks();
   fetchVault();
+});
+
+watch(() => props.hasSecurityTrust, (newVal) => {
+  if (newVal) fetchVault();
 });
 </script>
 
