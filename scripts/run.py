@@ -39,10 +39,9 @@ def run_command(cmd, msg=None):
         # Use Popen to stream output line by line for better feedback
         process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
         for line in process.stdout:
-            print(f"  {line}", end='')
+            print(f"  {line}", end='', flush=True)
         process.wait()
         if process.returncode != 0:
-            print(f"{Colors.FAIL}[ERROR]{Colors.ENDC} Command exited with code {process.returncode}")
             return False
         return True
     except Exception as e:
@@ -240,7 +239,11 @@ def main():
         time.sleep(1)
 
     if args.docker or run_all:
+        # Step 1: Normal down
         run_command("docker compose --env-file .env -f infra/docker-compose.yml down", "1/4: Stopping containers...")
+        # Step 2: Emergency cleanup (if names are still taken)
+        subprocess.run("docker rm -f kitty-server kitty-tunnel 2>/dev/null || true", shell=True)
+        
         run_command("docker compose --env-file .env -f infra/docker-compose.yml up -d --build", "1/4: Rebuilding and starting Backend...")
 
     if args.catch or run_all:
