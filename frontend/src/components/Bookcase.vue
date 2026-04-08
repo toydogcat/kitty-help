@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch, nextTick, onUnmounted } from 'vue';
+import { liveQuery } from 'dexie';
+import { db } from '../services/localDb';
 import { apiService } from '../services/api';
+import { syncService } from '../services/syncService';
 import { marked } from 'marked';
 import { usePin } from '../composables/usePin';
 
@@ -34,17 +37,40 @@ const isEpubLoading = ref(false);
 const epubError = ref<string | null>(null);
 let observer: MutationObserver | null = null;
 
+let bookcaseSub: any = null;
+let notesSub: any = null;
+
 const fetchBookcase = async () => {
   isLoading.value = true;
   try {
-    const data = await apiService.getBookcase();
-    books.value = data || [];
     const saved = localStorage.getItem('kb_custom_folders');
     if (saved) customFolders.value = JSON.parse(saved);
-    books.value.forEach(b => { if (b.folder && !customFolders.value.includes(b.folder)) customFolders.value.push(b.folder); });
-    if (books.value.length > 0 && !activeBook.value) selectBook(books.value[0]);
-  } catch (e) { console.error('Sync fail:', e); } finally { isLoading.value = false; }
+    await syncService.refreshBookcase();
+  } catch (e) {
+    console.error('Bookcase background sync failed');
+  } finally {
+    isLoading.value = false;
+  }
 };
+
+onMounted(() => {
+  bookcaseSub = liveQuery(() => db.bookcase.toArray()).subscribe(val => {
+     books.value = val;
+     if (books.value.length > 0 && !activeBook.value) selectBook(books.value[0]);
+  });
+  
+  fetchBookcase();
+  if (!document.getElementById('jszip-js')) {
+    const j = document.createElement('script'); j.id = 'jszip-js'; j.src = 'https://unpkg.com/jszip/dist/jszip.min.js'; j.async = true; document.head.appendChild(j);
+    const s = document.createElement('script'); s.id = 'epub-js'; s.src = 'https://unpkg.com/epubjs/dist/epub.min.js'; s.async = true; document.head.appendChild(s);
+  }
+});
+
+onUnmounted(() => {
+  if (bookcaseSub) bookcaseSub.unsubscribe();
+  if (notesSub) notesSub.unsubscribe();
+  cleanupEpub();
+});
 
 const selectBook = async (book: any) => {
   cleanupEpub();
@@ -53,16 +79,22 @@ const selectBook = async (book: any) => {
   bookNotes.value = [];
   epubError.value = null;
   
-  try {
-    bookNotes.value = await apiService.getBookNotes(book.id);
-    if (bookNotes.value.length > 0) activeNote.value = { ...bookNotes.value[0] };
-    else createNewNote();
+  if (notesSub) notesSub.unsubscribe();
+  notesSub = liveQuery(() => db.bookNotes.where('bookId').equals(book.id).toArray()).subscribe(val => {
+     bookNotes.value = val;
+     if (bookNotes.value.length > 0 && !activeNote.value) {
+        activeNote.value = { ...bookNotes.value[0] };
+     } else if (bookNotes.value.length === 0) {
+        createNewNote();
+     }
+  });
+
+  syncService.refreshBookNotes(book.id).catch(() => {});
     
-    if (isEPUB(activeBook.value) && viewMode.value !== 'notes') {
-      isEpubLoading.value = true;
-      nextTick(() => initEpubReader());
-    }
-  } catch (e) { console.error('Selection break:', e); }
+  if (isEPUB(activeBook.value) && viewMode.value !== 'notes') {
+    isEpubLoading.value = true;
+    nextTick(() => initEpubReader());
+  }
 };
 
 const cleanupEpub = () => {
@@ -183,12 +215,12 @@ const saveCurrentNote = async () => {
   isSaving.value = true;
   try {
     const payload = { title: activeNote.value.title, content: activeNote.value.content, 
-                     noteType: activeNote.value.noteType === 'txt' ? 'txt' : 'markdown' };
+                      noteType: activeNote.value.noteType === 'txt' ? 'txt' : 'markdown' };
     if (activeNote.value.id.startsWith('temp-')) {
-      const res = await apiService.addBookNote(activeBook.value.id, payload);
-      activeNote.value.id = res.id;
-    } else { await apiService.updateBookNote(activeNote.value.id, payload); }
-    bookNotes.value = await apiService.getBookNotes(activeBook.value.id);
+      await syncService.addBookNote(activeBook.value.id, payload);
+    } else { 
+      await syncService.updateBookNote(activeNote.value.id, payload); 
+    }
   } catch (e) { alert('Commit fail'); } finally { isSaving.value = false; }
 };
 
@@ -196,23 +228,39 @@ const deleteNote = async (id: string) => {
   if (id.startsWith('temp-')) { activeNote.value = null; return; }
   if (!confirm('Eliminate data?')) return;
   try {
-    await apiService.removeBookNote(id);
-    bookNotes.value = await apiService.getBookNotes(activeBook.value.id);
-    if (bookNotes.value.length > 0) activeNote.value = { ...bookNotes.value[0] };
-    else createNewNote();
+    await syncService.removeBookNote(id);
   } catch (e) { alert('Operation aborted'); }
 };
 
 const removeBookStatus = async (id: string) => {
   if (!confirm('Detach?')) return;
-  try { await apiService.removeBook(id); activeBook.value = null; fetchBookcase(); } catch (e) { alert('Operation fail'); }
+  try { 
+    await syncService.removeBook(id); 
+    activeBook.value = null; 
+  } catch (e) { alert('Operation fail'); }
 };
 
 const importBook = async (res: any) => {
   try {
-    await apiService.addBookToBookcase({ storeId: res.id, title: res.title || res.caption || 'Source', category: res.mediaType?.toUpperCase() || 'VOLUME' });
-    showAddModal.value = false; fetchBookcase();
+    await syncService.addBookToBookcase({ 
+      storeId: res.id, 
+      title: res.title || res.caption || 'Source', 
+      category: res.mediaType?.toUpperCase() || 'VOLUME' 
+    });
+    showAddModal.value = false;
   } catch (e) { alert('Import error'); }
+};
+
+const onDropIntoFolder = async (event: DragEvent, folderName: string) => {
+  event.preventDefault(); dragOverFolder.value = null;
+  const bookId = event.dataTransfer?.getData('bookId');
+  if (!bookId) return;
+  const targetFolder = folderName === 'Uncategorized' ? '' : folderName;
+  try { 
+    await syncService.updateBookFolder(bookId, targetFolder); 
+  } catch (e) { 
+    console.error("Folder update failed", e);
+  }
 };
 
 const folders = computed(() => {
@@ -230,26 +278,8 @@ const onDragStart = (event: DragEvent, bookId: string) => {
   if (event.dataTransfer) { event.dataTransfer.setData('bookId', bookId); event.dataTransfer.effectAllowed = 'move'; }
 };
 
-const onDropIntoFolder = async (event: DragEvent, folderName: string) => {
-  event.preventDefault(); dragOverFolder.value = null;
-  const bookId = event.dataTransfer?.getData('bookId');
-  if (!bookId) return;
-  const targetFolder = folderName === 'Uncategorized' ? '' : folderName;
-  try { await apiService.updateBookFolder(bookId, targetFolder); await fetchBookcase(); } catch (e) { fetchBookcase(); }
-};
-
 const getFileUrl = (book: any) => { if (!book || !book.storeId) return ''; return `${import.meta.env.VITE_API_URL}/api/storehouse/file/${book.storeId}`; };
 const isEPUB = (book: any) => { if (!book) return false; return (book.title || '').toLowerCase().endsWith('.epub'); };
-
-onMounted(() => {
-  fetchBookcase();
-  if (!document.getElementById('jszip-js')) {
-    const j = document.createElement('script'); j.id = 'jszip-js'; j.src = 'https://unpkg.com/jszip/dist/jszip.min.js'; j.async = true; document.head.appendChild(j);
-    const s = document.createElement('script'); s.id = 'epub-js'; s.src = 'https://unpkg.com/epubjs/dist/epub.min.js'; s.async = true; document.head.appendChild(s);
-  }
-});
-
-onUnmounted(() => { cleanupEpub(); });
 
 watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSON.stringify(newVal)); }, { deep: true });
 </script>
@@ -355,11 +385,16 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 .item-title { font-size: 0.8rem; text-align: left; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
 .item-meta { font-size: 0.6rem; opacity: 0.4; }
 .workspace { flex: 1; display: flex; flex-direction: column; }
-.ws-header { height: 64px; padding: 0 1.25rem; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #1a1e23; background: #000; }
-.badge { font-size: 0.6rem; background: #fbbf2422; color: #fbbf24; padding: 2px 6px; border-radius: 4px; font-weight: 800; }
-.tabs-nav { display: flex; gap: 4px; background: #11151a; padding: 4px; border-radius: 8px; }
-.tabs-nav button { padding: 0.4rem 1rem; border: none; background: transparent; color: #666; font-size: 0.75rem; font-weight: 700; border-radius: 6px; cursor: pointer; transition: all 0.2s; }
+.active-book-info { display: flex; align-items: center; gap: 0.8rem; overflow: hidden; flex: 1; }
+.active-book-info h2 { font-size: 1.1rem; color: #fff; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-header { height: 64px; padding: 0 1.25rem; display: flex; align-items: center; gap: 1.5rem; justify-content: space-between; border-bottom: 1px solid #1a1e23; background: #000; }
+.badge { font-size: 0.6rem; background: #fbbf2422; color: #fbbf24; padding: 2px 6px; border-radius: 4px; font-weight: 800; flex-shrink: 0; }
+.tabs-nav { display: flex; gap: 4px; background: #11151a; padding: 4px; border-radius: 8px; flex-shrink: 0; }
+.tabs-nav button { padding: 0.4rem 1rem; border: none; background: transparent; color: #666; font-size: 0.75rem; font-weight: 700; border-radius: 6px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
 .tabs-nav button.active { background: #d97706; color: #fff; }
+.detach-btn { background: rgba(255, 87, 87, 0.1); border: 1px solid rgba(255, 87, 87, 0.2); color: #ff5757; padding: 0.4rem; border-radius: 6px; cursor: pointer; flex-shrink: 0; transition: all 0.2s; }
+.detach-btn:hover { background: #ff5757; color: #fff; }
+
 .ws-body { flex: 1; display: flex; overflow: hidden; }
 .preview-pane { flex: 1.4; position: relative; background: #121519; border-right: 1px solid #1a1e23; overflow: hidden; }
 .pdf-frame { width: 100%; height: 100%; border: none; background: #1a1e23; }
@@ -368,13 +403,28 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 :deep(.epub-canvas iframe) { width: 100% !important; height: 100% !important; border: none !important; }
 .reader-controls { position: absolute; bottom: 2rem; left: 50%; transform: translateX(-50%); display: flex; gap: 1rem; z-index: 1000; }
 .nav-btn { background: #d97706DD; backdrop-filter: blur(8px); color: #fff; border: 1px solid #fbbf2444; padding: 0.6rem 1.25rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; font-weight: 900; }
-.notes-pane { flex: 1; display: flex; flex-direction: column; background: #0a0c10; }
-.note-tabs { display: flex; padding: 0.6rem 1rem 0; border-bottom: 1px solid #1a1e23; overflow-x: auto; gap: 4px; }
-.note-tab { padding: 0.5rem 1.25rem; font-size: 0.8rem; background: #11151a; border-radius: 6px 6px 0 0; cursor: pointer; color: #666; }
+.notes-pane { flex: 1; display: flex; flex-direction: column; background: #0a0c10; min-width: 400px; }
+.note-tabs { display: flex; padding: 0.6rem 1rem 0; border-bottom: 1px solid #1a1e23; overflow-x: auto; gap: 4px; scrollbar-width: none; }
+.note-tabs::-webkit-scrollbar { display: none; }
+.note-tab { padding: 0.5rem 1.25rem; font-size: 0.8rem; background: #11151a; border-radius: 6px 6px 0 0; cursor: pointer; color: #666; white-space: nowrap; }
 .note-tab.active { background: #1a1e23; color: #fbbf24; }
-.ed-toolbar { padding: 1rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1a1e23; }
-.title-in { flex: 1; background: transparent; border: none; color: #fff; font-size: 1.1rem; font-weight: 700; outline: none; }
-.commit-btn { padding: 0.4rem 1rem; background: #d97706; border: none; color: #fff; border-radius: 4px; font-size: 0.75rem; font-weight: 900; cursor: pointer; }
+.new-btn { background: transparent; border: 1px dashed #333; color: #555; font-size: 0.7rem; padding: 0 0.8rem; border-radius: 4px; margin-bottom: 4px; cursor: pointer; white-space: nowrap; }
+.new-btn:hover { color: #fff; border-color: #555; }
+
+.ed-toolbar { padding: 1rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1a1e23; gap: 1rem; }
+.title-in { flex: 1; background: transparent; border: none; color: #fff; font-size: 1.1rem; font-weight: 700; outline: none; overflow: hidden; text-overflow: ellipsis; }
+.actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+.cycle-btn, .commit-btn, .pin-btn, .del-btn { 
+  padding: 0.4rem 0.8rem; font-size: 0.75rem; font-weight: 900; cursor: pointer; border-radius: 4px; border: none; white-space: nowrap; height: 32px; display: flex; align-items: center; justify-content: center;
+}
+.cycle-btn { background: #11151a; color: #666; border: 1px solid #222; }
+.cycle-btn:hover { color: #fff; border-color: #444; }
+.commit-btn { background: #d97706; color: #fff; }
+.commit-btn:hover { filter: brightness(1.1); }
+.pin-btn { background: #11151a; border: 1px solid #222; }
+.del-btn { background: #11151a; border: 1px solid #222; }
+.del-btn:hover { background: #ff5757; color: #fff; border-color: #ff5757; }
+
 .ed-body { flex: 1; display: flex; overflow: hidden; }
 .ed-body textarea { flex: 1; background: transparent; border: none; padding: 1.5rem; color: #cbd5e1; font-family: monospace; font-size: 0.95rem; line-height: 1.7; resize: none; outline: none; border-right: 1px solid #1a1e23; }
 .markdown-body { flex: 1; padding: 1.5rem; overflow-y: auto; text-align: left; }

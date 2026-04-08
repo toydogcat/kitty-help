@@ -1,5 +1,6 @@
 import { ref } from 'vue';
 import { apiService } from '../services/api';
+import { syncService } from '../services/syncService';
 
 export function usePin() {
     const isPinning = ref(false);
@@ -13,8 +14,7 @@ export function usePin() {
     const pinToDesk = async (type: string, refId: string, shelfId: string | null = null) => {
         isPinning.value = true;
         try {
-            await apiService.addDeskItem({ type, refId, shelfId });
-            // We don't alert here to keep it abstract, allow caller to handle feedback
+            await syncService.addDeskItem({ type, refId, shelfId });
             return true;
         } catch (err) {
             console.error(`[PinService] Failed to pin ${type}:${refId}`, err);
@@ -24,13 +24,9 @@ export function usePin() {
         }
     };
 
-    /**
-     * Unpins (deletes) an item from the Desk
-     * @param deskItemId The ID of the entry in desk_items table
-     */
     const unpinFromDesk = async (deskItemId: string) => {
         try {
-            await apiService.deleteDeskItem(deskItemId);
+            await syncService.deleteDeskItem(deskItemId);
             return true;
         } catch (err) {
             console.error(`[PinService] Failed to unpin item ${deskItemId}`, err);
@@ -38,26 +34,27 @@ export function usePin() {
         }
     };
 
-    /**
-     * Special helper for pinning a Knowledge Universe (Graph) to Desk.
-     * It handles the bookmark creation automatically.
-     */
     const pinUniverseToDesk = async (kgName: string) => {
         isPinning.value = true;
         try {
-            // 1. Create Internal Bookmark
-            const res = await apiService.addBookmark({
+            // 1. Create Internal Bookmark via EverSync
+            const res = await syncService.addBookmark({
                 title: `Universe: ${kgName}`,
                 url: `/impression?kg=${kgName}`,
-                category: 'Impression'
+                category: 'Impression',
+                iconUrl: '',
+                parentId: 'root',
+                isFolder: false,
+                sortOrder: 0
             });
-            const bId = res.id || res.ID;
+            const bId = res.id;
 
-            // 2. Add as Desk Item
-            await apiService.addDeskItem({
+            // 2. Add as Desk Item via EverSync
+            await syncService.addDeskItem({
                 type: 'bookmark',
                 refId: bId,
-                shelfId: null
+                shelfId: null,
+                sortOrder: 0
             });
             return true;
         } catch (err) {

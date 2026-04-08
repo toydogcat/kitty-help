@@ -24,10 +24,50 @@ export interface LocalBookmark {
     syncStatus: 'synced' | 'pending' | 'error';
 }
 
+export interface LocalShelf {
+    id: string;
+    name: string;
+    color: string;
+    sortOrder: number;
+    updatedAt: string;
+    syncStatus: 'synced' | 'pending' | 'error';
+}
+
+export interface LocalDeskItem {
+    id: string;
+    type: string;
+    refId: string;
+    shelfId: string | null;
+    sortOrder: number;
+    updatedAt: string;
+    syncStatus: 'synced' | 'pending' | 'error';
+}
+
+export interface LocalBook {
+    id: string;
+    storeId: string;
+    title: string;
+    category: string;
+    folder: string;
+    notes?: string;
+    updatedAt: string;
+    syncStatus: 'synced' | 'pending' | 'error';
+}
+
+export interface LocalBookNote {
+    id: string;
+    bookId: string;
+    title: string;
+    content: string;
+    noteType: string;
+    updatedAt: string;
+    syncStatus: 'synced' | 'pending' | 'error';
+}
+
 export interface SyncAction {
     id?: number;
     action: 'CREATE' | 'UPDATE' | 'DELETE';
-    entityType: 'snippet' | 'bookmark' | 'remark';
+    entityType: 'snippet' | 'bookmark' | 'remark' | 'shelf' | 'deskItem' | 'book' | 'bookNote';
     entityId: string;
     data: any;
     timestamp: number;
@@ -36,13 +76,21 @@ export interface SyncAction {
 export class EverSyncDatabase extends Dexie {
     snippets!: Table<LocalSnippet>;
     bookmarks!: Table<LocalBookmark>;
+    shelves!: Table<LocalShelf>;
+    deskItems!: Table<LocalDeskItem>;
+    bookcase!: Table<LocalBook>;
+    bookNotes!: Table<LocalBookNote>;
     sync_queue!: Table<SyncAction>;
 
     constructor() {
         super('EverSyncDB');
-        this.version(1).stores({
+        this.version(2).stores({
             snippets: 'id, parentId, name, syncStatus',
             bookmarks: 'id, parentId, title, url, syncStatus',
+            shelves: 'id, name, syncStatus',
+            deskItems: 'id, refId, shelfId, syncStatus',
+            bookcase: 'id, storeId, title, folder, syncStatus',
+            bookNotes: 'id, bookId, title, syncStatus',
             sync_queue: '++id, action, entityId, timestamp'
         });
     }

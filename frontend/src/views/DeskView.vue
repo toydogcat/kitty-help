@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, onUnmounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { liveQuery } from 'dexie';
+import { db } from '../services/localDb';
+import { syncService } from '../services/syncService';
 import { apiService } from '../services/api';
 import UnifiedRemarkModal from '../components/UnifiedRemarkModal.vue';
 import { usePin } from '../composables/usePin';
@@ -94,40 +97,66 @@ const verifyTOTP = async () => {
   }
 };
 
-onMounted(() => {
-  const shelf = route.query.shelfId as string;
-  if (shelf) activeShelfId.value = shelf;
-  fetchData();
-});
+
+
+let shelvesSub: any = null;
+let itemsSub: any = null;
 
 const fetchData = async () => {
   loading.value = true;
   try {
-    const [sData, iData] = await Promise.all([
-      apiService.getShelves(),
-      apiService.getDeskItems(activeShelfId.value || 'null')
-    ]);
-    shelves.value = sData;
-    desktopItems.value = iData;
+    syncService.refreshShelves().catch(() => {});
+    syncService.refreshDeskItems(activeShelfId.value || 'null').catch(() => {});
   } catch (err) {
-    console.error("Failed to load desk data:", err);
+    console.error("Desk background sync error");
   } finally {
     loading.value = false;
   }
 };
 
+onMounted(() => {
+  const shelf = route.query.shelfId as string;
+  if (shelf) activeShelfId.value = shelf;
+
+  shelvesSub = liveQuery(() => db.shelves.orderBy('sortOrder').toArray()).subscribe(val => {
+     shelves.value = val;
+  });
+
+  itemsSub = liveQuery(() => 
+     db.deskItems.where('shelfId').equals(activeShelfId.value || 'null').sortBy('sortOrder')
+  ).subscribe(val => {
+     desktopItems.value = val;
+     loading.value = false;
+  });
+
+  fetchData();
+});
+
+onUnmounted(() => {
+  if (shelvesSub) shelvesSub.unsubscribe();
+  if (itemsSub) itemsSub.unsubscribe();
+});
+
+watch(activeShelfId, (newId) => {
+  if (itemsSub) itemsSub.unsubscribe();
+  itemsSub = liveQuery(() => 
+     db.deskItems.where('shelfId').equals(newId || 'null').sortBy('sortOrder')
+  ).subscribe(val => {
+     desktopItems.value = val;
+  });
+  syncService.refreshDeskItems(newId || 'null').catch(() => {});
+});
+
 const switchShelf = async (id: string | null) => {
   activeShelfId.value = id;
-  await fetchData();
 };
 
 const handleAddShelf = async () => {
   if (!newShelfName.value) return;
   try {
-    await apiService.createShelf({ name: newShelfName.value, sortOrder: shelves.value.length });
+    await syncService.createShelf({ name: newShelfName.value, sortOrder: shelves.value.length });
     newShelfName.value = '';
     showAddShelfModal.value = false;
-    await fetchData();
   } catch (err) {
     alert("Failed to create shelf");
   }
@@ -142,9 +171,8 @@ const openRenameModal = (shelf: any) => {
 const handleRenameShelf = async () => {
   if (!renamingShelfId.value || !newShelfName.value) return;
   try {
-    await apiService.updateShelf(renamingShelfId.value, { name: newShelfName.value });
+    await syncService.updateShelf(renamingShelfId.value, { name: newShelfName.value });
     showRenameModal.value = false;
-    await fetchData();
   } catch (err) {
     alert("Rename failed");
   }
@@ -152,8 +180,9 @@ const handleRenameShelf = async () => {
 
 const duplicateShelf = async (id: string) => {
   try {
-    await apiService.duplicateShelf(id);
-    await fetchData();
+    const s = shelves.value.find(x => x.id === id);
+    if (!s) return;
+    await syncService.createShelf({ name: `${s.name} (Copy)`, sortOrder: shelves.value.length });
   } catch (err) {
     alert("Duplicate failed");
   }
@@ -162,9 +191,8 @@ const duplicateShelf = async (id: string) => {
 const deleteShelf = async (id: string) => {
   if (!confirm("Delete this shelf? Items will be moved to desktop.")) return;
   try {
-    await apiService.deleteShelf(id);
+    await syncService.deleteShelf(id);
     if (activeShelfId.value === id) activeShelfId.value = null;
-    await fetchData();
   } catch (err) {
     alert("Delete failed");
   }
@@ -172,7 +200,7 @@ const deleteShelf = async (id: string) => {
 
 const onDragStart = (item: any) => {
   draggingItem.value = item;
-  draggingShelf.value = null; // Ensure we are not shelf-dragging
+  draggingShelf.value = null;
 };
 
 const onShelfDragStart = (shelf: any) => {
@@ -190,30 +218,21 @@ const onDragOverShelf = (id: string | null | 'desktop') => {
 
 const onShelfDrop = async (targetId: string | null) => {
   if (!draggingShelf.value || draggingShelf.value.id === targetId) return;
-  
   const oldIndex = shelves.value.findIndex(s => s.id === draggingShelf.value.id);
   const newIndex = shelves.value.findIndex(s => s.id === targetId);
-  
   if (oldIndex === -1 || newIndex === -1) return;
   
-  // Optimistic UI Update
   const newShelves = [...shelves.value];
   const [removed] = newShelves.splice(oldIndex, 1);
   newShelves.splice(newIndex, 0, removed);
-  shelves.value = newShelves;
-
-  try {
-    // Sync all orders to backend - include name and color to avoid clearing them
-    await Promise.all(newShelves.map((s, idx) => 
-      apiService.updateShelf(s.id, { name: s.name, color: s.color, sortOrder: idx })
-    ));
-  } catch (err) {
-    console.error("Reorder failed:", err);
-    fetchData(); // Rollback
-  } finally {
-    draggingShelf.value = null;
-    draggingShelfOverId.value = null;
+  
+  // EverSync sequential updates (temporary)
+  for (let i = 0; i < newShelves.length; i++) {
+    await syncService.updateShelf(newShelves[i].id, { sortOrder: i });
   }
+  
+  draggingShelf.value = null;
+  draggingShelfOverId.value = null;
 };
 
 const onDropOnShelf = async (shelfId: string | null) => {
@@ -223,10 +242,9 @@ const onDropOnShelf = async (shelfId: string | null) => {
   }
   if (!draggingItem.value) return;
   try {
-    await apiService.updateDeskItem(draggingItem.value.id, { shelfId });
+    await syncService.updateDeskItem(draggingItem.value.id, { shelfId });
     draggingItem.value = null;
     dragOverShelfId.value = null;
-    await fetchData();
   } catch (err) {
     console.error("Move failed:", err);
   } finally {
@@ -238,12 +256,10 @@ const removeItem = async (id: string, type: string = '') => {
   const performDelete = async () => {
     try {
       await unpinFromDesk(id);
-      await fetchData();
     } catch (err) {
       alert("Remove failed");
     }
   };
-
   if (type === 'password') {
     handleSensitiveAction(performDelete);
   } else {
@@ -270,8 +286,6 @@ const getThumbnail = (item: any, large = false) => {
   }
   return null;
 };
-
-// Helper removed because it is now handled inside UnifiedRemarkModal component
 
 const openOriginal = async (item: any) => {
   const performOpen = async () => {
@@ -308,11 +322,17 @@ const openOriginal = async (item: any) => {
     } else if (item.type === 'book') {
       modalLoading.value = true;
       try {
-        const books = await apiService.getBookcase();
-        const b = books.find((x: any) => x.id === item.refId);
+        const b = await db.bookcase.get(item.refId);
         if (b) {
           editBuffer.value.content = b.notes || '';
           editBuffer.value.title = b.title;
+        } else {
+           const remoteBooks = await syncService.refreshBookcase();
+           const rb = remoteBooks.find((x: any) => x.id === item.refId);
+           if (rb) {
+              editBuffer.value.content = rb.notes || '';
+              editBuffer.value.title = rb.title;
+           }
         }
       } catch (err) {
         console.error("Failed to load book details:", err);
@@ -334,31 +354,31 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
   saving.value = true;
   try {
     if (editingItem.value.type === 'snippet') {
-      await apiService.updateSnippet(editingItem.value.refId, {
+      await syncService.updateSnippet(editingItem.value.refId, {
         name: updatedData.title,
         content: updatedData.content
       });
     } else if (editingItem.value.type === 'media') {
+       // Media doesn't have EverSync yet, keep apiService but we can add later
       await apiService.updateStorehouseItem(editingItem.value.refId, {
         title: updatedData.title,
         notes: updatedData.content
       });
     } else if (editingItem.value.type === 'bookmark') {
-      await apiService.updateBookmark(editingItem.value.refId, {
+      await syncService.updateBookmark(editingItem.value.refId, {
         title: updatedData.title
       });
     } else if (editingItem.value.type === 'remark') {
+       // Remark doesn't have full EverSync yet, but we added the methods in service
       await apiService.updateRemark(editingItem.value.refId, {
         name: updatedData.title,
         content: updatedData.content,
         isPinned: remarkDetails.value?.isPinned || false
       });
     } else if (editingItem.value.type === 'book') {
-      await apiService.updateBookNotes(editingItem.value.refId, updatedData.content);
+      await syncService.updateBookNote(editingItem.value.refId, { content: updatedData.content });
     }
-    
     showEditModal.value = false;
-    await fetchData(); 
   } catch (err) {
     alert("Save failed");
   } finally {

@@ -1,21 +1,19 @@
 import { ref, onMounted, onUnmounted } from 'vue';
+import { liveQuery } from 'dexie';
 import { db } from '../services/localDb';
 
 export function useSyncStatus() {
     const pendingCount = ref(0);
-    let interval: any = null;
-
-    const updateCount = async () => {
-        pendingCount.value = await db.sync_queue.count();
-    };
+    let subscription: any = null;
 
     onMounted(() => {
-        updateCount();
-        interval = setInterval(updateCount, 3000); // Check every 3 seconds
+        subscription = liveQuery(() => db.sync_queue.count()).subscribe(count => {
+            pendingCount.value = count;
+        });
     });
 
     onUnmounted(() => {
-        if (interval) clearInterval(interval);
+        if (subscription) subscription.unsubscribe();
     });
 
     return {

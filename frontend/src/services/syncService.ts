@@ -113,6 +113,134 @@ export const syncService = {
         this.processQueue();
     },
 
+    // --- Desk Methods ---
+    async getShelves() {
+        const local = await db.shelves.orderBy('sortOrder').toArray();
+        this.refreshShelves().catch(() => {});
+        return local;
+    },
+    async refreshShelves() {
+        const remote = await apiService.getShelves();
+        await db.transaction('rw', db.shelves, async () => {
+            for (const s of remote) {
+                await db.shelves.put({ ...s, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            }
+        });
+        return remote;
+    },
+    async createShelf(data: any) {
+        const id = crypto.randomUUID();
+        await db.shelves.add({ ...data, id, syncStatus: 'pending', updatedAt: new Date().toISOString() });
+        await db.sync_queue.add({ action: 'CREATE', entityType: 'shelf', entityId: id, data, timestamp: Date.now() });
+        this.processQueue();
+        return { id };
+    },
+    async updateShelf(id: string, data: any) {
+        await db.shelves.update(id, { ...data, syncStatus: 'pending' });
+        await db.sync_queue.add({ action: 'UPDATE', entityType: 'shelf', entityId: id, data, timestamp: Date.now() });
+        this.processQueue();
+    },
+    async deleteShelf(id: string) {
+        await db.shelves.delete(id);
+        await db.sync_queue.add({ action: 'DELETE', entityType: 'shelf', entityId: id, data: null, timestamp: Date.now() });
+        this.processQueue();
+    },
+    async getDeskItems(shelfId?: string) {
+        const sid = shelfId || 'null';
+        const local = await db.deskItems.where('shelfId').equals(sid).sortBy('sortOrder');
+        this.refreshDeskItems(sid).catch(() => {});
+        return local;
+    },
+    async refreshDeskItems(shelfId: string = 'null') {
+        const remote = await apiService.getDeskItems(shelfId === 'null' ? undefined : shelfId);
+        await db.transaction('rw', db.deskItems, async () => {
+            for (const item of remote) {
+                await db.deskItems.put({ ...item, shelfId: item.shelfId || 'null', syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            }
+        });
+        return remote;
+    },
+    async addDeskItem(data: any) {
+        const id = crypto.randomUUID();
+        await db.deskItems.add({ ...data, id, shelfId: data.shelfId || 'null', syncStatus: 'pending', updatedAt: new Date().toISOString() });
+        await db.sync_queue.add({ action: 'CREATE', entityType: 'deskItem', entityId: id, data, timestamp: Date.now() });
+        this.processQueue();
+        return { id };
+    },
+    async updateDeskItem(id: string, data: any) {
+        await db.deskItems.update(id, { ...data, syncStatus: 'pending' });
+        await db.sync_queue.add({ action: 'UPDATE', entityType: 'deskItem', entityId: id, data, timestamp: Date.now() });
+        this.processQueue();
+    },
+    async deleteDeskItem(id: string) {
+        await db.deskItems.delete(id);
+        await db.sync_queue.add({ action: 'DELETE', entityType: 'deskItem', entityId: id, data: null, timestamp: Date.now() });
+        this.processQueue();
+    },
+
+    // --- Bookcase Methods ---
+    async getBookcase() {
+        const local = await db.bookcase.toArray();
+        this.refreshBookcase().catch(() => {});
+        return local;
+    },
+    async refreshBookcase() {
+        const remote = await apiService.getBookcase();
+        await db.transaction('rw', db.bookcase, async () => {
+            for (const b of remote) {
+                await db.bookcase.put({ ...b, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            }
+        });
+        return remote;
+    },
+    async addBookToBookcase(data: any) {
+        const id = crypto.randomUUID();
+        await db.bookcase.add({ ...data, id, syncStatus: 'pending', updatedAt: new Date().toISOString() });
+        await db.sync_queue.add({ action: 'CREATE', entityType: 'book', entityId: id, data, timestamp: Date.now() });
+        this.processQueue();
+    },
+    async updateBookFolder(id: string, folder: string) {
+        await db.bookcase.update(id, { folder, syncStatus: 'pending' });
+        await db.sync_queue.add({ action: 'UPDATE', entityType: 'book', entityId: id, data: { folder }, timestamp: Date.now() });
+        this.processQueue();
+    },
+    async removeBook(id: string) {
+        await db.bookcase.delete(id);
+        await db.sync_queue.add({ action: 'DELETE', entityType: 'book', entityId: id, data: null, timestamp: Date.now() });
+        this.processQueue();
+    },
+    async getBookNotes(bookId: string) {
+        const local = await db.bookNotes.where('bookId').equals(bookId).toArray();
+        this.refreshBookNotes(bookId).catch(() => {});
+        return local;
+    },
+    async refreshBookNotes(bookId: string) {
+        const remote = await apiService.getBookNotes(bookId);
+        await db.transaction('rw', db.bookNotes, async () => {
+            for (const n of remote) {
+                await db.bookNotes.put({ ...n, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            }
+        });
+        return remote;
+    },
+    async addBookNote(bookId: string, data: any) {
+        const id = crypto.randomUUID();
+        await db.bookNotes.add({ ...data, id, bookId, syncStatus: 'pending', updatedAt: new Date().toISOString() });
+        await db.sync_queue.add({ action: 'CREATE', entityType: 'bookNote', entityId: id, data: { ...data, bookId }, timestamp: Date.now() });
+        this.processQueue();
+        return { id };
+    },
+    async updateBookNote(id: string, data: any) {
+        await db.bookNotes.update(id, { ...data, syncStatus: 'pending' });
+        await db.sync_queue.add({ action: 'UPDATE', entityType: 'bookNote', entityId: id, data, timestamp: Date.now() });
+        this.processQueue();
+    },
+    async removeBookNote(id: string) {
+        await db.bookNotes.delete(id);
+        await db.sync_queue.add({ action: 'DELETE', entityType: 'bookNote', entityId: id, data: null, timestamp: Date.now() });
+        this.processQueue();
+    },
+
     async processQueue() {
         const actions = await db.sync_queue.toArray();
         if (actions.length === 0) return;
@@ -138,6 +266,46 @@ export const syncService = {
                         await db.bookmarks.update(action.entityId, { syncStatus: 'synced' });
                     } else if (action.action === 'DELETE') {
                         await apiService.deleteBookmark(action.entityId);
+                    }
+                } else if (action.entityType === 'shelf') {
+                    if (action.action === 'CREATE') {
+                        const res = await apiService.createShelf(action.data);
+                        await db.shelves.update(action.entityId, { id: res.id, syncStatus: 'synced' });
+                    } else if (action.action === 'UPDATE') {
+                        await apiService.updateShelf(action.entityId, action.data);
+                        await db.shelves.update(action.entityId, { syncStatus: 'synced' });
+                    } else if (action.action === 'DELETE') {
+                        await apiService.deleteShelf(action.entityId);
+                    }
+                } else if (action.entityType === 'deskItem') {
+                    if (action.action === 'CREATE') {
+                        const res = await apiService.addDeskItem(action.data);
+                        await db.deskItems.update(action.entityId, { id: res.id, syncStatus: 'synced' });
+                    } else if (action.action === 'UPDATE') {
+                        await apiService.updateDeskItem(action.entityId, action.data);
+                        await db.deskItems.update(action.entityId, { syncStatus: 'synced' });
+                    } else if (action.action === 'DELETE') {
+                        await apiService.deleteDeskItem(action.entityId);
+                    }
+                } else if (action.entityType === 'book') {
+                    if (action.action === 'CREATE') {
+                        const res = await apiService.addBookToBookcase(action.data);
+                        await db.bookcase.update(action.entityId, { id: res.id, syncStatus: 'synced' });
+                    } else if (action.action === 'UPDATE') {
+                        await apiService.updateBookFolder(action.entityId, action.data.folder);
+                        await db.bookcase.update(action.entityId, { syncStatus: 'synced' });
+                    } else if (action.action === 'DELETE') {
+                        await apiService.removeBook(action.entityId);
+                    }
+                } else if (action.entityType === 'bookNote') {
+                    if (action.action === 'CREATE') {
+                        const res = await apiService.addBookNote(action.data.bookId, action.data);
+                        await db.bookNotes.update(action.entityId, { id: res.id, syncStatus: 'synced' });
+                    } else if (action.action === 'UPDATE') {
+                        await apiService.updateBookNote(action.entityId, action.data);
+                        await db.bookNotes.update(action.entityId, { syncStatus: 'synced' });
+                    } else if (action.action === 'DELETE') {
+                        await apiService.removeBookNote(action.entityId);
                     }
                 }
                 
