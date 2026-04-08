@@ -65,25 +65,14 @@ func main() {
 		WriteTimeout: 120 * time.Second,
 	})
 
-	// Dynamic & Intelligent CORS Control
-	allowedOrigins := "https://kitty-help.web.app,http://localhost:5173,http://localhost:4173"
-	if extra := os.Getenv("ALLOWED_ORIGINS"); extra != "" {
-		allowedOrigins += "," + extra
-	}
-
+	// 🛡️ Aggressive CORS Policy for Cloudflare / Firebase
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: allowedOrigins,
-		AllowOriginsFunc: func(origin string) bool {
-			return strings.HasSuffix(origin, ".trycloudflare.com") || 
-				   strings.HasSuffix(origin, ".web.app") || 
-				   strings.HasSuffix(origin, ".firebaseapp.com") ||
-				   origin == "https://kitty-help.web.app"
-		},
+		AllowOrigins:     "https://kitty-help.web.app, https://kitty-help.firebaseapp.com, http://localhost:5173",
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
-		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Refresh-Token,cf-skip-browser-warning,ngrok-skip-browser-warning,X-Requested-With",
-		ExposeHeaders:    "X-Refresh-Token,Content-Disposition",
+		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, X-Refresh-Token, cf-skip-browser-warning, ngrok-skip-browser-warning, X-Requested-With",
+		ExposeHeaders:    "X-Refresh-Token, Content-Disposition",
 		AllowCredentials: true,
-		MaxAge:           3600, // Cache preflight for 1 hour
+		MaxAge:           3600,
 	}))
 
 	app.Use(logger.New())
