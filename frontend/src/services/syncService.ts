@@ -412,7 +412,7 @@ export const syncService = reactive({
                 
                 if (action.id) await db.sync_queue.delete(action.id);
                 } catch (err) {
-                    console.error(\`❌ Sync failed:\`, err);
+                    console.error('❌ Sync failed:', err);
                     break; 
                 }
             }
@@ -422,7 +422,7 @@ export const syncService = reactive({
     },
 
     requestSync() {
-        console.log(\"💳 Credit Card Sync: Change recorded, will sync in 10s...\");
+        console.log('💳 Credit Card Sync: Change recorded, will sync in 10s...');
         if (this.syncTimer) clearTimeout(this.syncTimer);
         this.syncTimer = setTimeout(() => {
             this.processQueue();
@@ -430,20 +430,20 @@ export const syncService = reactive({
     },
 
     async syncNow() {
-        console.log(\"🚀 Settle Balance Now!\");
+        console.log('🚀 Settle Balance Now!');
         if (this.syncTimer) clearTimeout(this.syncTimer);
         await this.processQueue();
     },
 
     async purgeDatabase() {
-        if (!confirm(\"🚨 警告：這將清除所有本地快取並重新與伺服器同步。尚未同步的更改將會遺失。確定要執行嗎？\")) return;
+        if (!confirm('🚨 警告：這將清除所有本地快取並重新與伺服器同步。尚未同步的更改將會遺失。確定要執行嗎？')) return;
         try {
             await db.delete();
             localStorage.clear();
             window.location.reload();
         } catch (err) {
-            console.error(\"Purge failed:\", err);
-            alert(\"清除失敗，請嘗試手動清理瀏覽器快取。\");
+            console.error('Purge failed:', err);
+            alert('清除失敗，請嘗試手動清理瀏覽器快取。');
         }
     }
 });
