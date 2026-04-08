@@ -26,6 +26,7 @@ dist-ssr/
 .env.*.local
 frontend/.env
 frontend/.env.production
+.kitty-help/
 
 # Project Specific
 uploads/

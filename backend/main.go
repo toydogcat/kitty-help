@@ -84,7 +84,12 @@ func main() {
 	}))
 
 	app.Use(logger.New())
-	app.Static("/uploads", "../uploads")
+	// Serve uploads from standardized workspace if exists, else fallback
+	uploadPath := "/root/.kitty-help/workspace/uploads"
+	if _, err := os.Stat(uploadPath); os.IsNotExist(err) {
+		uploadPath = "../uploads"
+	}
+	app.Static("/uploads", uploadPath)
 	api := app.Group("/api")
 
 	// --- 1. Public API ---

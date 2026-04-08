@@ -36,7 +36,7 @@ const dragOverRemarkId = ref<string | null>(null);
 
 // Bot Sender Logic
 const botForm = ref({
-  platform: 'telegram',
+  platform: 'line',
   content: '',
   targetId: '',
   file: null as File | null

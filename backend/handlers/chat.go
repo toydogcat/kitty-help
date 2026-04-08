@@ -9,6 +9,7 @@ import (
 	"github.com/toydogcat/kitty-help/go-server/bots"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func GetChatLogs(c *fiber.Ctx) error {
@@ -204,17 +205,37 @@ func SendBotMessage(c *fiber.Ctx) error {
 	var tempPath string
 
 	if err == nil {
-		tempPath = filepath.Join("..", "uploads", file.Filename)
+		// Standardized path for Docker and Local
+		workspacePath := "/root/.kitty-help/workspace"
+		uploadDir := filepath.Join(workspacePath, "uploads")
+		
+		// If workspace exists, ensure uploads exists inside it
+		if _, err := os.Stat(workspacePath); err == nil {
+			os.MkdirAll(uploadDir, 0755)
+		} else {
+			// Fallback for local development
+			uploadDir = "../uploads"
+			os.MkdirAll(uploadDir, 0755)
+		}
+		
+		tempPath = filepath.Join(uploadDir, file.Filename)
 		if err := c.SaveFile(file, tempPath); err == nil {
 			msgType = "media"
-			// Record it tentatively as an ID-less archive?
-			// Actually we just use the name for now
 		}
 	}
 
 	// 3. Send via Bot
 	if msgType == "media" {
-		err = botIf.SendMedia(targetID, "document", tempPath, content)
+		// Detect actual media type for Telegram/LINE
+		ext := strings.ToLower(filepath.Ext(file.Filename))
+		botMediaType := "document"
+		if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".webp" {
+			botMediaType = "photo"
+		} else if ext == ".mp4" || ext == ".mov" {
+			botMediaType = "video"
+		}
+
+		err = botIf.SendMedia(targetID, botMediaType, tempPath, content)
 	} else {
 		err = botIf.SendMessage(targetID, content)
 	}
