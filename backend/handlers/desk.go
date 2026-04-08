@@ -5,7 +5,6 @@ import (
 "log"
 
 "github.com/gofiber/fiber/v2"
-"github.com/toydogcat/kitty-help/go-server/database"
 "github.com/toydogcat/kitty-help/go-server/models"
 )
 
@@ -15,10 +14,12 @@ func GetShelves(c *fiber.Ctx) error {
 	db, userClaims, err := getBestDB(c)
 	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
 
-	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
+	dbUserID := userClaims.ID
+	if dbUserID == "" {
+		err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
+		if err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
+		}
 	}
 
 	rows, err := db.Query(context.Background(), "SELECT id, user_id, name, color, sort_order, created_at FROM desk_shelves WHERE user_id = $1 ORDER BY sort_order ASC", dbUserID)
@@ -45,10 +46,12 @@ func CreateShelf(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
+	dbUserID := userClaims.ID
+	if dbUserID == "" {
+		err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
+		if err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
+		}
 	}
 
 	query := "INSERT INTO desk_shelves (user_id, name, color, sort_order) VALUES ($1, $2, $3, $4) RETURNING id, created_at"
@@ -70,10 +73,12 @@ func UpdateShelf(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
+	dbUserID := userClaims.ID
+	if dbUserID == "" {
+		err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
+		if err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
+		}
 	}
 
 	query := "UPDATE desk_shelves SET name = $1, color = $2, sort_order = $3 WHERE id = $4 AND user_id = $5"
@@ -89,35 +94,46 @@ func DuplicateShelf(c *fiber.Ctx) error {
 	db, userClaims, err := getBestDB(c)
 	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
 
-	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
+	dbUserID := userClaims.ID
+	if dbUserID == "" {
+		err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
+		if err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
+		}
 	}
 
-	// 1. Get original shelf info
+	// 1. Start Transaction
+	ctx := context.Background()
+	tx, err := db.Begin(ctx)
+	if err != nil { return c.Status(500).JSON(fiber.Map{"error": "Transaction failed"}) }
+	defer tx.Rollback(ctx)
+
+	// 2. Get original shelf info
 	var name, color string
-	err = db.QueryRow(context.Background(), "SELECT name, color FROM desk_shelves WHERE id = $1 AND user_id = $2", id, dbUserID).Scan(&name, &color)
+	err = tx.QueryRow(ctx, "SELECT name, color FROM desk_shelves WHERE id = $1 AND user_id = $2", id, dbUserID).Scan(&name, &color)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Original shelf not found"})
 	}
 
-	// 2. Create new shelf
+	// 3. Create new shelf
 	var newID string
-	err = database.LocalDB.QueryRow(context.Background(),
+	err = tx.QueryRow(ctx,
 		"INSERT INTO desk_shelves (user_id, name, color, sort_order) VALUES ($1, $2, $3, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM desk_shelves WHERE user_id = $1)) RETURNING id",
 		dbUserID, name+" (Copy)", color).Scan(&newID)
 	if err != nil {
-		log.Printf("Duplicate shelf insert error: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to create duplicate shelf"})
 	}
 
-	// 3. Duplicate items from original to new
-	_, err = database.LocalDB.Exec(context.Background(),
+	// 4. Duplicate items from original to new
+	_, err = tx.Exec(ctx,
 		"INSERT INTO desk_items (user_id, shelf_id, type, ref_id, sort_order) SELECT user_id, $1, type, ref_id, sort_order FROM desk_items WHERE shelf_id = $2",
 		newID, id)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to duplicate shelf items"})
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Commit failed"})
 	}
 
 	return c.JSON(fiber.Map{"success": true, "newId": newID})
@@ -155,10 +171,12 @@ func GetDeskItems(c *fiber.Ctx) error {
 
 	shelfId := c.Query("shelfId") // Can be empty for desktop items
 
-	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
+	dbUserID := userClaims.ID
+	if dbUserID == "" {
+		err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
+		if err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
+		}
 	}
 
 	query := `
@@ -230,10 +248,12 @@ func AddDeskItem(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
+	dbUserID := userClaims.ID
+	if dbUserID == "" {
+		err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", userClaims.Email).Scan(&dbUserID)
+		if err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
+		}
 	}
 
 	// Fix for empty shelfId

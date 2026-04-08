@@ -180,7 +180,7 @@ const onShelfDragStart = (shelf: any) => {
   draggingItem.value = null;
 };
 
-const onDragOverShelf = (id: string | null | 'desktop', event?: DragEvent) => {
+const onDragOverShelf = (id: string | null | 'desktop') => {
   if (draggingShelf.value) {
     if (id !== 'desktop') draggingShelfOverId.value = id;
     return;
@@ -412,7 +412,7 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
           draggable="true"
           @dragstart="onShelfDragStart(s)"
           @click="switchShelf(s.id)" 
-          @dragover.prevent="onDragOverShelf(s.id, $event)" 
+          @dragover.prevent="onDragOverShelf(s.id)" 
           @dragleave="draggingShelfOverId = null; dragOverShelfId = null" 
           @drop="onDropOnShelf(s.id)"
         >
