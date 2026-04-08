@@ -319,6 +319,12 @@ func GetFileProxy(c *fiber.Ctx) error {
 		return c.SendStatus(304)
 	}
 
+	// 🚀 NEW: Check for local uploads in standardized workspace first
+	workspaceUploadPath := filepath.Join("/root/.kitty-help/workspace/uploads", fileID)
+	if _, err := os.Stat(workspaceUploadPath); err == nil {
+		return c.SendFile(workspaceUploadPath)
+	}
+
 	if platform == "local" {
 		root := "/root/obsidian"
 		decodedID, err := url.PathUnescape(fileID)

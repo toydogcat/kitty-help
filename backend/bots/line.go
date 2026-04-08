@@ -365,8 +365,46 @@ func (l *LineBot) SendMedia(targetID string, mediaType string, filePath string, 
 	} else if mediaType == "video" {
 		msg = linebot.NewVideoMessage(fileURL, fileURL)
 	} else {
-		// Fallback for generic files if NewFileMessage has issues
-		msg = linebot.NewTextMessage(fmt.Sprintf("📄 傳送檔案: %s\n🔗 連結: %s", filepath.Base(filePath), fileURL))
+		// Use Flex Message to simulate a professional File Bubble
+		// This avoids the 'undefined NewFileMessage' issue while looking even better
+		flexData := &linebot.BubbleContainer{
+			Type: linebot.FlexContainerTypeBubble,
+			Body: &linebot.BoxComponent{
+				Type:   linebot.FlexComponentTypeBox,
+				Layout: linebot.FlexBoxLayoutTypeVertical,
+				Contents: []linebot.FlexComponent{
+					&linebot.TextComponent{
+						Type: linebot.FlexComponentTypeText,
+						Text: "📄 File Dispatch",
+						Weight: linebot.FlexTextWeightTypeBold,
+						Size: linebot.FlexTextSizeTypeSm,
+						Color: "#00B900",
+					},
+					&linebot.TextComponent{
+						Type: linebot.FlexComponentTypeText,
+						Text: filepath.Base(filePath),
+						Weight: linebot.FlexTextWeightTypeBold,
+						Size: linebot.FlexTextSizeTypeMd,
+						Margin: linebot.FlexComponentMarginTypeSm,
+						Wrap: true,
+					},
+				},
+			},
+			Footer: &linebot.BoxComponent{
+				Type:   linebot.FlexComponentTypeBox,
+				Layout: linebot.FlexBoxLayoutTypeVertical,
+				Contents: []linebot.FlexComponent{
+					&linebot.ButtonComponent{
+						Type: linebot.FlexComponentTypeButton,
+						Action: linebot.NewURIAction("Open / Download", fileURL),
+						Style:  linebot.FlexButtonStyleTypePrimary,
+						Color:  "#00B900",
+						Height: linebot.FlexButtonHeightTypeSm,
+					},
+				},
+			},
+		}
+		msg = linebot.NewFlexMessage("Sent: "+filepath.Base(filePath), flexData)
 	}
 
 	_, err := l.Bot.PushMessage(targetID, msg).Do()

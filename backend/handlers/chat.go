@@ -221,6 +221,7 @@ func SendBotMessage(c *fiber.Ctx) error {
 		tempPath = filepath.Join(uploadDir, file.Filename)
 		if err := c.SaveFile(file, tempPath); err == nil {
 			msgType = "media"
+			mediaID = &file.Filename // 這裡要存檔名，前端才能顯示
 		}
 	}
 
