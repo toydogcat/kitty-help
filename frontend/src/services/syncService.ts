@@ -241,6 +241,70 @@ export const syncService = {
         this.processQueue();
     },
 
+    // --- Remarks (Obs) Methods ---
+    async getRemarks() {
+        const local = await db.remarks.toArray();
+        this.refreshRemarks().catch(() => {});
+        return local;
+    },
+    async refreshRemarks() {
+        const remote = await apiService.getRemarks();
+        await db.transaction('rw', [db.remarks, db.remarkItems], async () => {
+             for (const c of remote.containers || []) {
+                 await db.remarks.put({ ...c, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+             }
+             for (const it of remote.items || []) {
+                 await db.remarkItems.put({ ...it, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+             }
+        });
+        return remote;
+    },
+    async createRemark(data: any) {
+        const id = crypto.randomUUID();
+        await db.remarks.add({ ...data, id, isPinned: false, syncStatus: 'pending', updatedAt: new Date().toISOString() });
+        await db.sync_queue.add({ action: 'CREATE', entityType: 'remark', entityId: id, data, timestamp: Date.now() });
+        this.processQueue();
+        return { id };
+    },
+    async updateRemark(id: string, data: any) {
+        await db.remarks.update(id, { ...data, syncStatus: 'pending' });
+        await db.sync_queue.add({ action: 'UPDATE', entityType: 'remark', entityId: id, data, timestamp: Date.now() });
+        this.processQueue();
+    },
+    async deleteRemark(id: string) {
+        await db.remarks.delete(id);
+        await db.sync_queue.add({ action: 'DELETE', entityType: 'remark', entityId: id, data: null, timestamp: Date.now() });
+        this.processQueue();
+    },
+    async addRemarkItem(data: any) {
+        const id = crypto.randomUUID();
+        await db.remarkItems.add({ ...data, id, sortOrder: 0, syncStatus: 'pending', updatedAt: new Date().toISOString() });
+        await db.sync_queue.add({ action: 'CREATE', entityType: 'remarkItem', entityId: id, data, timestamp: Date.now() });
+        this.processQueue();
+        return { id };
+    },
+    async removeRemarkItem(id: string) {
+        await db.remarkItems.delete(id);
+        await db.sync_queue.add({ action: 'DELETE', entityType: 'remarkItem', entityId: id, data: null, timestamp: Date.now() });
+        this.processQueue();
+    },
+
+    // --- AI Cache Methods ---
+    async getAICache(query: string) {
+        const entry = await db.ai_cache.get(query);
+        if (entry && entry.expiresAt > Date.now()) {
+            return entry.content;
+        }
+        return null;
+    },
+    async setAICache(query: string, content: string, ttlHours: number = 3) {
+        await db.ai_cache.put({
+            query,
+            content,
+            expiresAt: Date.now() + (ttlHours * 60 * 60 * 1000)
+        });
+    },
+
     async processQueue() {
         const actions = await db.sync_queue.toArray();
         if (actions.length === 0) return;
@@ -306,6 +370,23 @@ export const syncService = {
                         await db.bookNotes.update(action.entityId, { syncStatus: 'synced' });
                     } else if (action.action === 'DELETE') {
                         await apiService.removeBookNote(action.entityId);
+                    }
+                } else if (action.entityType === 'remark') {
+                    if (action.action === 'CREATE') {
+                        const res = await apiService.createRemark(action.data);
+                        await db.remarks.update(action.entityId, { id: res.id, syncStatus: 'synced' });
+                    } else if (action.action === 'UPDATE') {
+                        await apiService.updateRemark(action.entityId, action.data);
+                        await db.remarks.update(action.entityId, { syncStatus: 'synced' });
+                    } else if (action.action === 'DELETE') {
+                        await apiService.deleteRemark(action.entityId);
+                    }
+                } else if (action.entityType === 'remarkItem') {
+                    if (action.action === 'CREATE') {
+                        const res = await apiService.addRemarkItem(action.data);
+                        await db.remarkItems.update(action.entityId, { id: res.id, syncStatus: 'synced' });
+                    } else if (action.action === 'DELETE') {
+                        await apiService.removeRemarkItem(action.entityId);
                     }
                 }
                 

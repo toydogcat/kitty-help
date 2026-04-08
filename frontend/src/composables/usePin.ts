@@ -1,5 +1,4 @@
 import { ref } from 'vue';
-import { apiService } from '../services/api';
 import { syncService } from '../services/syncService';
 
 export function usePin() {
@@ -70,7 +69,7 @@ export function usePin() {
      */
     const toggleRemarkSidebarPin = async (remarkId: string, currentStatus: boolean) => {
         try {
-            await apiService.updateRemark(remarkId, { isPinned: !currentStatus });
+            await syncService.updateRemark(remarkId, { isPinned: !currentStatus });
             return !currentStatus;
         } catch (err) {
             console.error(`[PinService] Failed to toggle remark pin ${remarkId}`, err);

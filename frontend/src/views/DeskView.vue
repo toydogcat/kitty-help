@@ -311,9 +311,19 @@ const openOriginal = async (item: any) => {
     if (item.type === 'remark') {
       modalLoading.value = true;
       try {
-        const data = await apiService.getRemarks();
-        const container = data.containers?.find((c: any) => c.id === item.refId);
-        remarkDetails.value = container || null;
+        const container = await db.remarks.get(item.refId);
+        if (container) {
+            const items = await db.remarkItems.where('containerId').equals(item.refId).toArray();
+            remarkDetails.value = { ...container, items };
+        } else {
+            // Fallback sync if not found
+            const data = await syncService.refreshRemarks();
+            const c = data.containers?.find((x: any) => x.id === item.refId);
+            if (c) {
+                const items = data.items?.filter((x: any) => x.containerId === item.refId) || [];
+                remarkDetails.value = { ...c, items };
+            }
+        }
       } catch (err) {
         console.error("Failed to load remark details:", err);
       } finally {
@@ -359,7 +369,7 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
         content: updatedData.content
       });
     } else if (editingItem.value.type === 'media') {
-       // Media doesn't have EverSync yet, keep apiService but we can add later
+      // Media doesn't have EverSync yet
       await apiService.updateStorehouseItem(editingItem.value.refId, {
         title: updatedData.title,
         notes: updatedData.content
@@ -369,11 +379,9 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
         title: updatedData.title
       });
     } else if (editingItem.value.type === 'remark') {
-       // Remark doesn't have full EverSync yet, but we added the methods in service
-      await apiService.updateRemark(editingItem.value.refId, {
+      await syncService.updateRemark(editingItem.value.refId, {
         name: updatedData.title,
-        content: updatedData.content,
-        isPinned: remarkDetails.value?.isPinned || false
+        content: updatedData.content
       });
     } else if (editingItem.value.type === 'book') {
       await syncService.updateBookNote(editingItem.value.refId, { content: updatedData.content });
