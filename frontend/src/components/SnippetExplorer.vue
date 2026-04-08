@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
+import { liveQuery } from 'dexie';
+import { db } from '../services/localDb';
 import { apiService, socket } from '../services/api';
 import { syncService } from '../services/syncService';
 import { usePin } from '../composables/usePin';
@@ -40,26 +42,53 @@ const dropTargetId = ref<string | null>(null);
 const isDropOverRoot = ref(false);
 const editMode = ref<'txt' | 'md'>('md');
 
+let snippetsSub: any = null;
+let allSnippetsSub: any = null;
+
 const fetchData = async () => {
-  loading.value = true;
-  try {
-    // 🏠 EverSync: Get from local first, then auto-refresh
-    allSnippets.value = await syncService.getSnippets(null, true);
-    snippets.value = await syncService.getSnippets(currentFolderId.value === 'root' ? null : currentFolderId.value);
-  } catch (err) {
-    console.error("Failed to fetch snippets:", err);
-  } finally {
-    loading.value = false;
-  }
+    // 🏠 EverSync: Refresh in background
+    syncService.refreshSnippets(currentFolderId.value === 'root' ? null : currentFolderId.value).catch(() => {});
+    syncService.refreshSnippets(null, true).catch(() => {});
 };
 
 onMounted(() => {
+  // 🛰️ Live Reactive Queries
+  snippetsSub = liveQuery(() => 
+    db.snippets.where('parentId').equals(currentFolderId.value).sortBy('sortOrder')
+  ).subscribe(val => {
+    snippets.value = val as any;
+    loading.value = false;
+  });
+
+  allSnippetsSub = liveQuery(() => 
+    db.snippets.toArray()
+  ).subscribe(val => {
+    allSnippets.value = val as any;
+  });
+
   fetchData();
   socket.on('snippetsUpdate', fetchData);
 });
 
+onUnmounted(() => {
+  if (snippetsSub) snippetsSub.unsubscribe();
+  if (allSnippetsSub) allSnippetsSub.unsubscribe();
+  socket.off('snippetsUpdate', fetchData);
+});
+
 watch(() => props.userId, (newVal) => {
   if (newVal) fetchData();
+});
+
+// Watch currentFolderId and RE-SUBSCRIBE
+watch(currentFolderId, (newId) => {
+  if (snippetsSub) snippetsSub.unsubscribe();
+  snippetsSub = liveQuery(() => 
+    db.snippets.where('parentId').equals(newId).sortBy('sortOrder')
+  ).subscribe(val => {
+    snippets.value = val as any;
+  });
+  fetchData();
 });
 
 const treeData = computed(() => {

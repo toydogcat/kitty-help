@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, computed } from 'vue';
+import { ref, onMounted, watch, computed, onUnmounted } from 'vue';
+import { liveQuery } from 'dexie';
+import { db } from '../services/localDb';
 import { apiService } from '../services/api';
 import { syncService } from '../services/syncService';
 import { usePin } from '../composables/usePin';
@@ -36,7 +38,6 @@ const vaultPasswords = ref<any[]>([]);
 const showAddModal = ref(false);
 const editingId = ref<string | null>(null);
 const pinnedIds = ref<Set<string>>(new Set());
-const loading = ref(false);
 const currentFolderId = ref<string | 'root'>(savedFolder);
 const breadcrumbs = ref<{id: string, title: string}[]>(savedPath ? JSON.parse(savedPath) : []);
 
@@ -63,20 +64,48 @@ const isDropOverRoot = ref(false);
 
 const categories = ['General', 'Work', 'Social', 'Dev', 'Entertainment', 'Tools'];
 
+let bookmarksSub: any = null;
+let allBookmarksSub: any = null;
+
 const fetchBookmarks = async () => {
-  loading.value = true;
-  try {
-    // 🏠 EverSync: Local-first loading
-    bookmarks.value = await syncService.getBookmarks(currentFolderId.value === 'root' ? 'root' : currentFolderId.value);
-    
-    // FETCH ALL RECURSIVELY for tree
-    allBookmarks.value = await syncService.getBookmarks('root', true);
-  } catch (err) {
-    console.error("Failed to fetch bookmarks:", err);
-  } finally {
-    loading.value = false;
-  }
+    // 🏠 EverSync: Manual triggers not strictly needed but good for forced refresh
+    syncService.refreshBookmarks(currentFolderId.value === 'root' ? 'root' : currentFolderId.value).catch(() => {});
+    syncService.refreshBookmarks('root', true).catch(() => {});
 };
+
+onMounted(() => {
+  // 🛰️ Live Reactive Queries
+  bookmarksSub = liveQuery(() => 
+    db.bookmarks.where('parentId').equals(currentFolderId.value).sortBy('sortOrder')
+  ).subscribe(val => {
+    bookmarks.value = val as any;
+  });
+
+  allBookmarksSub = liveQuery(() => 
+    db.bookmarks.toArray()
+  ).subscribe(val => {
+    allBookmarks.value = val as any;
+  });
+
+  fetchBookmarks();
+  fetchVault();
+});
+
+onUnmounted(() => {
+  if (bookmarksSub) bookmarksSub.unsubscribe();
+  if (allBookmarksSub) allBookmarksSub.unsubscribe();
+});
+
+// Watch currentFolderId and RE-SUBSCRIBE since the query depends on it
+watch(currentFolderId, (newId) => {
+  if (bookmarksSub) bookmarksSub.unsubscribe();
+  bookmarksSub = liveQuery(() => 
+    db.bookmarks.where('parentId').equals(newId).sortBy('sortOrder')
+  ).subscribe(val => {
+    bookmarks.value = val as any;
+  });
+  fetchBookmarks();
+});
 
 const treeData = computed(() => {
   const map: any = {};
@@ -362,11 +391,6 @@ const addToDesk = async (bookmark: Bookmark) => {
     alert("Failed to pin to desk");
   }
 };
-
-onMounted(() => {
-  fetchBookmarks();
-  fetchVault();
-});
 
 watch(() => props.userId, () => {
   fetchBookmarks();

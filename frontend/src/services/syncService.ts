@@ -26,6 +26,7 @@ export const syncService = {
                 for (const item of remoteItems) {
                     await db.snippets.put({
                         ...item,
+                        parentId: item.parentId || 'root',
                         syncStatus: 'synced',
                         updatedAt: new Date().toISOString()
                     });
@@ -80,7 +81,12 @@ export const syncService = {
         const remoteItems = await apiService.getBookmarks(parentId, all);
         await db.transaction('rw', db.bookmarks, async () => {
             for (const item of remoteItems) {
-                await db.bookmarks.put({ ...item, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+                await db.bookmarks.put({ 
+                    ...item, 
+                    parentId: item.parentId || 'root',
+                    syncStatus: 'synced', 
+                    updatedAt: new Date().toISOString() 
+                });
             }
         });
         return remoteItems;
