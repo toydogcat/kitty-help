@@ -4,6 +4,8 @@ import { apiService } from '../services/api';
 import { useAuth } from '../composables/useAuth';
 import { useRoute } from 'vue-router';
 import { usePin } from '../composables/usePin';
+import { syncService } from '../services/syncService';
+import { db } from '../services/localDb';
 
 const route = useRoute();
 const { } = useAuth();
@@ -104,6 +106,13 @@ const saveViewState = () => {
     const pos = network.value.getViewPosition();
     const scale = network.value.getScale();
     localStorage.setItem('impression_view_state', JSON.stringify({ x: pos.x, y: pos.y, scale }));
+};
+
+const clearKGCache = async () => {
+    // Clear all cache entries starting with impression_graph_[kgName]
+    const prefix = `impression_graph_${kgName.value}`;
+    const keys = await db.ai_cache.where('query').startsWith(prefix).primaryKeys();
+    await db.ai_cache.bulkDelete(keys);
 };
 
 const initGraph = async () => {
@@ -209,6 +218,7 @@ const initGraph = async () => {
             // Check if double clicking the already SELETED node -> Clone
             if (nid === selectedSourceNodeId.value && confirm("Clone this memory node?")) {
                 const res = await apiService.cloneImpressionNode(nid);
+                await clearKGCache();
                 await loadGraph(res.id);
                 return;
             }
@@ -244,17 +254,20 @@ const initGraph = async () => {
             const nodeId = params.nodes[0] as string;
             if (confirm(`⚠️ DELETE Node?`)) {
                 await apiService.deleteImpressionNode(nodeId);
+                await clearKGCache();
                 await loadGraph();
             }
         } else if (params.edges.length > 0) {
             if (confirm(`⚠️ SEVER Edge?`)) {
                 await apiService.deleteImpressionLink(params.edges[0]);
+                await clearKGCache();
                 await loadGraph();
             }
         } else {
             const title = prompt("New Node Title:");
             if (title) {
                 const res = await apiService.createImpressionNode({ title, content: '', nodeType: 'general', kgName: kgName.value });
+                await clearKGCache();
                 await loadGraph(res.id);
             }
         }
@@ -350,6 +363,7 @@ const resetSelection = () => {
 const performQuickLink = async (src: string, tgt: string) => {
     try {
         await apiService.createImpressionLink({ sourceId: src, targetId: tgt, label: '', kgName: kgName.value });
+        await clearKGCache();
         resetSelection();
         await loadGraph(src);
     } catch (e) { console.error(e); resetSelection(); }
@@ -406,7 +420,18 @@ const getBase64Image = async (url: string) => {
 const loadGraph = async (nodeId?: string) => {
   isLoading.value = true;
   try {
-    const data = await apiService.getImpressionGraph(nodeId || centerNodeId.value || '', kgName.value);
+    const nid = nodeId || centerNodeId.value || '';
+    const cacheKey = `impression_graph_${kgName.value}_${nid}`;
+    
+    let data;
+    const cached = await syncService.getAICache(cacheKey);
+    if (cached) {
+        data = JSON.parse(cached);
+    } else {
+        data = await apiService.getImpressionGraph(nid, kgName.value);
+        // Cache for 3 hours
+        await syncService.setAICache(cacheKey, JSON.stringify(data), 3);
+    }
     
     const visNodes = await Promise.all(data.nodes.map(async (n: any) => {
         let finalUrl = n.imageUrl ? apiService.getAbsoluteUrl(n.imageUrl) : '';
@@ -428,7 +453,7 @@ const loadGraph = async (nodeId?: string) => {
         return {
             id: n.id, label: n.title, shape: safeImage ? 'circularImage' : 'dot',
             image: safeImage,
-            color: { border: n.id === (nodeId || centerNodeId.value) ? '#22d3ee' : '#4338ca', background: '#1e293b' },
+            color: { border: n.id === nid ? '#22d3ee' : '#4338ca', background: '#1e293b' },
             raw: n
         };
     }));
@@ -445,18 +470,18 @@ const loadGraph = async (nodeId?: string) => {
     const allIds = nodes.value.getIds();
     nodes.value.update(allIds.map((id: string) => ({ id, physics: false })));
     
-    if (nodeId && network.value && nodes.value.length > 0) {
+    if (nid && network.value && nodes.value.length > 0) {
         setTimeout(() => {
-            if (network.value && nodes.value.get(nodeId)) {
-                network.value.fit({ nodes: [nodeId], animation: true });
+            if (network.value && nodes.value.get(nid)) {
+                network.value.fit({ nodes: [nid], animation: true });
                 // NEW: Sync selectedNodeDetails with the newly loaded data
-                const fresh = nodes.value.get(nodeId) as any;
+                const fresh = nodes.value.get(nid) as any;
                 if (fresh) selectedNodeDetails.value = fresh.raw;
             } else if (network.value && nodes.value.length > 0) {
                 network.value.fit({ animation: true });
             }
-            centerNodeId.value = nodeId;
-            localStorage.setItem('impression_last_center', nodeId);
+            centerNodeId.value = nid;
+            localStorage.setItem('impression_last_center', nid);
         }, 300);
     } else if (localStorage.getItem('impression_view_state') && network.value) {
         const { x, y, scale } = JSON.parse(localStorage.getItem('impression_view_state')!);
@@ -692,6 +717,7 @@ const saveNodeEdits = async () => {
     if (!selectedNodeDetails.value) return;
     try {
         const updated = await apiService.updateImpressionNode(selectedNodeDetails.value.id, editForm.value);
+        await clearKGCache();
         selectedNodeDetails.value = updated;
         isEditingNode.value = false;
         loadGraph(updated.id);
@@ -700,13 +726,19 @@ const saveNodeEdits = async () => {
 
 const deleteNode = async (id: string) => {
     if (!confirm('Destroy this memory node?')) return;
-    try { await apiService.deleteImpressionNode(id); selectedNodeDetails.value = null; await loadGraph(); } catch (e) { console.error(e); }
+    try { 
+        await apiService.deleteImpressionNode(id); 
+        await clearKGCache();
+        selectedNodeDetails.value = null; 
+        await loadGraph(); 
+    } catch (e) { console.error(e); }
 };
 
 const saveEdgeEdits = async () => {
     if (!selectedEdgeDetails.value) return;
     try {
         await apiService.updateImpressionLink(selectedEdgeDetails.value.id, { label: edgeEditForm.value.label });
+        await clearKGCache();
         selectedEdgeDetails.value = null;
         isEditingEdge.value = false;
         await loadGraph();
@@ -717,6 +749,7 @@ const deleteEdge = async (id: string) => {
     if (!confirm('Sever this relationship bond?')) return;
     try {
         await apiService.deleteImpressionLink(id);
+        await clearKGCache();
         selectedEdgeDetails.value = null;
         isEditingEdge.value = false;
         await loadGraph();
@@ -785,6 +818,7 @@ const createLink = async () => {
     if (!selectedNodeDetails.value || !targetNode.value) return;
     try {
         await apiService.createImpressionLink({ sourceId: selectedNodeDetails.value.id, targetId: targetNode.value.id, label: linkLabel.value, kgName: kgName.value });
+        await clearKGCache();
         targetNode.value = null; isLinkingMode.value = false; linkLabel.value = ''; await loadGraph(selectedNodeDetails.value.id);
     } catch (e) { console.error(e); }
 };
