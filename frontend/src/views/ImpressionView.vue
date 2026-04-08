@@ -48,6 +48,11 @@ const commandResults = ref<any[]>([]);
 const availableKGsList = ref<string[]>([]);
 const showCommandHelp = ref(false);
 
+// Advanced Interactive Buffers
+const candidateNodeId = ref<string | null>(null);
+const highlightedNodes = ref(new Set<string>());
+const highlightedEdges = ref(new Set<string>());
+
 watch(() => route.query.kg, (newVal) => {
     if (newVal && newVal !== kgName.value) {
         kgName.value = newVal as string;
@@ -119,69 +124,122 @@ const initGraph = async () => {
   network.value.on('click', (params: any) => {
     if (interactionMode.value === 'view') {
         isLinkingMode.value = false;
-        isEditingNode.value = false;
-        isEditingEdge.value = false; // Reset edge edit
-
+        
         if (params.nodes.length > 0) {
-            selectedEdgeDetails.value = null;
-            loadGraph(params.nodes[0]); 
-        } else if (params.edges.length > 0) {
-            // New: Handle Edge selection in View Mode
-            selectedNodeDetails.value = null; // Clear node details
-            const edgeId = params.edges[0];
-            const edgeData = edges.value.get(edgeId) as any;
-            if (edgeData) {
-                selectedEdgeDetails.value = { id: edgeId, label: edgeData.label || '' };
-                edgeEditForm.value.label = edgeData.label || '';
-                isEditingEdge.value = true;
+            const nid = params.nodes[0];
+            const node = nodes.value.get(nid);
+            const isH = highlightedNodes.value.has(nid);
+            
+            if (isH) {
+                highlightedNodes.value.delete(nid);
+                nodes.value.update({ id: nid, size: 30, color: { border: undefined }, borderWidth: 3 });
+            } else {
+                highlightedNodes.value.add(nid);
+                nodes.value.update({ id: nid, size: 55, color: { border: '#fbbf24' }, borderWidth: 8 });
             }
-        } else {
-            selectedNodeDetails.value = null;
-            selectedEdgeDetails.value = null;
+            // Also focus in view mode
+            handleNodeClick(nid);
+        } else if (params.edges.length > 0) {
+            const eid = params.edges[0];
+            const edge = edges.value.get(eid);
+            const isH = highlightedEdges.value.has(eid);
+            
+            if (isH) {
+                highlightedEdges.value.delete(eid);
+                edges.value.update({ id: eid, width: 2, color: { color: 'rgba(255,255,255,0.15)' } });
+            } else {
+                highlightedEdges.value.add(eid);
+                edges.value.update({ id: eid, width: 8, color: { color: '#fbbf24' } });
+            }
         }
     } else {
-        // Edit Mode: Quick Link logic
+        // --- EDIT MODE CLICK ---
         if (params.nodes.length > 0) {
-            const nodeId = params.nodes[0];
-            if (!selectedSourceNodeId.value) {
-                selectedSourceNodeId.value = nodeId;
-                nodes.value.update({ id: nodeId, borderWidth: 6, color: { border: '#22d3ee' } });
-            } else {
-                if (selectedSourceNodeId.value === nodeId) {
-                    resetSelection();
-                } else {
-                    performQuickLink(selectedSourceNodeId.value, nodeId);
-                }
+            const nid = params.nodes[0];
+            resetSelection(); // Clear previous selection styling
+            selectedSourceNodeId.value = nid;
+            nodes.value.update({ id: nid, borderWidth: 6, color: { border: '#22d3ee' } });
+            
+            // Edit Mode: Single Click opens card
+            handleNodeClick(nid);
+            isEditingNode.value = true;
+        } else if (params.edges.length > 0) {
+            // Edit Mode: Single Click Edge opens card
+            const eid = params.edges[0];
+            const edgeData = edges.value.get(eid) as any;
+            if (edgeData) {
+                selectedEdgeDetails.value = { id: eid, label: edgeData.label || '' };
+                edgeEditForm.value.label = edgeData.label || '';
+                isEditingEdge.value = true;
+                selectedNodeDetails.value = null;
             }
         } else {
             resetSelection();
+            selectedNodeDetails.value = null;
+            selectedEdgeDetails.value = null;
+        }
+    }
+  });
+
+  network.value.on('doubleClick', async (params: any) => {
+    if (interactionMode.value === 'view') {
+        if (params.nodes.length > 0) {
+            const nid = params.nodes[0];
+            network.value.moveTo({ position: network.value.getPosition(nid), animation: true });
+            // Local re-layout logic could go here
+        }
+    } else {
+        // --- EDIT MODE DOUBLE CLICK ---
+        if (params.nodes.length > 0) {
+            const nid = params.nodes[0];
+            
+            // Check if double clicking the already SELETED node -> Clone
+            if (nid === selectedSourceNodeId.value && confirm("Clone this memory node?")) {
+                const res = await apiService.cloneImpressionNode(nid);
+                await loadGraph(res.id);
+                return;
+            }
+
+            if (!candidateNodeId.value) {
+                // Step 1: Set Candidate (Orange)
+                candidateNodeId.value = nid;
+                nodes.value.update({ id: nid, color: { border: '#f97316' }, borderWidth: 10 });
+            } else {
+                if (candidateNodeId.value === nid) {
+                    // Double Click Self -> Cancel candidate
+                    nodes.value.update({ id: nid, color: { border: undefined }, borderWidth: 3 });
+                    candidateNodeId.value = null;
+                } else {
+                    // Step 2: Establish Edge
+                    await performQuickLink(candidateNodeId.value, nid);
+                    candidateNodeId.value = null; // Reset
+                }
+            }
         }
     }
   });
 
   network.value.on('hold', async (params: any) => {
-    if (interactionMode.value === 'view') {
-        if (params.nodes.length > 0) {
-            handleNodeClick(params.nodes[0]);
-        }
-    } else {
-        // Edit Mode: Delete logic
+    if (params.nodes.length === 0 && params.edges.length === 0) {
+        // Global Flow toggle on space hold
+        isPhysicsEnabled.value = !isPhysicsEnabled.value;
+        return;
+    }
+
+    if (interactionMode.value === 'edit') {
         if (params.nodes.length > 0) {
             const nodeId = params.nodes[0] as string;
-            const nodeData = nodes.value.get(nodeId) as any;
-            const nodeName = nodeData?.label || nodeId;
-            if (confirm(`⚠️ CRITICAL: Are you ABSOLUTELY sure you want to permanently destroy "${nodeName}"? This action cannot be undone.`)) {
+            if (confirm(`⚠️ DELETE Node?`)) {
                 await apiService.deleteImpressionNode(nodeId);
                 await loadGraph();
             }
         } else if (params.edges.length > 0) {
-            if (confirm(`⚠️ SEVER BOND: Permanently disconnect this relationship?`)) {
+            if (confirm(`⚠️ SEVER Edge?`)) {
                 await apiService.deleteImpressionLink(params.edges[0]);
                 await loadGraph();
             }
         } else {
-            // Edit Mode: Empty space hold -> Create Point
-            const title = prompt("New Memory Node Title:");
+            const title = prompt("New Node Title:");
             if (title) {
                 const res = await apiService.createImpressionNode({ title, content: '', nodeType: 'general', kgName: kgName.value });
                 await loadGraph(res.id);
@@ -190,19 +248,48 @@ const initGraph = async () => {
     }
   });
 
-  network.value.on('doubleClick', async (params: any) => {
-    if (interactionMode.value === 'edit' && params.nodes.length > 0) {
-        const nodeId = params.nodes[0];
-        try {
-            const res = await apiService.cloneImpressionNode(nodeId);
-            await loadGraph(res.id);
-        } catch (e) { console.error(e); }
+  network.value.on('dragEnd', (params: any) => {
+    saveViewState();
+    // After dragging, we let it settle for a short bit then freeze it
+    if (isPhysicsEnabled.value && params.nodes.length > 0) {
+        setTimeout(() => {
+            const allIds = nodes.value.getIds();
+            const updates = allIds.map((id: string) => ({ id, physics: false }));
+            nodes.value.update(updates);
+        }, 1000);
     }
   });
 
-  network.value.on('dragEnd', saveViewState);
+  network.value.on('dragStart', (params: any) => {
+    if (!isPhysicsEnabled.value || params.nodes.length === 0) return;
+    
+    // Use the recursive collector to find the string/cluster
+    const rootId = params.nodes[0];
+    const clusterIds = getConnectedCluster(rootId);
+    
+    const updates = nodes.value.getIds().map((id: string) => ({
+        id,
+        physics: clusterIds.has(id)
+    }));
+    nodes.value.update(updates);
+  });
+
   network.value.on('zoom', saveViewState);
   loadShelves();
+};
+
+const getConnectedCluster = (startId: string): Set<string> => {
+    const visited = new Set<string>();
+    const stack = [startId];
+    while (stack.length > 0) {
+        const id = stack.pop()!;
+        if (!visited.has(id)) {
+            visited.add(id);
+            const neighbors = network.value.getConnectedNodes(id) as string[];
+            neighbors.forEach(n => { if (!visited.has(n)) stack.push(n); });
+        }
+    }
+    return visited;
 };
 
 const loadShelves = async () => {
@@ -256,7 +343,18 @@ const performQuickLink = async (src: string, tgt: string) => {
 };
 
 watch(isPhysicsEnabled, (newVal) => {
-    if (network.value) network.value.setOptions({ physics: { enabled: newVal } });
+    if (network.value) {
+        // We always keep physics enabled on the network level to allow selective physics
+        network.value.setOptions({ physics: { enabled: true } }); 
+        
+        // But we pin/unpin individual nodes based on the mode
+        const allIds = nodes.value.getIds();
+        const updates = allIds.map((id: string) => ({
+            id,
+            physics: false // Default to fixed even if Flow is on, wait for drag
+        }));
+        nodes.value.update(updates);
+    }
 });
 
 const handleNodeClick = (nodeId: string) => {
@@ -329,6 +427,10 @@ const loadGraph = async (nodeId?: string) => {
         id: e.id, from: e.sourceId, to: e.targetId, label: e.label,
         font: { color: kgName.value === 'default' ? '#94a3b8' : '#22d3ee' }
     })));
+    
+    // Initial State: All nodes fixed to prevent initial explosion
+    const allIds = nodes.value.getIds();
+    nodes.value.update(allIds.map((id: string) => ({ id, physics: false })));
     
     if (nodeId && network.value && nodes.value.length > 0) {
         setTimeout(() => {
@@ -470,6 +572,22 @@ const executeCommand = async () => {
             } else {
                 switchKG(args[0]);
             }
+            commandInput.value = '';
+        } else if (cmd === '/layout') {
+            const mode = args[0]?.toLowerCase();
+            if (mode === 'tree' || mode === 'hierarchy') {
+                network.value.setOptions({ layout: { hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed' } } });
+                commandResults.value = [{ id: 'l-t', title: 'Switched to Hierarchical Layout.', resultType: 'info' }];
+            } else {
+                network.value.setOptions({ layout: { hierarchical: { enabled: false } } });
+                commandResults.value = [{ id: 'l-f', title: 'Switched back to Force Layout.', resultType: 'info' }];
+            }
+            commandInput.value = '';
+        } else if (cmd === '/rank') {
+            const algo = args[0]?.toLowerCase() || 'centrality';
+            const direction = args[1]?.toLowerCase() || 'total';
+            performGraphAnalysis(algo, direction);
+            commandResults.value = [{ id: 'r-a', title: `Graph Scaled by ${algo} (${direction}).`, resultType: 'info' }];
             commandInput.value = '';
         } else if (cmd === '/pin') {
             await pinToDesk();
@@ -644,6 +762,51 @@ let searchTimer2: any = null;
 const debouncedSearch2 = () => {
     clearTimeout(searchTimer2);
     searchTimer2 = setTimeout(performSearch2, 300);
+};
+
+// --- Advanced Graph Analysis Algorithms ---
+const performGraphAnalysis = (algo: string, dir: string) => {
+    const allNodes = nodes.value.get();
+    const allEdges = edges.value.get();
+    const scores: Record<string, number> = {};
+    
+    // Initialize
+    allNodes.forEach((n: any) => scores[n.id] = 1);
+
+    if (algo === 'centrality') {
+        allEdges.forEach((e: any) => {
+            if (dir === 'in' || dir === 'total') scores[e.to] = (scores[e.to] || 0) + 1;
+            if (dir === 'out' || dir === 'total') scores[e.from] = (scores[e.from] || 0) + 1;
+        });
+    } else if (algo === 'pagerank') {
+        const d = 0.85; // Damping factor
+        const iterations = 10;
+        for (let i = 0; i < iterations; i++) {
+            const newScores: Record<string, number> = {};
+            allNodes.forEach((n: any) => {
+                let rankSum = 0;
+                const incoming = allEdges.filter((e: any) => e.to === n.id);
+                incoming.forEach((e: any) => {
+                    const outboundCount = allEdges.filter((oe: any) => oe.from === e.from).length || 1;
+                    rankSum += (scores[e.from] || 0) / outboundCount;
+                });
+                newScores[n.id] = (1 - d) + d * rankSum;
+            });
+            Object.assign(scores, newScores);
+        }
+    }
+
+    // Scale nodes based on scores
+    const minS = Math.min(...Object.values(scores));
+    const maxS = Math.max(...Object.values(scores));
+    const range = maxS - minS || 1;
+
+    const updates = allNodes.map((n: any) => {
+        const normalized = (scores[n.id] - minS) / range;
+        const size = 20 + (normalized * 50); // Min size 20, Max 70
+        return { id: n.id, size, font: { size: 12 + (normalized * 10) } };
+    });
+    nodes.value.update(updates);
 };
 
 const searchMediaStore = async () => {
