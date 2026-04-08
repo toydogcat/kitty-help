@@ -31,12 +31,19 @@ func getBestDB(c *fiber.Ctx) (*pgxpool.Pool, *Claims, error) {
 	return db, userClaims, nil
 }
 
+func resolveUserID(c *fiber.Ctx, db *pgxpool.Pool, claims *Claims) (string, error) {
+	if claims.ID != "" { return claims.ID, nil }
+	var dbUserID string
+	err := db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", claims.Email).Scan(&dbUserID)
+	if err != nil { return "", err }
+	return dbUserID, nil
+}
+
 func GetRandomImpressionNodeID(c *fiber.Ctx) error {
 	db, userClaims, err := getBestDB(c)
 	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
 
-	var dbUserID string
-	err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	dbUserID, err := resolveUserID(c, db, userClaims)
 	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User profile not found"}) }
 
 	var nodeID string
@@ -64,9 +71,7 @@ func GetImpressionTemp(c *fiber.Ctx) error {
 	}
 
 	// 1. Resolve System User ID from email
-	var dbUserID string
-	query := `SELECT id FROM users WHERE email = $1 LIMIT 1`
-	err = db.QueryRow(context.Background(), query, userClaims.Email).Scan(&dbUserID)
+	dbUserID, err := resolveUserID(c, db, userClaims)
 	if err != nil {
 		log.Printf("⚠️ No UserID found for identity %s (Error: %v)", userClaims.Email, err)
 		return c.JSON([]fiber.Map{}) 
@@ -124,7 +129,8 @@ func CreateImpressionNode(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
 	}
 
-	dbUserID := userClaims.ID
+	dbUserID, err := resolveUserID(c, db, userClaims)
+	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User not found"}) }
 
 	// Default KG if empty
 	if n.KGName == "" { n.KGName = "default" }
@@ -172,10 +178,11 @@ func GetImpressionGraph(c *fiber.Ctx) error {
 	kgName := c.Query("kgName")
 	if kgName == "" { kgName = "default" }
 
-	db, _, err := getBestDB(c)
+	db, userClaims, err := getBestDB(c)
 	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
 
-	dbUserID := userClaims.ID
+	dbUserID, err := resolveUserID(c, db, userClaims)
+	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User profile not found"}) }
 
 	// 1. Fetch ALL Nodes in this KG
 	nodesQuery := `
@@ -227,17 +234,17 @@ func GetImpressionGraph(c *fiber.Ctx) error {
 }
 
 func CreateImpressionLink(c *fiber.Ctx) error {
-	userClaims := c.Locals("user").(*Claims)
+	db, userClaims, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
+
 	var e models.ImpressionEdge
 	if err := c.BodyParser(&e); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
 	}
 
-	db := database.LocalDB
-	if db == nil { db = database.CloudDB }
-	if db == nil { return c.Status(503).JSON(fiber.Map{"error": "Database not connected"}) }
+	dbUserID, err := resolveUserID(c, db, userClaims)
+	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User not found"}) }
 
-	dbUserID := userClaims.ID
 	if e.KGName == "" { e.KGName = "default" }
 
 	var exists bool
@@ -253,7 +260,7 @@ func CreateImpressionLink(c *fiber.Ctx) error {
 	          VALUES ($1, $2, $3, $4, $5) 
 	          RETURNING id, created_at`
 	
-	err := db.QueryRow(context.Background(), query, 
+	err = db.QueryRow(context.Background(), query, 
 		dbUserID, e.SourceID, e.TargetID, e.Label, e.KGName).Scan(&e.ID, &e.CreatedAt)
 	
 	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
@@ -264,14 +271,10 @@ func CreateImpressionLink(c *fiber.Ctx) error {
 
 func DeleteImpressionNode(c *fiber.Ctx) error {
 	id := c.Params("id")
-	userClaims := c.Locals("user").(*Claims)
+	db, userClaims, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
 
-	db := database.LocalDB
-	if db == nil { db = database.CloudDB }
-	if db == nil { return c.Status(503).JSON(fiber.Map{"error": "Database not connected"}) }
-
-	var dbUserID string
-	err := db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+	dbUserID, err := resolveUserID(c, db, userClaims)
 	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User not found"}) }
 
 	_, err = db.Exec(context.Background(), "DELETE FROM impression_nodes WHERE id = $1 AND user_id = $2", id, dbUserID)
@@ -281,15 +284,14 @@ func DeleteImpressionNode(c *fiber.Ctx) error {
 }
 
 func SearchImpression(c *fiber.Ctx) error {
-	userClaims := c.Locals("user").(*Claims)
+	db, userClaims, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
+
 	q := c.Query("q")
 	kgSearch := c.Query("kgName") // Optional: search all or specific
 
-	db := database.LocalDB
-	if db == nil { db = database.CloudDB }
-	if db == nil { return c.Status(503).JSON(fiber.Map{"error": "Database not connected"}) }
-
-	dbUserID := userClaims.ID
+	dbUserID, err := resolveUserID(c, db, userClaims)
+	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User not found"}) }
 
 	// 1. Search Nodes
 	nodesSQL := `
@@ -361,15 +363,17 @@ func SearchImpression(c *fiber.Ctx) error {
 }
 
 func GetKnowledgeGraphs(c *fiber.Ctx) error {
-	userClaims := c.Locals("user").(*Claims)
-	db, _, err := getBestDB(c)
+	db, userClaims, err := getBestDB(c)
 	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
+
+	dbUserID, err := resolveUserID(c, db, userClaims)
+	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User profile not found"}) }
 
 	sql := `SELECT DISTINCT kg_name FROM impression_nodes WHERE user_id = $1 
 	        UNION 
 	        SELECT DISTINCT kg_name FROM impression_edges WHERE user_id = $1`
 	
-	rows, err := db.Query(context.Background(), sql, userClaims.ID)
+	rows, err := db.Query(context.Background(), sql, dbUserID)
 	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
 	defer rows.Close()
 
@@ -558,12 +562,8 @@ func SyncNodeToSnippet(c *fiber.Ctx) error {
 	if db == nil { db = database.CloudDB }
 	if db == nil { return c.Status(503).JSON(fiber.Map{"error": "Database not connected"}) }
 
-	dbUserID := userClaims.ID
-	var err error
-	if dbUserID == "" {
-		err = db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
-		if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User not found"}) }
-	}
+	dbUserID, err := resolveUserID(c, db, userClaims)
+	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User profile not found"}) }
 
 	// 1. Fetch node AND check if already linked
 	var n models.ImpressionNode

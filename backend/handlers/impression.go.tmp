@@ -1,0 +1,40 @@
+package handlers
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/google/uuid"
+	"github.com/toydogcat/kitty-help/go-server/database"
+	"github.com/toydogcat/kitty-help/go-server/models"
+)
+
+func getBestDB(c *fiber.Ctx) (*pgxpool.Pool, *Claims, error) {
+	userClaims, ok := c.Locals("user").(*Claims)
+	if !ok { return nil, nil, fmt.Errorf("user not authenticated") }
+	
+	db := database.LocalDB
+	isAdmin := userClaims.Role == "superadmin" || userClaims.Role == "toby" || userClaims.Email == "toydogcat@gmail.com"
+	
+	if !isAdmin && db == nil {
+		db = database.CloudDB
+	}
+	
+	if db == nil {
+		return nil, nil, fmt.Errorf("Local Database NOT connected (NUC Offline). Please check your Docker volume.")
+	}
+	return db, userClaims, nil
+}
+
+func resolveUserID(c *fiber.Ctx, db *pgxpool.Pool, claims *Claims) (string, error) {
+	if claims.ID != "" { return claims.ID, nil }
+	var dbUserID string
+	err := db.QueryRow(context.Background(), "SELECT id FROM users WHERE LOWER(email) = LOWER($1)", claims.Email).Scan(&dbUserID)
+	if err != nil { return "", err }
+	return dbUserID, nil
+}
