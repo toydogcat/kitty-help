@@ -27,10 +27,15 @@ const linkLabel = ref('');
 const selectedNodeDetails = ref<any>(null);
 const isEditingNode = ref(false);
 const editForm = ref({ title: '', content: '', nodeType: 'general', mediaId: null as string | null });
+const showMediaStore = ref(false);
 const mediaSearchQuery = ref('');
 const mediaSearchResults = ref<any[]>([]);
 const isMediaSearching = ref(false);
-const showMediaStore = ref(false);
+
+// Edge State
+const selectedEdgeDetails = ref<any>(null);
+const isEditingEdge = ref(false);
+const edgeEditForm = ref({ label: '' });
 
 const isLinkingMode = ref(false);
 const interactionMode = ref<'view' | 'edit'>('view');
@@ -115,10 +120,24 @@ const initGraph = async () => {
     if (interactionMode.value === 'view') {
         isLinkingMode.value = false;
         isEditingNode.value = false;
+        isEditingEdge.value = false; // Reset edge edit
+
         if (params.nodes.length > 0) {
+            selectedEdgeDetails.value = null;
             loadGraph(params.nodes[0]); 
+        } else if (params.edges.length > 0) {
+            // New: Handle Edge selection in View Mode
+            selectedNodeDetails.value = null; // Clear node details
+            const edgeId = params.edges[0];
+            const edgeData = edges.value.get(edgeId) as any;
+            if (edgeData) {
+                selectedEdgeDetails.value = { id: edgeId, label: edgeData.label || '' };
+                edgeEditForm.value.label = edgeData.label || '';
+                isEditingEdge.value = true;
+            }
         } else {
             selectedNodeDetails.value = null;
+            selectedEdgeDetails.value = null;
         }
     } else {
         // Edit Mode: Quick Link logic
@@ -377,8 +396,15 @@ const executeCommand = async () => {
             const newNode = await apiService.createImpressionNode({ title, content: '', nodeType: 'general', kgName: kgName.value });
             await loadGraph(newNode.id);
             commandInput.value = '';
-            commandInput.value = '';
             fetchKGs();
+        } else if (cmd === '/edit') {
+            const title = args.join(' ');
+            if (!title) throw new Error('Usage: /edit [Node Title]');
+            const node = await resolveNodeByTitle(title);
+            if (!node) throw new Error(`Node "${title}" not found.`);
+            handleNodeClick(node.id);
+            isEditingNode.value = true;
+            commandInput.value = '';
         } else if (cmd === '/model') {
             const mode = args[0]?.toLowerCase();
             if (mode === 'edit') {
@@ -518,6 +544,26 @@ const saveNodeEdits = async () => {
 const deleteNode = async (id: string) => {
     if (!confirm('Destroy this memory node?')) return;
     try { await apiService.deleteImpressionNode(id); selectedNodeDetails.value = null; await loadGraph(); } catch (e) { console.error(e); }
+};
+
+const saveEdgeEdits = async () => {
+    if (!selectedEdgeDetails.value) return;
+    try {
+        await apiService.updateImpressionLink(selectedEdgeDetails.value.id, { label: edgeEditForm.value.label });
+        selectedEdgeDetails.value = null;
+        isEditingEdge.value = false;
+        await loadGraph();
+    } catch (e) { console.error(e); }
+};
+
+const deleteEdge = async (id: string) => {
+    if (!confirm('Sever this relationship bond?')) return;
+    try {
+        await apiService.deleteImpressionLink(id);
+        selectedEdgeDetails.value = null;
+        isEditingEdge.value = false;
+        await loadGraph();
+    } catch (e) { console.error(e); }
 };
 
 const exportAsImage = () => {
@@ -686,12 +732,12 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
                 <h3>Knowledge Terminal 知識圖譜終端機控制台</h3>
                 <ul>
                     <li><code>/model [view/edit]</code> - 切換互動模式 (點擊與長按的手勢功能會改變)</li>
-                    <li><code>[VIEW 模式]</code> - 點擊節點置中焦點；長按節點開啟編輯面版</li>
+                    <li><code>[VIEW 模式]</code> - 點擊節點置中焦點；點擊連線修改關係；長按節點開啟編輯面版</li>
                     <li><code>[EDIT 模式]</code> - 按住空白處創點；連點兩下複製點及邊；長按刪除</li>
                     <li><code>/add point [標題]</code> - 建立一個新的知識點 (Concept Node)</li>
+                    <li><code>/edit [標題]</code> - 快速跳轉至節點並開啟編輯面板</li>
                     <li><code>/add edge "[起點]" "[終點]" [標籤]</code> - 透過標題連結兩個點</li>
                     <li><code>/search [關鍵字]</code> - 同時搜尋當前圖譜中的節點與連線</li>
-                    <li><code>/list [point/edge/kg]</code> - 分類列出所有節點、邊或是現有的知識宇宙 (KG)</li>
                     <li><code>/kg [名稱]</code> - 切換知識宇宙；<code>/kg copy [源] [目]</code> - 複製整個宇宙</li>
                     <li><code>/pin</code> - 將目前的圖譜固定至 Desk 工作台</li>
                     <li><code>/help</code> - 切換顯示此專業說明手冊</li>
@@ -831,6 +877,27 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
                         </div>
                         <button class="confirm-link-btn" style="background: #8b5cf6; color: white" @click="jumpToDesk(selectedNodeDetails.deskShelfId)">🚀 Teleport</button>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edge Explorer Bottom Card -->
+        <div v-if="selectedEdgeDetails" class="node-explorer-card glass neon-border" style="max-width: 600px; bottom: 80px;">
+            <button class="card-close" @click="selectedEdgeDetails = null">×</button>
+            <div class="card-flex" style="flex-direction: column; padding: 30px;">
+                <div class="edge-edit-head" style="margin-bottom: 20px;">
+                    <h2 style="color: #22d3ee; margin: 0; font-size: 1.2rem;">Relational Bond</h2>
+                    <p style="opacity: 0.5; font-size: 0.8rem;">Modifying the link connection.</p>
+                </div>
+                
+                <div class="in-field">
+                    <label>Relationship Label</label>
+                    <input v-model="edgeEditForm.label" placeholder="e.g. 'friend of', 'belongs to'..." class="m-input" />
+                </div>
+
+                <div class="btn-group">
+                    <button class="confirm-link-btn" style="flex: 2; margin-top: 0;" @click="saveEdgeEdits">Commit Changes</button>
+                    <button class="g-btn del-b" style="flex: 0.5; height: 48px; font-size: 1.2rem; display: flex; align-items: center; justify-content: center;" @click="deleteEdge(selectedEdgeDetails.id)">🗑️</button>
                 </div>
             </div>
         </div>
