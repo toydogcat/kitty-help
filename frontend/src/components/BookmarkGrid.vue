@@ -142,20 +142,47 @@ const handleDragEnd = () => {
   isDropOverRoot.value = false;
 };
 
-const handleDragOver = (id: string, isFolder: boolean = true) => {
+const handleDragOver = (e: DragEvent, id: string, isFolder: boolean = true) => {
   if (draggedItem.value?.id === id) return;
-  if (!isFolder) return;
+  e.preventDefault();
+  
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const y = e.clientY - rect.top;
+  const threshold = rect.height / 3;
+
+  if (y < threshold) {
+    dropPosition.value = 'before';
+  } else if (y > rect.height - threshold) {
+    dropPosition.value = 'after';
+  } else {
+    if (isFolder) {
+      dropPosition.value = 'inside';
+    } else {
+      dropPosition.value = y < rect.height / 2 ? 'before' : 'after';
+    }
+  }
   dropTargetId.value = id;
 };
 
 const handleDragLeave = () => {
     dropTargetId.value = null;
+    dropPosition.value = 'inside';
 };
 
 const handleDrop = async (targetId: string | 'root') => {
   if (!draggedItem.value) return;
   const tId = targetId === 'root' ? null : targetId;
   if (draggedItem.value.id === tId) return;
+
+  // 🛡️ SECURITY CHECK: Cannot move INTO a non-folder item
+  if (tId) {
+    const target = allBookmarks.value.find(b => b.id === tId);
+    if (target && !target.isFolder) {
+        // If dropping onto a non-folder link, treat it as "reorder after"
+        handleReorder({ targetNode: target, position: 'after' });
+        return;
+    }
+  }
 
   try {
     await apiService.updateBookmark(draggedItem.value.id, {
@@ -429,11 +456,14 @@ export default {
             protected: bm.passwordId,
             'is-folder': bm.isFolder,
             'is-dragging': draggedItem?.id === bm.id,
-            'drop-target': dropTargetId === bm.id
+            'drop-target': dropTargetId === bm.id,
+            'drop-before': dropTargetId === bm.id && dropPosition === 'before',
+            'drop-after': dropTargetId === bm.id && dropPosition === 'after',
+            'drop-inside': dropTargetId === bm.id && dropPosition === 'inside'
           }"
           :draggable="true"
           @dragstart="handleDragStart(bm)"
-          @dragover.prevent="handleDragOver(bm.id, bm.isFolder)"
+          @dragover.prevent="handleDragOver($event, bm.id, bm.isFolder)"
           @dragleave="handleDragLeave"
           @drop="handleDrop(bm.id)"
           @dragend="handleDragEnd"
@@ -637,6 +667,20 @@ export default {
   border-color: var(--primary-color);
   transform: translateY(-5px);
   box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+}
+
+.bookmark-card.drop-inside {
+  background: rgba(var(--primary-rgb), 0.2);
+  border: 2px dashed var(--primary-color);
+  transform: scale(1.02);
+}
+
+.bookmark-card.drop-before {
+  border-top: 4px solid var(--primary-color);
+}
+
+.bookmark-card.drop-after {
+  border-bottom: 4px solid var(--primary-color);
 }
 
 .card-bg-glow {

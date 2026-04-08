@@ -285,6 +285,16 @@ const handleDrop = async (targetItem: any | 'root') => {
   if (!draggedItem.value) return;
   const targetId = targetItem === 'root' ? null : targetItem.id;
   if (draggedItem.value.id === targetId) { handleDragEnd(); return; }
+
+  // 🛡️ SECONDARY SAFETY: Prevent moving into non-folder via handleDrop
+  if (targetId) {
+    const target = allSnippets.value.find(s => s.id === targetId);
+    if (target && !target.isFolder) {
+        handleReorder({ targetNode: target, position: 'after' });
+        return;
+    }
+  }
+
   try {
     loading.value = true;
     await apiService.updateSnippet(draggedItem.value.id, {
