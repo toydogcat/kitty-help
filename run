@@ -1,2 +1,2 @@
 #!/bin/bash
-conda run -n toby python3 scripts/run.py "$@"
+conda run -n toby --no-capture-output python3 scripts/run.py "$@"
