@@ -427,7 +427,7 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
               <button @click.stop="deleteShelf(s.id)" class="s-del" title="Delete">×</button>
             </div>
           </div>
-          <span class="s-name">{{ s.name }}</span>
+          <span class="s-name">{{ s.name || 'Unnamed' }}</span>
         </div>
       </div>
     </div>
@@ -596,12 +596,24 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
   display: flex; 
   flex-direction: column; 
   align-items: center; 
-  justify-content: center; 
-  gap: 8px; 
+  justify-content: flex-start; 
+  padding: 1.2rem 1rem;
+  gap: 4px; 
   cursor: pointer; 
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   position: relative;
   overflow: hidden;
+  text-align: center;
+}
+
+.shelf-top {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+  flex: 1;
 }
 
 .shelf-card.active { border-color: var(--primary-color); background: rgba(var(--primary-rgb), 0.15); box-shadow: 0 0 20px rgba(var(--primary-rgb), 0.2); }
@@ -630,13 +642,30 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
   100% { box-shadow: 0 0 0 0 rgba(var(--primary-rgb), 0); }
 }
 
-.s-icon { font-size: 1.8rem; transition: transform 0.3s; }
-.shelf-card:hover .s-icon { transform: scale(1.2); }
-.s-name { font-weight: 700; font-size: 0.95rem; opacity: 0.9; }
+.s-icon { 
+  font-size: 1.8rem; 
+  transition: transform 0.3s; 
+  line-height: 1;
+  display: block;
+}
+.shelf-card:hover .s-icon { transform: scale(1.1); }
 
-.s-actions { position: absolute; top: 10px; right: 10px; display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s; }
+.s-name { 
+  font-weight: 700; 
+  font-size: 0.85rem; 
+  color: #fff !important;
+  opacity: 1; 
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  margin-top: 4px;
+  display: block;
+}
+
+.s-actions { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s; z-index: 10; }
 .shelf-card:hover .s-actions { opacity: 1; }
-.s-actions button { background: rgba(0,0,0,0.5); border: none; padding: 4px; border-radius: 6px; cursor: pointer; color: #fff; font-size: 0.7rem; }
+.s-actions button { background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); padding: 4px; border-radius: 6px; cursor: pointer; color: #fff; font-size: 0.7rem; display: flex; align-items: center; justify-content: center; }
 
 .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(var(--primary-rgb), 0.2); border-radius: 10px; }
