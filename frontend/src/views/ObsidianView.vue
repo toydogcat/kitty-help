@@ -66,7 +66,7 @@ const openFile = async (file: any) => {
     const renderer = new marked.Renderer();
     const noteDir = file.path.split('/').slice(0, -1).join('/');
 
-    renderer.image = (href, title, text) => {
+    renderer.image = ({ href, title, text }: { href: string; title: string | null; text: string }) => {
       if (!href.startsWith('http')) {
         // Resolve relative paths for images in Obsidian
         const fullImagePath = noteDir ? `${noteDir}/${href}` : href;
@@ -76,7 +76,8 @@ const openFile = async (file: any) => {
       return `<img src="${href}" alt="${text || ''}" />`;
     };
 
-    markdownContent.value = marked.parse(content, { renderer });
+    const parsed = await marked.parse(content, { renderer });
+    markdownContent.value = parsed as string;
   } catch (err: any) {
     console.error("Failed to fetch obsidian content:", err);
     const detail = err.response?.data?.error || err.message;

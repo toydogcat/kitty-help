@@ -241,7 +241,7 @@ def main():
         run_command("cd frontend && npm run build", "3/4: Building Frontend assets...")
 
     if args.deploy or run_all:
-        run_command("firebase deploy --config frontend/firebase.json --only hosting", "4/4: Deploying to Firebase...")
+        run_command("cd frontend && firebase deploy --only hosting", "4/4: Deploying to Firebase...")
 
     end_time = time.time()
     print(f"\n{Colors.OKGREEN}{Colors.BOLD}✅ [SUCCESS]{Colors.ENDC} Completed in {int(end_time - start_time)}s\n")
