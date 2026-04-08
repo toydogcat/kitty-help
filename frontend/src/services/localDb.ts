@@ -84,11 +84,11 @@ export class EverSyncDatabase extends Dexie {
 
     constructor() {
         super('EverSyncDB');
-        this.version(2).stores({
+        this.version(3).stores({
             snippets: 'id, parentId, name, syncStatus',
             bookmarks: 'id, parentId, title, url, syncStatus',
-            shelves: 'id, name, syncStatus',
-            deskItems: 'id, refId, shelfId, syncStatus',
+            shelves: 'id, name, sortOrder, syncStatus',
+            deskItems: 'id, refId, shelfId, sortOrder, syncStatus',
             bookcase: 'id, storeId, title, folder, syncStatus',
             bookNotes: 'id, bookId, title, syncStatus',
             sync_queue: '++id, action, entityId, timestamp'
