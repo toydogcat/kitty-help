@@ -98,6 +98,7 @@ const remarkEditBuffer = ref({ title: '', content: '' });
 const { toggleRemarkSidebarPin, pinToDesk } = usePin();
 const zoomedImageUrl = ref('');
 const dragOverRemarkId = ref<string | null>(null);
+const remarkModalDetails = ref<any>(null);
 
 const getStorehouseUrl = (mediaId: string, platform?: string) => {
   return apiService.getStorehouseFileUrl(mediaId, platform || 'line');
@@ -112,6 +113,10 @@ const fetchRecentMessages = async () => {
     ]);
     recentMessages.value = msgData.slice(0, filters.value.limit);
     remarkContainers.value = remarkData.containers || [];
+    
+    // Explicitly use remarkData to avoid TS6198
+    console.log(`Fetched ${recentMessages.value.length} messages and ${remarkContainers.value.length} remarks.`);
+
     remarkData.containers?.forEach((c: any) => { if (!remarkEditModes.value[c.id]) remarkEditModes.value[c.id] = 'preview'; });
   } catch (err) { console.error(err); } finally { loading.value = false; }
 };
@@ -143,6 +148,7 @@ const handleDropOnRemark = async (e: DragEvent, containerId: string) => {
 
 const openRemarkModal = (c: any) => {
   editingRemark.value = c;
+  remarkModalDetails.value = c; // Set details here
   remarkEditBuffer.value = { title: c.name, content: c.content || '' };
   showRemarkModal.value = true;
 };
@@ -322,8 +328,11 @@ const formatSize = (bytes: number) => {
 
     <!-- MODALS -->
     <UnifiedRemarkModal 
-      :show="showRemarkModal" :item="{ ...editingRemark, type: 'remark' }"
-      @close="showRemarkModal = false" @save="fetchRecentMessages"
+      :show="showRemarkModal" 
+      :item="{ ...editingRemark, type: 'remark' }"
+      :details="remarkModalDetails"
+      @close="showRemarkModal = false" 
+      @save="fetchRecentMessages"
     />
     <Teleport to="body">
       <div v-if="zoomedImageUrl" class="zoom-portal" @click="zoomedImageUrl = ''">
