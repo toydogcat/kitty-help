@@ -15,6 +15,8 @@ const searchQuery = ref('');
 const isSearching = ref(false);
 const searchResults = ref<any[]>([]);
 
+const showExplorer = ref(true);
+
 const loadFiles = async (path: string = '') => {
   loading.value = true;
   errorMsg.value = '';
@@ -32,6 +34,10 @@ const loadFiles = async (path: string = '') => {
   } finally {
     loading.value = false;
   }
+};
+
+const toggleExplorer = () => {
+    showExplorer.value = !showExplorer.value;
 };
 
 let searchTimer: any = null;
@@ -72,6 +78,10 @@ const navigateTo = (file: any) => {
     loadFiles(file.path);
   } else if (file.name.toLowerCase().endsWith('.md')) {
     openFile(file);
+    // On narrow screens, auto-close explorer
+    if (window.innerWidth <= 850) {
+        showExplorer.value = false;
+    }
   }
 };
 
@@ -127,19 +137,23 @@ onMounted(() => {
 <template>
   <div class="obsidian-view">
     <header class="view-header">
-      <div class="header-content">
-        <h2>📑 Obsidian Vault</h2>
-        <div class="header-meta">
-          <p>本地知識庫直接存取 (Path: /root/obsidian/{{ currentPath }})</p>
-          <div class="search-container">
-            <span class="search-icon">🔍</span>
-            <input 
-                type="text" 
-                v-model="searchQuery" 
-                placeholder="搜尋筆記標題或內容..." 
-                @input="handleSearch"
-                class="search-input"
-            />
+      <div class="header-left">
+        <button class="btn-toggle-explorer" @click="toggleExplorer" title="Toggle Sidebar">
+          {{ showExplorer ? '📂' : '📑' }}
+        </button>
+        <div class="header-content">
+          <h2>📑 Obsidian Vault</h2>
+          <div class="header-meta">
+            <p>本地知識庫直接存取 (Path: /root/obsidian/{{ currentPath }})</p>
+            <div class="search-container">
+              <span class="search-icon">🔍</span>
+              <input 
+                  type="text" 
+                  v-model="searchQuery" 
+                  placeholder="搜尋筆記標題或內容..." 
+                  @input="handleSearch"
+                  class="search-input"
+              />
             <button v-if="searchQuery" @click="clearSearch" class="btn-clear">✕</button>
           </div>
           <label class="toggle-hidden">
@@ -148,12 +162,13 @@ onMounted(() => {
           </label>
         </div>
       </div>
-      <button v-if="currentPath && !isSearching" @click="goBack" class="btn-back">⬅️ 返回上一層</button>
-    </header>
+    </div>
+    <button v-if="currentPath && !isSearching" @click="goBack" class="btn-back">⬅️ 返回上一層</button>
+  </header>
 
-    <div class="layout-container">
-      <!-- File List -->
-      <aside class="file-browser card glow">
+  <div class="layout-container">
+    <!-- File List -->
+    <aside class="file-browser card glow" :class="{ open: showExplorer }">
         <div v-if="loading" class="loader">
           <div class="spinner"></div>
         </div>
@@ -223,12 +238,22 @@ onMounted(() => {
   display: flex; flex-direction: column; gap: 2rem; height: calc(100vh - 120px);
 }
 
-.view-header { display: flex; justify-content: space-between; align-items: flex-end; }
-.header-meta { display: flex; align-items: center; gap: 1.5rem; font-size: 0.9rem; opacity: 0.8; }
+.view-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; }
+.header-left { display: flex; align-items: center; gap: 1.5rem; flex: 1; }
+
+.btn-toggle-explorer {
+  width: 45px; height: 45px; border-radius: 12px;
+  background: rgba(var(--primary-rgb), 0.15); border: 1px solid var(--primary-color);
+  font-size: 1.5rem; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.btn-toggle-explorer:hover { background: var(--primary-color); }
+
+.header-meta { display: flex; align-items: center; gap: 1.5rem; font-size: 0.9rem; opacity: 0.8; flex: 1; }
 .toggle-hidden { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: var(--primary-color); white-space: nowrap; }
 
 .search-container {
-  position: relative; flex: 1; min-width: 300px;
+  position: relative; flex: 1; min-width: 250px;
   display: flex; align-items: center;
 }
 .search-input {
@@ -239,12 +264,11 @@ onMounted(() => {
 .search-input:focus { outline: none; border-color: var(--primary-color); background: rgba(255,255,255,0.1); }
 .search-icon { position: absolute; left: 0.8rem; opacity: 0.5; }
 .btn-clear { position: absolute; right: 0.8rem; background: none; border: none; color: white; opacity: 0.5; cursor: pointer; }
-.btn-clear:hover { opacity: 1; }
 
 .btn-back {
-  padding: 0.6rem 1.2rem; border-radius: 12px;
+  padding: 0.4rem 1rem; border-radius: 10px;
   background: rgba(var(--primary-rgb), 0.1); border: 1px solid var(--primary-color);
-  color: white; cursor: pointer; transition: all 0.3s;
+  color: white; cursor: pointer; transition: all 0.3s; font-size: 0.85rem;
 }
 .btn-back:hover { background: var(--primary-color); }
 
@@ -252,9 +276,27 @@ onMounted(() => {
   display: grid; grid-template-columns: 350px 1fr; gap: 1.5rem; flex: 1; min-height: 0;
 }
 
-@media (max-width: 900px) {
-  .layout-container { grid-template-columns: 1fr; }
-  .file-browser { display: none; }
+/* iPad & Tablet Optimization */
+@media (max-width: 1100px) {
+  .layout-container { grid-template-columns: 280px 1fr; gap: 1rem; }
+}
+
+@media (max-width: 850px) {
+  .layout-container { display: block; position: relative; }
+  .file-browser { 
+    position: absolute; 
+    left: 0; top: 0; bottom: 0; 
+    width: 280px; 
+    z-index: 100; 
+    background: #1a1a20;
+    transition: transform 0.3s ease;
+    box-shadow: 10px 0 30px rgba(0,0,0,0.5);
+    display: block !important;
+  }
+  /* If explorer is closed, slide it out */
+  .file-browser:not(.open) {
+    transform: translateX(-100%);
+  }
 }
 
 .file-browser { 
