@@ -215,10 +215,17 @@ const handleDrop = async (targetId: string | 'root') => {
   }
 
   try {
-    await syncService.updateBookmark(draggedItem.value.id, {
-      ...draggedItem.value,
-      parentId: tId
-    });
+    const cleanData = {
+      title: draggedItem.value.title,
+      url: draggedItem.value.url,
+      category: draggedItem.value.category,
+      isFolder: draggedItem.value.isFolder,
+      passwordId: draggedItem.value.passwordId,
+      parentId: tId,
+      sortOrder: draggedItem.value.sortOrder
+    };
+
+    await syncService.updateBookmark(draggedItem.value.id, cleanData);
     fetchBookmarks();
   } catch (err) {
     console.error("Move failed:", err);
@@ -235,24 +242,50 @@ const handleReorder = async (data: { targetNode: Bookmark, position: 'before' | 
     if (draggedItem.value.id === target.id) return;
 
     try {
-        // 1. Get siblings
         const parentId = target.parentId;
         const siblings = allBookmarks.value
             .filter(b => b.parentId === parentId && b.id !== draggedItem.value.id)
             .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 
-        // 2. Insert dragged item
         const targetIdx = siblings.findIndex(b => b.id === target.id);
         const insertIdx = data.position === 'before' ? targetIdx : targetIdx + 1;
-        siblings.splice(insertIdx, 0, { ...draggedItem.value, parentId }); // Update parent if moving across levels too
+        
+        // Sanitize: strip children and other extra fields
+        const cleanDragged = { 
+            id: draggedItem.value.id,
+            title: draggedItem.value.title,
+            url: draggedItem.value.url,
+            category: draggedItem.value.category,
+            isFolder: draggedItem.value.isFolder,
+            parentId: parentId,
+            passwordId: draggedItem.value.passwordId
+        };
+        
+        siblings.splice(insertIdx, 0, cleanDragged as any);
 
-        // 3. Update all siblings' sort order
-        const updates = siblings.map((node, i) => {
-            return syncService.updateBookmark(node.id, { ...node, sortOrder: i });
-        });
+        const updates = [];
+        for (let i = 0; i < siblings.length; i++) {
+            const node = siblings[i];
+            // Only update if sortOrder actually changed OR it's the moved item
+            if (node.sortOrder !== i || node.id === cleanDragged.id) {
+                // Ensure we only send necessary fields and NO children
+                const updateData = {
+                    title: node.title,
+                    url: node.url,
+                    category: node.category,
+                    isFolder: node.isFolder,
+                    parentId: node.parentId,
+                    sortOrder: i,
+                    passwordId: (node as any).passwordId
+                };
+                updates.push(syncService.updateBookmark(node.id, updateData));
+            }
+        }
 
-        await Promise.all(updates);
-        fetchBookmarks();
+        if (updates.length > 0) {
+            await Promise.all(updates);
+            fetchBookmarks();
+        }
     } catch (err) {
         console.error("Reorder failed:", err);
     } finally {

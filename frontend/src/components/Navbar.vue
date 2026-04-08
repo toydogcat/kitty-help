@@ -62,6 +62,10 @@ const navigate = (path: string) => {
 const emergencyReset = async () => {
     await syncService.purgeDatabase();
 };
+
+const manualSync = async () => {
+    await syncService.syncNow();
+};
 </script>
 
 <template>
@@ -77,9 +81,11 @@ const emergencyReset = async () => {
         <span class="nav-label">{{ item.label }}</span>
       </button>
     </div>
-    <div v-if="pendingCount > 0" class="sync-status-floating" :title="`待同步項目: ${pendingCount}`">
-      <span class="sync-icon">🔄</span>
-      <span class="sync-count">{{ pendingCount }}</span>
+    <div v-if="pendingCount > 0" class="sync-status-floating">
+      <button @click="manualSync" class="settle-btn" :title="`點擊結帳: ${pendingCount} 個項目`" :disabled="syncService.isProcessing">
+        <span class="sync-icon">{{ syncService.isProcessing ? '🔄' : '💳' }}</span>
+        <span class="sync-count">{{ pendingCount }}</span>
+      </button>
       <button @click="emergencyReset" class="emergency-btn" title="緊急重置本地資料">🆘</button>
     </div>
     <div v-else class="emergency-sync-static">
@@ -161,6 +167,27 @@ const emergencyReset = async () => {
   backdrop-filter: blur(10px);
   animation: slideIn 0.3s ease;
   z-index: 1001;
+}
+
+.settle-btn {
+  display: flex; align-items: center; gap: 0.5rem;
+  background: var(--primary-color);
+  border: none; border-radius: 50px;
+  padding: 0.4rem 0.8rem;
+  color: white; font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 10px rgba(var(--primary-rgb), 0.3);
+}
+
+.settle-btn:hover:not(:disabled) {
+  transform: scale(1.05);
+  filter: brightness(1.2);
+}
+
+.settle-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
 }
 
 .emergency-btn, .emergency-btn-small {

@@ -105,15 +105,24 @@ func CreateSnippet(c *fiber.Ctx) error {
 }
 
 func UpdateSnippet(c *fiber.Ctx) error {
+	db, _, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
+
 	id := c.Params("id")
 	var s models.Snippet
 	if err := c.BodyParser(&s); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
+	if s.ParentID != nil && (*s.ParentID == "root" || *s.ParentID == "") {
+		s.ParentID = nil
+	}
+
 	// Support updating parentId (moving between folders) and sortOrder (manual positioning)
-	query := "UPDATE snippets SET name = $1, content = $2, parent_id = $3, sort_order = $4 WHERE id = $5 RETURNING id, user_id, parent_id, name, content, is_folder, sort_order, created_at"
-	err := database.LocalDB.QueryRow(context.Background(), query, s.Name, s.Content, s.ParentID, s.SortOrder, id).Scan(&s.ID, &s.UserID, &s.ParentID, &s.Name, &s.Content, &s.IsFolder, &s.SortOrder, &s.CreatedAt)
+	query := `UPDATE snippets SET name = $1, content = $2, parent_id = $3, sort_order = $4, updated_at = NOW() 
+	          WHERE id = $5 RETURNING id, user_id, parent_id, name, content, is_folder, sort_order, created_at`
+	err = db.QueryRow(context.Background(), query, s.Name, s.Content, s.ParentID, s.SortOrder, id).
+		Scan(&s.ID, &s.UserID, &s.ParentID, &s.Name, &s.Content, &s.IsFolder, &s.SortOrder, &s.CreatedAt)
 	if err != nil {
 		log.Printf("Update snippet failed: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Update failed"})

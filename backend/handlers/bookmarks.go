@@ -121,6 +121,9 @@ func CreateBookmark(c *fiber.Ctx) error {
 }
 
 func UpdateBookmark(c *fiber.Ctx) error {
+	db, _, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
+
 	id := c.Params("id")
 	var b models.Bookmark
 	if err := c.BodyParser(&b); err != nil {
@@ -133,7 +136,7 @@ func UpdateBookmark(c *fiber.Ctx) error {
 	}
 
 	query := "UPDATE bookmarks SET parent_id = $1, title = $2, url = $3, category = $4, sort_order = $5 WHERE id = $6"
-	_, err := database.LocalDB.Exec(context.Background(), query, b.ParentID, b.Title, b.URL, b.Category, b.SortOrder, id)
+	_, err = db.Exec(context.Background(), query, b.ParentID, b.Title, b.URL, b.Category, b.SortOrder, id)
 	if err != nil {
 		log.Printf("Update bookmark failed: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to update bookmark"})

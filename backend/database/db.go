@@ -167,7 +167,9 @@ func EnsureTables() {
 			name TEXT NOT NULL,
 			content TEXT,
 			is_folder BOOLEAN DEFAULT false,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			sort_order INTEGER DEFAULT 0,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS settings (
 			key TEXT PRIMARY KEY,
@@ -249,11 +251,16 @@ func EnsureTables() {
 		`CREATE TABLE IF NOT EXISTS bookmarks (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			parent_id UUID REFERENCES bookmarks(id) ON DELETE CASCADE,
 			title TEXT NOT NULL,
-			url TEXT NOT NULL,
+			url TEXT,
 			category TEXT DEFAULT 'uncategorized',
 			icon_url TEXT,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			password_id UUID REFERENCES passwords(id) ON DELETE SET NULL,
+			is_folder BOOLEAN DEFAULT false,
+			sort_order INTEGER DEFAULT 0,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS impression_nodes (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -406,6 +413,18 @@ func EnsureTables() {
 				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 			)`,
 			`ALTER TABLE bookcase ADD COLUMN IF NOT EXISTS sort_order INT DEFAULT 0`,
+			// --- Bookmarks Fixes ---
+			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS parent_id UUID REFERENCES bookmarks(id) ON DELETE CASCADE`,
+			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS is_folder BOOLEAN DEFAULT false`,
+			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0`,
+			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS password_id UUID REFERENCES passwords(id) ON DELETE SET NULL`,
+			`ALTER TABLE bookmarks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
+			`ALTER TABLE bookmarks ALTER COLUMN url DROP NOT NULL`,
+			// --- Snippets Fixes ---
+			`ALTER TABLE snippets ADD COLUMN IF NOT EXISTS parent_id UUID REFERENCES snippets(id) ON DELETE CASCADE`,
+			`ALTER TABLE snippets ADD COLUMN IF NOT EXISTS is_folder BOOLEAN DEFAULT false`,
+			`ALTER TABLE snippets ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0`,
+			`ALTER TABLE snippets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
 		}
 		for _, m := range migrations {
 			LocalDB.Exec(ctx, m)

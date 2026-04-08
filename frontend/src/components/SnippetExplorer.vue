@@ -328,10 +328,14 @@ const handleDrop = async (targetItem: any | 'root') => {
 
   try {
     loading.value = true;
-    await syncService.updateSnippet(draggedItem.value.id, {
-        ...draggedItem.value,
-        parentId: targetId
-    });
+    const cleanData = {
+        name: draggedItem.value.name,
+        content: draggedItem.value.content,
+        parentId: targetId,
+        isFolder: draggedItem.value.isFolder,
+        sortOrder: draggedItem.value.sortOrder
+    };
+    await syncService.updateSnippet(draggedItem.value.id, cleanData);
   } catch (err) {
     console.error("Drop failed:", err);
   } finally {
@@ -352,16 +356,35 @@ const handleReorder = async (data: { targetNode: any, position: 'before' | 'afte
             .filter(s => s.parentId === parentId && s.id !== draggedItem.value.id)
             .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 
-        const targetIdx = siblings.findIndex(s => s.id === target.id);
-        const insertIdx = data.position === 'before' ? targetIdx : targetIdx + 1;
+        // Sanitize dragged item
+        const cleanDragged = {
+            id: draggedItem.value.id,
+            name: draggedItem.value.name,
+            content: draggedItem.value.content,
+            isFolder: draggedItem.value.isFolder,
+            parentId: parentId
+        };
         
-        siblings.splice(insertIdx, 0, { ...draggedItem.value, parentId });
+        siblings.splice(insertIdx, 0, cleanDragged as any);
 
-        const updates = siblings.map((node, i) => {
-            return syncService.updateSnippet(node.id, { ...node, sortOrder: i });
-        });
+        const updates = [];
+        for (let i = 0; i < siblings.length; i++) {
+            const node = siblings[i];
+            if (node.sortOrder !== i || node.id === cleanDragged.id) {
+                const updateData = {
+                    name: node.name,
+                    content: node.content,
+                    isFolder: node.isFolder,
+                    parentId: node.parentId,
+                    sortOrder: i
+                };
+                updates.push(syncService.updateSnippet(node.id, updateData));
+            }
+        }
 
-        await Promise.all(updates);
+        if (updates.length > 0) {
+            await Promise.all(updates);
+        }
         await fetchData();
     } catch (err) {
         console.error("Reorder failed:", err);

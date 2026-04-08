@@ -45,20 +45,20 @@ export const syncService = {
         };
         await db.snippets.add(newSnippet);
         await db.sync_queue.add({ action: 'CREATE', entityType: 'snippet', entityId: id, data, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
         return newSnippet;
     },
 
     async updateSnippet(id: string, data: any) {
         await db.snippets.update(id, { ...data, syncStatus: 'pending' });
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'snippet', entityId: id, data, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
     },
 
     async deleteSnippet(id: string) {
         await db.snippets.delete(id);
         await db.sync_queue.add({ action: 'DELETE', entityType: 'snippet', entityId: id, data: null, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
     },
 
     // --- Bookmarks Methods ---
@@ -87,20 +87,20 @@ export const syncService = {
         const newBookmark = { ...data, id, syncStatus: 'pending', updatedAt: new Date().toISOString() };
         await db.bookmarks.add(newBookmark);
         await db.sync_queue.add({ action: 'CREATE', entityType: 'bookmark', entityId: id, data, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
         return newBookmark;
     },
 
     async updateBookmark(id: string, data: any) {
         await db.bookmarks.update(id, { ...data, syncStatus: 'pending' });
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'bookmark', entityId: id, data, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
     },
 
     async deleteBookmark(id: string) {
         await db.bookmarks.delete(id);
         await db.sync_queue.add({ action: 'DELETE', entityType: 'bookmark', entityId: id, data: null, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
     },
 
     // --- Desk Methods ---
@@ -120,18 +120,18 @@ export const syncService = {
         const id = crypto.randomUUID();
         await db.shelves.add({ ...data, id, syncStatus: 'pending', updatedAt: new Date().toISOString() });
         await db.sync_queue.add({ action: 'CREATE', entityType: 'shelf', entityId: id, data, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
         return { id };
     },
     async updateShelf(id: string, data: any) {
         await db.shelves.update(id, { ...data, syncStatus: 'pending' });
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'shelf', entityId: id, data, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
     },
     async deleteShelf(id: string) {
         await db.shelves.delete(id);
         await db.sync_queue.add({ action: 'DELETE', entityType: 'shelf', entityId: id, data: null, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
     },
     async getDeskItems(shelfId?: string) {
         const sid = shelfId || 'null';
@@ -150,18 +150,18 @@ export const syncService = {
         const id = crypto.randomUUID();
         await db.deskItems.add({ ...data, id, shelfId: data.shelfId || 'null', syncStatus: 'pending', updatedAt: new Date().toISOString() });
         await db.sync_queue.add({ action: 'CREATE', entityType: 'deskItem', entityId: id, data, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
         return { id };
     },
     async updateDeskItem(id: string, data: any) {
         await db.deskItems.update(id, { ...data, syncStatus: 'pending' });
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'deskItem', entityId: id, data, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
     },
     async deleteDeskItem(id: string) {
         await db.deskItems.delete(id);
         await db.sync_queue.add({ action: 'DELETE', entityType: 'deskItem', entityId: id, data: null, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
     },
 
     // --- Bookcase Methods ---
@@ -181,22 +181,22 @@ export const syncService = {
         const id = crypto.randomUUID();
         await db.bookcase.add({ ...data, id, syncStatus: 'pending', updatedAt: new Date().toISOString() });
         await db.sync_queue.add({ action: 'CREATE', entityType: 'book', entityId: id, data, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
     },
     async updateBookFolder(id: string, folder: string) {
         await db.bookcase.update(id, { folder, syncStatus: 'pending' });
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'book', entityId: id, data: { folder }, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
     },
     async moveBook(id: string, sortOrder: number) {
         await db.bookcase.update(id, { sortOrder, syncStatus: 'pending' });
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'book', entityId: id, data: { sortOrder }, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
     },
     async removeBook(id: string) {
         await db.bookcase.delete(id);
         await db.sync_queue.add({ action: 'DELETE', entityType: 'book', entityId: id, data: null, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
     },
     async getBookNotes(bookId: string) {
         return await db.bookNotes.where('bookId').equals(bookId).toArray();
@@ -214,18 +214,18 @@ export const syncService = {
         const id = crypto.randomUUID();
         await db.bookNotes.add({ ...data, id, bookId, syncStatus: 'pending', updatedAt: new Date().toISOString() });
         await db.sync_queue.add({ action: 'CREATE', entityType: 'bookNote', entityId: id, data: { ...data, bookId }, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
         return { id };
     },
     async updateBookNote(id: string, data: any) {
         await db.bookNotes.update(id, { ...data, syncStatus: 'pending' });
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'bookNote', entityId: id, data, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
     },
     async removeBookNote(id: string) {
         await db.bookNotes.delete(id);
         await db.sync_queue.add({ action: 'DELETE', entityType: 'bookNote', entityId: id, data: null, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
     },
 
     // --- Remarks (Obs) Methods ---
@@ -261,18 +261,18 @@ export const syncService = {
         const id = crypto.randomUUID();
         await db.remarks.add({ ...data, id, isPinned: false, syncStatus: 'pending', updatedAt: new Date().toISOString() });
         await db.sync_queue.add({ action: 'CREATE', entityType: 'remark', entityId: id, data, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
         return { id };
     },
     async updateRemark(id: string, data: any) {
         await db.remarks.update(id, { ...data, syncStatus: 'pending' });
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'remark', entityId: id, data, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
     },
     async deleteRemark(id: string) {
         await db.remarks.delete(id);
         await db.sync_queue.add({ action: 'DELETE', entityType: 'remark', entityId: id, data: null, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
     },
     async addRemarkItem(data: { containerId: string, logId: string, log?: any }) {
         const id = crypto.randomUUID();
@@ -285,13 +285,13 @@ export const syncService = {
             updatedAt: new Date().toISOString() 
         });
         await db.sync_queue.add({ action: 'CREATE', entityType: 'remarkItem', entityId: id, data, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
         return { id };
     },
     async removeRemarkItem(id: string) {
         await db.remarkItems.delete(id);
         await db.sync_queue.add({ action: 'DELETE', entityType: 'remarkItem', entityId: id, data: null, timestamp: Date.now() });
-        this.processQueue();
+        this.requestSync();
     },
 
     // --- AI Cache Methods ---
@@ -310,129 +310,4 @@ export const syncService = {
         });
     },
 
-    isProcessing: false,
-    async processQueue() {
-        if (this.isProcessing) return;
-        
-        const actions = await db.sync_queue.toArray();
-        if (actions.length === 0) return;
-
-        this.isProcessing = true;
-        console.log(`🔄 EverSync: Processing ${actions.length} pending actions...`);
-
-        try {
-            for (const action of actions) {
-                try {
-                if (action.entityType === 'snippet') {
-                    if (action.action === 'CREATE') {
-                        const res = await apiService.createSnippet(action.data);
-                        await db.snippets.update(action.entityId, { id: res.id, syncStatus: 'synced' });
-                    } else if (action.action === 'UPDATE') {
-                        await apiService.updateSnippet(action.entityId, action.data);
-                        await db.snippets.update(action.entityId, { syncStatus: 'synced' });
-                    } else if (action.action === 'DELETE') {
-                        await apiService.deleteSnippet(action.entityId);
-                    }
-                } else if (action.entityType === 'bookmark') {
-                    if (action.action === 'CREATE') {
-                        const res = await apiService.addBookmark(action.data);
-                        await db.bookmarks.update(action.entityId, { id: res.id, syncStatus: 'synced' });
-                    } else if (action.action === 'UPDATE') {
-                        await apiService.updateBookmark(action.entityId, action.data);
-                        await db.bookmarks.update(action.entityId, { syncStatus: 'synced' });
-                    } else if (action.action === 'DELETE') {
-                        await apiService.deleteBookmark(action.entityId);
-                    }
-                } else if (action.entityType === 'shelf') {
-                    if (action.action === 'CREATE') {
-                        const res = await apiService.createShelf(action.data);
-                        await db.shelves.update(action.entityId, { id: res.id, syncStatus: 'synced' });
-                    } else if (action.action === 'UPDATE') {
-                        await apiService.updateShelf(action.entityId, action.data);
-                        await db.shelves.update(action.entityId, { syncStatus: 'synced' });
-                    } else if (action.action === 'DELETE') {
-                        await apiService.deleteShelf(action.entityId);
-                    }
-                } else if (action.entityType === 'deskItem') {
-                    if (action.action === 'CREATE') {
-                        const res = await apiService.addDeskItem(action.data);
-                        await db.deskItems.update(action.entityId, { id: res.id, syncStatus: 'synced' });
-                    } else if (action.action === 'UPDATE') {
-                        await apiService.updateDeskItem(action.entityId, action.data);
-                        await db.deskItems.update(action.entityId, { syncStatus: 'synced' });
-                    } else if (action.action === 'DELETE') {
-                        await apiService.deleteDeskItem(action.entityId);
-                    }
-                } else if (action.entityType === 'book') {
-                    if (action.action === 'CREATE') {
-                        const res = await apiService.addBookToBookcase(action.data);
-                        await db.bookcase.update(action.entityId, { id: res.id, syncStatus: 'synced' });
-                    } else if (action.action === 'UPDATE') {
-                        if (action.data.folder !== undefined) {
-                            await apiService.updateBookFolder(action.entityId, action.data.folder);
-                        }
-                        if (action.data.sortOrder !== undefined) {
-                            await apiService.updateBookSortOrder(action.entityId, action.data.sortOrder);
-                        }
-                        await db.bookcase.update(action.entityId, { syncStatus: 'synced' });
-                    } else if (action.action === 'DELETE') {
-                        await apiService.removeBook(action.entityId);
-                    }
-                } else if (action.entityType === 'bookNote') {
-                    if (action.action === 'CREATE') {
-                        const res = await apiService.addBookNote(action.data.bookId, action.data);
-                        await db.bookNotes.update(action.entityId, { id: res.id, syncStatus: 'synced' });
-                    } else if (action.action === 'UPDATE') {
-                        await apiService.updateBookNote(action.entityId, action.data);
-                        await db.bookNotes.update(action.entityId, { syncStatus: 'synced' });
-                    } else if (action.action === 'DELETE') {
-                        await apiService.removeBookNote(action.entityId);
-                    }
-                } else if (action.entityType === 'remark') {
-                    if (action.action === 'CREATE') {
-                        const res = await apiService.createRemark(action.data);
-                        await db.remarks.update(action.entityId, { id: res.id, syncStatus: 'synced' });
-                    } else if (action.action === 'UPDATE') {
-                        await apiService.updateRemark(action.entityId, action.data);
-                        await db.remarks.update(action.entityId, { syncStatus: 'synced' });
-                    } else if (action.action === 'DELETE') {
-                        await apiService.deleteRemark(action.entityId);
-                    }
-                } else if (action.entityType === 'remarkItem') {
-                    if (action.action === 'CREATE') {
-                        const res = await apiService.addRemarkItem(action.data);
-                        await db.remarkItems.update(action.entityId, { id: res.id, syncStatus: 'synced' });
-                    } else if (action.action === 'DELETE') {
-                        await apiService.removeRemarkItem(action.entityId);
-                    }
-                }
-                
-                if (action.id) await db.sync_queue.delete(action.id);
-            } catch (err) {
-                console.error(`❌ Sync failed:`, err);
-                break; 
-            }
-        }
-    } finally {
-        this.isProcessing = false;
-    }
-},
-
-    async purgeDatabase() {
-        if (!confirm("🚨 警告：這將清除所有本地快取並重新與伺服器同步。尚未同步的更改將會遺失。確定要執行嗎？")) return;
-        try {
-            await db.delete();
-            localStorage.clear();
-            window.location.reload();
-        } catch (err) {
-            console.error("Purge failed:", err);
-            alert("清除失敗，請嘗試手動清理瀏覽器快取。");
-        }
-    }
-};
-
-// Auto-sync when network comes online
-window.addEventListener('online', () => {
-    console.log('🌐 Network online! Triggering EverSync...');
-    syncService.processQueue();
-});
+    syncTimer: null as any,
