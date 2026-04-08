@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
+import { useSyncStatus } from '../composables/useSyncStatus';
+
+const { pendingCount } = useSyncStatus();
 
 const props = defineProps<{ 
   isAdmin: boolean,
@@ -74,6 +77,10 @@ const navigate = (path: string) => {
         <span class="nav-label">{{ item.label }}</span>
       </button>
     </div>
+    <div v-if="pendingCount > 0" class="sync-status-floating" :title="`待同步項目: ${pendingCount}`">
+      <span class="sync-icon">🔄</span>
+      <span class="sync-count">{{ pendingCount }}</span>
+    </div>
   </nav>
 </template>
 
@@ -136,6 +143,33 @@ const navigate = (path: string) => {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.sync-status-floating {
+  position: absolute;
+  right: -60px; top: 50%;
+  transform: translateY(-50%);
+  display: flex; align-items: center; gap: 0.5rem;
+  background: rgba(var(--primary-rgb), 0.2);
+  border: 1px solid var(--primary-color);
+  padding: 0.5rem 1rem; border-radius: 100px;
+  color: white; font-weight: bold; font-size: 0.9rem;
+  backdrop-filter: blur(10px);
+  animation: slideIn 0.3s ease;
+}
+
+.sync-icon {
+  display: inline-block;
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes slideIn { from { opacity: 0; transform: translateY(-50%) translateX(-20px); } to { opacity: 1; transform: translateY(-50%) translateX(0); } }
+
+@media (max-width: 900px) {
+  .sync-status-floating {
+    right: 1rem; top: -60px; transform: none;
+  }
 }
 
 @media (max-width: 600px) {

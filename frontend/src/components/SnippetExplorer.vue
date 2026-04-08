@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue';
 import { apiService, socket } from '../services/api';
+import { syncService } from '../services/syncService';
 import { usePin } from '../composables/usePin';
 import SnippetTreeNode from './SnippetTreeNode.vue';
 
@@ -42,8 +43,9 @@ const editMode = ref<'txt' | 'md'>('md');
 const fetchData = async () => {
   loading.value = true;
   try {
-    allSnippets.value = await apiService.getSnippets(undefined, true);
-    snippets.value = await apiService.getSnippets(currentFolderId.value === 'root' ? null : currentFolderId.value);
+    // 🏠 EverSync: Get from local first, then auto-refresh
+    allSnippets.value = await syncService.getSnippets(null, true);
+    snippets.value = await syncService.getSnippets(currentFolderId.value === 'root' ? null : currentFolderId.value);
   } catch (err) {
     console.error("Failed to fetch snippets:", err);
   } finally {
@@ -138,13 +140,13 @@ const saveItem = async () => {
   if (!newItemName.value.trim()) return;
   try {
     if (isEditing.value && editingId.value) {
-      await apiService.updateSnippet(editingId.value, {
+      await syncService.updateSnippet(editingId.value, {
         name: newItemName.value,
         content: newItemContent.value,
         parentId: editingParentId.value
       });
     } else {
-      await apiService.createSnippet({
+      await syncService.createSnippet({
         parentId: currentFolderId.value === 'root' ? null : currentFolderId.value,
         name: newItemName.value,
         content: newItemContent.value,
@@ -161,7 +163,7 @@ const saveItem = async () => {
 const deleteItem = async (id: string) => {
   if (confirm("Are you sure?")) {
     try {
-      await apiService.deleteSnippet(id);
+      await syncService.deleteSnippet(id);
       await fetchData();
     } catch (err) {
       alert("Delete failed");
@@ -297,7 +299,7 @@ const handleDrop = async (targetItem: any | 'root') => {
 
   try {
     loading.value = true;
-    await apiService.updateSnippet(draggedItem.value.id, {
+    await syncService.updateSnippet(draggedItem.value.id, {
         ...draggedItem.value,
         parentId: targetId
     });
@@ -327,7 +329,7 @@ const handleReorder = async (data: { targetNode: any, position: 'before' | 'afte
         siblings.splice(insertIdx, 0, { ...draggedItem.value, parentId });
 
         const updates = siblings.map((node, i) => {
-            return apiService.updateSnippet(node.id, { ...node, sortOrder: i });
+            return syncService.updateSnippet(node.id, { ...node, sortOrder: i });
         });
 
         await Promise.all(updates);
@@ -428,7 +430,11 @@ const addToDesk = async (item: any) => {
           </div>
           <div v-else class="item-content snippet">
             <div class="snippet-info">
-              <span class="snippet-name">📄 {{ item.name }}</span>
+              <span class="snippet-name">
+                📄 {{ item.name }}
+                <span v-if="item.syncStatus === 'pending'" class="sync-badge" title="Pending Sync">⏳</span>
+                <span v-if="item.syncStatus === 'error'" class="sync-badge error" title="Sync Failed">⚠️</span>
+              </span>
               <p v-if="item.content" class="snippet-preview">{{ item.content.substring(0, 80) }}...</p>
             </div>
           </div>
@@ -538,6 +544,9 @@ const addToDesk = async (item: any) => {
 .item-row:hover .item-actions { opacity: 1; }
 .item-actions button { background: rgba(255,255,255,0.1); border: none; border-radius: 6px; padding: 4px 10px; color: #fff; font-size: 0.75rem; cursor: pointer; }
 .item-actions button:hover { background: var(--primary-color); }
+
+.sync-badge { font-size: 0.8rem; margin-left: 0.5rem; opacity: 0.8; }
+.sync-badge.error { color: #ff5555; opacity: 1; }
 
 /* Unified Controls Styling */
 .unified-controls { display: flex; align-items: center; gap: 1rem; }

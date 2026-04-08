@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, computed } from 'vue';
 import { apiService } from '../services/api';
+import { syncService } from '../services/syncService';
 import { usePin } from '../composables/usePin';
 import BookmarkTreeNode from './BookmarkTreeNode.vue';
 
@@ -65,12 +66,11 @@ const categories = ['General', 'Work', 'Social', 'Dev', 'Entertainment', 'Tools'
 const fetchBookmarks = async () => {
   loading.value = true;
   try {
-    const res = await apiService.getBookmarks(currentFolderId.value === 'root' ? undefined : currentFolderId.value);
-    bookmarks.value = res;
+    // 🏠 EverSync: Local-first loading
+    bookmarks.value = await syncService.getBookmarks(currentFolderId.value === 'root' ? 'root' : currentFolderId.value);
     
     // FETCH ALL RECURSIVELY for tree
-    const allRes = await apiService.getBookmarks(undefined, true);
-    allBookmarks.value = allRes;
+    allBookmarks.value = await syncService.getBookmarks('root', true);
   } catch (err) {
     console.error("Failed to fetch bookmarks:", err);
   } finally {
@@ -186,7 +186,7 @@ const handleDrop = async (targetId: string | 'root') => {
   }
 
   try {
-    await apiService.updateBookmark(draggedItem.value.id, {
+    await syncService.updateBookmark(draggedItem.value.id, {
       ...draggedItem.value,
       parentId: tId
     });
@@ -219,7 +219,7 @@ const handleReorder = async (data: { targetNode: Bookmark, position: 'before' | 
 
         // 3. Update all siblings' sort order
         const updates = siblings.map((node, i) => {
-            return apiService.updateBookmark(node.id, { ...node, sortOrder: i });
+            return syncService.updateBookmark(node.id, { ...node, sortOrder: i });
         });
 
         await Promise.all(updates);
@@ -281,9 +281,9 @@ const saveBookmark = async () => {
     };
 
     if (editingId.value) {
-      await apiService.updateBookmark(editingId.value, payload);
+      await syncService.updateBookmark(editingId.value, payload);
     } else {
-      await apiService.addBookmark(payload);
+      await syncService.addBookmark({ ...payload, parentId: payload.parentId || 'root' });
     }
     showAddModal.value = false;
     fetchBookmarks();
@@ -343,7 +343,7 @@ const confirmDelete = async (bookmark: Bookmark) => {
 
   if (confirm(`Are you sure you want to delete "${bookmark.title}"?`)) {
     try {
-      await apiService.deleteBookmark(bookmark.id);
+      await syncService.deleteBookmark(bookmark.id);
       fetchBookmarks();
     } catch (err) {
       console.error("Delete failed:", err);
