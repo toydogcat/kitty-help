@@ -88,9 +88,21 @@ def fix_epub_file(src_path):
 
 def update_env_files(url):
     """Sync VITE_API_URL across all relevant env files."""
-    files_to_update = [ENV_FILE, ENV_PROD_FILE]
+    # We update both root and frontend env files
+    files_to_update = [
+        ENV_FILE, 
+        ENV_PROD_FILE,
+        os.path.join("frontend", ENV_FILE),
+        os.path.join("frontend", ENV_PROD_FILE)
+    ]
     for target in files_to_update:
-        if not os.path.exists(target): continue
+        if not os.path.exists(target):
+            # Create the file if it's missing in frontend
+            if "frontend" in target:
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with open(target, "w") as f: f.write("")
+            else: continue
+            
         with open(target, "r") as f:
             lines = f.readlines()
         new_lines = []
@@ -106,6 +118,14 @@ def update_env_files(url):
         with open(target, "w") as f:
             f.writelines(new_lines)
         print(f"{Colors.OKCYAN}📝 Updated {target}{Colors.ENDC}")
+
+    # After updating the root files, copy them into the frontend directory
+    for env_name in [ENV_FILE, ENV_PROD_FILE]:
+        src = env_name
+        dst = os.path.join("frontend", env_name)
+        if os.path.exists(src):
+            shutil.copy2(src, dst)
+            print(f"{Colors.OKCYAN}🚀 Synced {src} -> {dst}{Colors.ENDC}")
 
 def catch_tunnel_url():
     """Monitor docker logs to catch the trycloudflare URL."""
@@ -214,6 +234,13 @@ def main():
     os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
     print(f"{Colors.HEADER}{Colors.BOLD}--- 🐱 Kitty-Help Unified Management System ---{Colors.ENDC}\n")
+
+    # Check for Auto Git Pull from .env
+    with open(ENV_FILE, "r") as f:
+        env_content = f.read()
+        if "AUTO_GIT_PULL=true" in env_content:
+            print_step("📥 Auto Git Pull enabled, updating repository...")
+            subprocess.run("git pull", shell=True)
 
     if args.obsidian:
         sync_obsidian()

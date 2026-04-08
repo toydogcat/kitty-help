@@ -24,6 +24,8 @@ dist-ssr/
 .env.production
 .env.local
 .env.*.local
+frontend/.env
+frontend/.env.production
 
 # Project Specific
 uploads/
