@@ -252,7 +252,20 @@ export const syncService = {
         await db.transaction('rw', [db.remarks, db.remarkItems], async () => {
              for (const c of remote.containers || []) {
                  await db.remarks.put({ ...c, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+                 
+                 // Also ensure nested items are in the remarkItems table for easier offline access
+                 if (c.items && Array.isArray(c.items)) {
+                     for (const it of c.items) {
+                         await db.remarkItems.put({
+                             ...it,
+                             containerId: c.id,
+                             syncStatus: 'synced',
+                             updatedAt: new Date().toISOString()
+                         });
+                     }
+                 }
              }
+             // Handle items that might be sent outside containers (if API does that)
              for (const it of remote.items || []) {
                  await db.remarkItems.put({ ...it, syncStatus: 'synced', updatedAt: new Date().toISOString() });
              }
@@ -276,9 +289,16 @@ export const syncService = {
         await db.sync_queue.add({ action: 'DELETE', entityType: 'remark', entityId: id, data: null, timestamp: Date.now() });
         this.processQueue();
     },
-    async addRemarkItem(data: any) {
+    async addRemarkItem(data: { containerId: string, logId: string, log?: any }) {
         const id = crypto.randomUUID();
-        await db.remarkItems.add({ ...data, id, sortOrder: 0, syncStatus: 'pending', updatedAt: new Date().toISOString() });
+        // data.log is provided from the UI (drag payload)
+        await db.remarkItems.add({ 
+            ...data, 
+            id, 
+            sortOrder: 0, 
+            syncStatus: 'pending', 
+            updatedAt: new Date().toISOString() 
+        });
         await db.sync_queue.add({ action: 'CREATE', entityType: 'remarkItem', entityId: id, data, timestamp: Date.now() });
         this.processQueue();
         return { id };

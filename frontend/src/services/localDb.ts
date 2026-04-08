@@ -69,6 +69,7 @@ export interface LocalRemark {
     name: string;
     content: string;
     isPinned: boolean;
+    items?: any[]; // Cached nested items from remote
     updatedAt: string;
     syncStatus: 'synced' | 'pending' | 'error';
 }
@@ -77,6 +78,7 @@ export interface LocalRemarkItem {
     id: string;
     containerId: string;
     logId: string;
+    log?: any; // Crucial for offline display
     sortOrder: number;
     updatedAt: string;
     syncStatus: 'synced' | 'pending' | 'error';

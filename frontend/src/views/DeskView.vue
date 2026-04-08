@@ -313,8 +313,14 @@ const openOriginal = async (item: any) => {
       try {
         const container = await db.remarks.get(item.refId);
         if (container) {
-            const items = await db.remarkItems.where('containerId').equals(item.refId).toArray();
-            remarkDetails.value = { ...container, items };
+            const localItems = await db.remarkItems.where('containerId').equals(item.refId).toArray();
+            const allItems = [...(container.items || [])];
+            localItems.forEach(li => {
+                if (!allItems.find(ai => ai.id === li.id)) {
+                    allItems.push(li);
+                }
+            });
+            remarkDetails.value = { ...container, items: allItems };
         } else {
             // Fallback sync if not found
             const data = await syncService.refreshRemarks();

@@ -155,15 +155,31 @@ const handleDropOnRemark = async (e: DragEvent, containerId: string) => {
   const payload = JSON.parse(raw);
   if (payload.type === 'media') {
     try {
-      await syncService.addRemarkItem({ containerId, logId: payload.data.id });
+      await syncService.addRemarkItem({ 
+        containerId, 
+        logId: payload.data.id,
+        log: payload.data 
+      });
     } catch (err) { alert("Failed to add to remark"); }
   }
 };
 
 const openRemarkModal = async (c: any) => {
   editingRemark.value = c;
-  const items = await db.remarkItems.where('containerId').equals(c.id).toArray();
-  remarkModalDetails.value = { ...c, items };
+  // Fetch detailed items from localDb
+  const localItems = await db.remarkItems.where('containerId').equals(c.id).toArray();
+  
+  // Mix synced items (from c.items) and local items
+  // This ensures that even if localDb.remarkItems is slow or missing some, 
+  // we show what we have in the container record.
+  const allItems = [...(c.items || [])];
+  localItems.forEach(li => {
+      if (!allItems.find(ai => ai.id === li.id)) {
+          allItems.push(li);
+      }
+  });
+
+  remarkModalDetails.value = { ...c, items: allItems };
   remarkEditBuffer.value = { title: c.name, content: c.content || '' };
   showRemarkModal.value = true;
 };
