@@ -175,6 +175,43 @@ func GetStorehouseItems(c *fiber.Ctx) error {
 		})
 	}
 
+	if (platform == "" || platform == "local") && query != "" {
+		// Only show local files if specifically requested or if there's a search query
+		// to avoid cluttering the main view with thousands of vault files
+		root := "/root/obsidian"
+		if _, err := os.Stat(root); err == nil {
+			filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+				if err != nil || info.IsDir() || !strings.HasSuffix(info.Name(), ".md") {
+					return nil
+				}
+				
+				rel, _ := filepath.Rel(root, path)
+				if query != "" && !strings.Contains(strings.ToLower(rel), strings.ToLower(query)) {
+					return nil
+				}
+
+				items = append(items, fiber.Map{
+					"id": rel, // Use relative path as ID
+					"file_id": rel,
+					"category": "document",
+					"title": info.Name(),
+					"caption": nil,
+					"notes": "Local Obsidian Note",
+					"source": "local",
+					"sender": "Obsidian",
+					"created_at": info.ModTime(),
+					"is_indexable": false,
+					"index_status": "not_indexed",
+				})
+
+				if len(items) >= limit + 20 { // Buffer limit
+					return filepath.SkipDir
+				}
+				return nil
+			})
+		}
+	}
+
 	return c.JSON(items)
 }
 
@@ -279,6 +316,28 @@ func GetFileProxy(c *fiber.Ctx) error {
 
 	if c.Get("If-None-Match") == fileID {
 		return c.SendStatus(304)
+	}
+
+	if platform == "local" {
+		root := "/root/obsidian"
+		fullPath := filepath.Join(root, fileID)
+		// Security check: ensure path is within root
+		if !strings.HasPrefix(filepath.Clean(fullPath), filepath.Clean(root)) {
+			return c.Status(403).JSON(fiber.Map{"error": "Forbidden path"})
+		}
+		
+		data, err := os.ReadFile(fullPath)
+		if err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "Local file not found"})
+		}
+		
+		c.Set("Content-Type", "text/markdown; charset=utf-8")
+		if c.Query("download") == "1" {
+			c.Set("Content-Disposition", "attachment; filename=" + filepath.Base(fullPath))
+		} else {
+			c.Set("Content-Disposition", "inline")
+		}
+		return c.Send(data)
 	}
 
 	bodyBytes, contentType, err := services.MediaManager.FetchAndCache(c.UserContext(), fileID, platform, width)

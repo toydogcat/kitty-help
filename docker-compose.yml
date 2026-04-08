@@ -18,6 +18,7 @@ services:
       - ./uploads:/root/uploads
       - ~/.kitty-help/workspace:/root/.kitty-help/workspace
       - ./dist:/root/dist
+      - ${LOCAL_OBSIDIAN_PATH}:/root/obsidian
 
   # ─────────────────────────────────────────────
   # Webhook Tunnel (Cloudflared)

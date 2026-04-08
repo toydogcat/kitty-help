@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
 import { apiService } from '../services/api';
+import { marked } from 'marked';
 
 const props = defineProps<{
   item: any | null;
@@ -13,13 +14,35 @@ const editingTitle = ref('');
 const editingNotes = ref('');
 const saving = ref(false);
 const indexing = ref(false);
+const markdownContent = ref('');
+const fetchingMarkdown = ref(false);
 
 watch(() => props.item, (newItem) => {
   if (newItem) {
     editingTitle.value = newItem.title || '';
     editingNotes.value = newItem.notes || '';
+    if (newItem.source === 'local' && (newItem.id.endsWith('.md') || newItem.category === 'document')) {
+      fetchMarkdown(newItem);
+    } else {
+      markdownContent.value = '';
+    }
   }
 }, { immediate: true });
+
+const fetchMarkdown = async (item: any) => {
+  fetchingMarkdown.value = true;
+  try {
+    const url = apiService.getStorehouseFileUrl(item.file_id, item.source);
+    const res = await fetch(url, { headers: { 'cf-skip-browser-warning': 'true' } });
+    const text = await res.text();
+    markdownContent.value = await marked(text);
+  } catch (err) {
+    console.error("Failed to fetch markdown:", err);
+    markdownContent.value = '<p class="error">無法載入筆記內容</p>';
+  } finally {
+    fetchingMarkdown.value = false;
+  }
+};
 
 const handleSave = async () => {
   if (!props.item) return;
@@ -100,6 +123,9 @@ const statusText = computed(() => {
                   <source :src="getFileUrl()" type="audio/mpeg">
                 </audio>
               </div>
+            </template>
+            <template v-else-if="item.source === 'local'">
+              <div class="markdown-preview" v-html="markdownContent"></div>
             </template>
             <template v-else>
               <div class="file-placeholder">
@@ -245,4 +271,15 @@ const statusText = computed(() => {
 
 .modal-fade-enter-active, .modal-fade-leave-active { transition: opacity 0.3s; }
 .modal-fade-enter-from, .modal-fade-leave-to { opacity: 0; }
+
+.markdown-preview {
+  width: 100%; height: 100%; padding: 2rem; overflow-y: auto;
+  background: #1e1e1e; color: #d4d4d4; font-family: 'Inter', sans-serif;
+  text-align: left;
+}
+.markdown-preview :deep(h1), .markdown-preview :deep(h2) { color: var(--primary-color); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.5rem; }
+.markdown-preview :deep(code) { background: rgba(255,255,255,0.1); padding: 0.2rem 0.4rem; border-radius: 4px; }
+.markdown-preview :deep(pre) { background: #000; padding: 1rem; border-radius: 8px; overflow-x: auto; }
+.markdown-preview :deep(img) { max-width: 100%; }
+.markdown-preview :deep(a) { color: var(--primary-color); }
 </style>

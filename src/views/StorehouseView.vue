@@ -151,6 +151,7 @@ const addToDesk = async (item: any) => {
             <option value="telegram">Telegram</option>
             <option value="discord">Discord</option>
             <option value="line">LINE</option>
+            <option value="local">本地筆記 (Obsidian)</option>
           </select>
         </div>
 
