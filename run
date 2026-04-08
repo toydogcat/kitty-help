@@ -1,0 +1,8 @@
+#!/bin/bash
+# Check if AUTO_GIT_PULL is true in .env
+if grep -q "AUTO_GIT_PULL=true" .env 2>/dev/null; then
+  echo "📥 Auto Git Pull enabled, updating repository..."
+  git pull
+fi
+
+conda run -n toby --no-capture-output python3 scripts/run.py "$@"
