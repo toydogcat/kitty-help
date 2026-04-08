@@ -68,8 +68,13 @@ func UpdateShelf(c *fiber.Ctx) error {
 	db, userClaims, err := getBestDB(c)
 	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
 
-	var s models.DeskShelf
-	if err := c.BodyParser(&s); err != nil {
+	// Use pointers to detect which fields were actually provided in JSON
+	var payload struct {
+		Name      *string `json:"name"`
+		Color     *string `json:"color"`
+		SortOrder *int    `json:"sortOrder"`
+	}
+	if err := c.BodyParser(&payload); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
@@ -81,9 +86,17 @@ func UpdateShelf(c *fiber.Ctx) error {
 		}
 	}
 
-	query := "UPDATE desk_shelves SET name = $1, color = $2, sort_order = $3 WHERE id = $4 AND user_id = $5"
-	_, err = db.Exec(context.Background(), query, s.Name, s.Color, s.SortOrder, id, dbUserID)
+	// Dynamic update using COALESCE to keep existing values if nil is passed
+	query := `
+		UPDATE desk_shelves 
+		SET name = COALESCE($1, name), 
+		    color = COALESCE($2, color), 
+		    sort_order = COALESCE($3, sort_order) 
+		WHERE id = $4 AND user_id = $5`
+	
+	_, err = db.Exec(context.Background(), query, payload.Name, payload.Color, payload.SortOrder, id, dbUserID)
 	if err != nil {
+		log.Printf("UpdateShelf error: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Update failed"})
 	}
 	return c.JSON(fiber.Map{"success": true})

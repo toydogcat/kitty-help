@@ -203,9 +203,9 @@ const onShelfDrop = async (targetId: string | null) => {
   shelves.value = newShelves;
 
   try {
-    // Sync all orders to backend
+    // Sync all orders to backend - include name and color to avoid clearing them
     await Promise.all(newShelves.map((s, idx) => 
-      apiService.updateShelf(s.id, { sortOrder: idx })
+      apiService.updateShelf(s.id, { name: s.name, color: s.color, sortOrder: idx })
     ));
   } catch (err) {
     console.error("Reorder failed:", err);
