@@ -11,6 +11,7 @@ type BotChannel interface {
 	Stop(ctx context.Context) error
 	IsRunning() bool
 	SendMessage(targetID string, text string) error
+	SendMedia(targetID string, mediaType string, filePath string, caption string) error
 }
 
 type Manager struct {

@@ -294,3 +294,21 @@ func (d *DiscordBot) SendMessage(targetID string, text string) error {
 	_, err := d.session.ChannelMessageSend(targetID, text)
 	return err
 }
+
+func (d *DiscordBot) SendMedia(targetID string, mediaType string, filePath string, caption string) error {
+	f, err := os.Open(filePath)
+	if err != nil { return err }
+	defer f.Close()
+
+	_, err = d.session.ChannelMessageSendComplex(targetID, &discordgo.MessageSend{
+		Content: caption,
+		Files: []*discordgo.File{
+			{
+				Name:        filepath.Base(filePath),
+				ContentType: "", // Discord auto-detects
+				Reader:      f,
+			},
+		},
+	})
+	return err
+}

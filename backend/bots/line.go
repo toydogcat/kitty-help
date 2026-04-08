@@ -10,6 +10,7 @@ import (
 	"log"
 	"time"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -352,4 +353,27 @@ func (l *LineBot) Reply(replyToken, text string) {
 func (l *LineBot) SendMessage(targetID string, text string) error {
 	_, err := l.Bot.PushMessage(targetID, linebot.NewTextMessage(text)).Do()
 	return err
+}
+
+func (l *LineBot) SendMedia(targetID string, mediaType string, filePath string, caption string) error {
+	baseURL := l.GetWebhookURL()
+	fileURL := fmt.Sprintf("%s/uploads/%s", baseURL, filepath.Base(filePath))
+
+	var msg linebot.SendingMessage
+	if mediaType == "photo" || mediaType == "image" {
+		msg = linebot.NewImageMessage(fileURL, fileURL)
+	} else if mediaType == "video" {
+		msg = linebot.NewVideoMessage(fileURL, fileURL)
+	} else {
+		// Fallback for generic files if NewFileMessage has issues
+		msg = linebot.NewTextMessage(fmt.Sprintf("📄 傳送檔案: %s\n🔗 連結: %s", filepath.Base(filePath), fileURL))
+	}
+
+	_, err := l.Bot.PushMessage(targetID, msg).Do()
+	if err != nil { return err }
+
+	if caption != "" && mediaType != "text" {
+		_, _ = l.Bot.PushMessage(targetID, linebot.NewTextMessage(caption)).Do()
+	}
+	return nil
 }

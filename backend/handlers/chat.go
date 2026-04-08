@@ -172,15 +172,24 @@ func SendBotMessage(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "Bot for this platform not found"})
 	}
 
-	// 1. Resolve Default Target ID
+	// 1. Resolve Target ID (Lookup DB first, then fallback to ENV)
 	if targetID == "" {
-		switch platform {
-		case "telegram":
-			targetID = os.Getenv("TELEGRAM_STOREHOUSE_CHAT_ID")
-		case "discord":
-			targetID = os.Getenv("DISCORD_ADMIN_CHANNEL_ID")
-		case "line":
-			targetID = os.Getenv("ADMIN_LINE_ID")
+		claims, ok := c.Locals("user").(*Claims)
+		if ok && claims != nil {
+			err := database.LocalDB.QueryRow(context.Background(),
+				"SELECT account_id FROM bot_authorized_users WHERE user_id = $1 AND platform = $2",
+				claims.ID, platform).Scan(&targetID)
+			if err != nil {
+				fmt.Printf("[BOT SEND] No DB link found for User %s on %s, using ENV fallback\n", claims.ID, platform)
+				switch platform {
+				case "telegram":
+					targetID = os.Getenv("TELEGRAM_STOREHOUSE_CHAT_ID")
+				case "discord":
+					targetID = os.Getenv("DISCORD_ADMIN_CHANNEL_ID")
+				case "line":
+					targetID = os.Getenv("ADMIN_LINE_ID")
+				}
+			}
 		}
 	}
 
@@ -192,30 +201,37 @@ func SendBotMessage(c *fiber.Ctx) error {
 	file, err := c.FormFile("file")
 	var mediaID *string = nil
 	msgType := "text"
+	var tempPath string
 
 	if err == nil {
-		// Save file to uploads/
-		tempPath := filepath.Join("..", "uploads", file.Filename)
+		tempPath = filepath.Join("..", "uploads", file.Filename)
 		if err := c.SaveFile(file, tempPath); err == nil {
-			// For now, if it's Telegram, we can try to use UploadMedia if implemented
-			// But for simplicity in this MVP, we just send the text link or record it
 			msgType = "media"
-			// (Future: Actually upload to TG/Discord storage)
+			// Record it tentatively as an ID-less archive?
+			// Actually we just use the name for now
 		}
 	}
 
 	// 3. Send via Bot
-	err = botIf.SendMessage(targetID, content)
+	if msgType == "media" {
+		err = botIf.SendMedia(targetID, "document", tempPath, content)
+	} else {
+		err = botIf.SendMessage(targetID, content)
+	}
+
 	if err != nil {
+		fmt.Printf("[BOT SEND FAIL] %s send error: %v\n", platform, err)
 		return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Send failed: %v", err)})
 	}
 
 	// 4. Log to DB
-	// We use a dummy ID for the bot sender (or get bot's own ID)
 	botName := "KittyBot (" + platform + ")"
-	_, _ = database.LocalDB.Exec(context.Background(),
+	_, err = database.LocalDB.Exec(context.Background(),
 		"INSERT INTO chat_logs (platform, sender_id, sender_name, content, msg_type, media_id) VALUES ($1, $2, $3, $4, $5, $6)",
 		platform, "bot-api", botName, content, msgType, mediaID)
+	if err != nil {
+		fmt.Printf("[DB ERROR] Log chat failed: %v\n", err)
+	}
 
-	return c.JSON(fiber.Map{"status": "success", "message": "Sent to " + platform})
+	return c.JSON(fiber.Map{"status": "success", "message": "Sent to " + platform + " (" + targetID + ")"})
 }

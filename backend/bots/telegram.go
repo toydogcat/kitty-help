@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"strconv"
@@ -352,5 +353,17 @@ func (t *TelegramBot) SendMessage(targetID string, text string) error {
 		return err
 	}
 	_, err = t.bot.SendMessage(context.Background(), tu.Message(tu.ID(chatID), text))
+	return err
+}
+
+func (t *TelegramBot) SendMedia(targetID string, mediaType string, filePath string, caption string) error {
+	chatID, err := strconv.ParseInt(targetID, 10, 64)
+	if err != nil { return err }
+
+	f, err := os.Open(filePath)
+	if err != nil { return err }
+	defer f.Close()
+
+	_, err = t.UploadMedia(chatID, f, filepath.Base(filePath), mediaType, caption)
 	return err
 }
