@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 
 import Navbar from './components/Navbar.vue';
+import TwoFactorAuthModal from './components/TwoFactorAuthModal.vue';
 
 // Initialize theme
 useTheme();
@@ -106,6 +107,13 @@ onMounted(async () => {
       try {
         const idToken = await curr.getIdToken();
         const backendAuth = await apiService.verifyToken(idToken);
+        
+        if (backendAuth.needs2fa) {
+          pending2FA.value = { email: curr.email || '', token: idToken };
+          show2FAModal.value = true;
+          return; // Wait for 2FA
+        }
+
         userRole.value = backendAuth.user.role || 'user';
         localStorage.setItem('kitty_user_role', userRole.value);
         userName.value = backendAuth.user.name || curr.displayName || '';
@@ -151,6 +159,16 @@ onMounted(async () => {
   resetIdleTimer();
 });
 
+const show2FAModal = ref(false);
+const pending2FA = ref<{ email: string; token: string } | null>(null);
+
+const on2FAVerified = (newToken: string) => {
+    show2FAModal.value = false;
+    setAuthToken(newToken);
+    // Reload role/name from token if needed, or just let interceptor handle it
+    window.location.reload(); 
+};
+
 const loginAsAdmin = async () => {
   try {
     const result = await signInWithPopup(auth, googleProvider);
@@ -158,6 +176,12 @@ const loginAsAdmin = async () => {
       const idToken = await result.user.getIdToken();
       const backendAuth = await apiService.verifyToken(idToken);
       
+      if (backendAuth.needs2fa) {
+        pending2FA.value = { email: result.user.email || '', token: idToken };
+        show2FAModal.value = true;
+        return;
+      }
+
       adminUser.value = result.user;
       userRole.value = backendAuth.user.role || 'user';
       localStorage.setItem('kitty_user_role', userRole.value);
@@ -345,6 +369,13 @@ const isTobyUI = computed(() => {
         <div class="loader-text">Connecting to kitty-help backend...</div>
       </div>
     </main>
+    
+    <TwoFactorAuthModal 
+        v-if="show2FAModal" 
+        :email="pending2FA?.email || ''"
+        @verified="on2FAVerified"
+        @cancel="show2FAModal = false; logout()"
+    />
   </div>
 </template>
 

@@ -87,12 +87,45 @@ func VerifyFirebaseToken(c *fiber.Ctx) error {
 		RegisteredClaims: jwt.RegisteredClaims{ Subject: dbID, ExpiresAt: jwt.NewNumericDate(expirationTime) },
 	}
 
+	// SECURITY UPGRADE: Login Logging & Suspicious Alert
+	isNewLogin := false
+	if database.LocalDB != nil {
+		ip := c.IP()
+		ua := c.Get("User-Agent")
+		
+		// 1. Check if known
+		var exists bool
+		database.LocalDB.QueryRow(context.Background(), 
+			"SELECT EXISTS(SELECT 1 FROM user_login_logs WHERE user_id = $1 AND (ip_address = $2 OR device_id = $3))", 
+			dbID, ip, req.DeviceID).Scan(&exists)
+		
+		if !exists { isNewLogin = true }
+
+		// 2. Log always
+		database.LocalDB.Exec(context.Background(), 
+			"INSERT INTO user_login_logs (user_id, ip_address, user_agent, device_id) VALUES ($1, $2, $3, $4)",
+			dbID, ip, ua, req.DeviceID)
+	}
+
+	// Force 2FA if new device for Admin
+	needs2FA := false
+	if (role == "superadmin" || role == "toby") && isNewLogin {
+		// Check if totp enabled
+		var totpEnabled bool
+		database.LocalDB.QueryRow(context.Background(), "SELECT totp_enabled FROM users WHERE id = $1", dbID).Scan(&totpEnabled)
+		if totpEnabled {
+			needs2FA = true
+			log.Printf("🚨 Suspicious Login Detected for %s from new device/IP (%s). Forcing 2FA.", resolvedEmail, c.IP())
+		}
+	}
+
 	myToken := jwt.NewWithClaims(jwt.SigningMethodHS256, myClaims)
 	tokenString, _ := myToken.SignedString(getJWTSecret())
 
 	return c.JSON(fiber.Map{
 		"token": tokenString,
-		"user": fiber.Map{ "id": dbID, "email": email, "role": role, "name": name },
+		"user": fiber.Map{ "id": dbID, "email": resolvedEmail, "role": role, "name": name },
+		"needs2fa": needs2FA,
 	})
 }
 
