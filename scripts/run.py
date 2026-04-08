@@ -36,9 +36,18 @@ def print_step(msg):
 def run_command(cmd, msg=None):
     if msg: print_step(msg)
     try:
-        subprocess.run(cmd, shell=True, check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"{Colors.FAIL}[ERROR]{Colors.ENDC} Command failed: {cmd}")
+        # Use Popen to stream output line by line for better feedback
+        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        for line in process.stdout:
+            print(f"  {line}", end='')
+        process.wait()
+        if process.returncode != 0:
+            print(f"{Colors.FAIL}[ERROR]{Colors.ENDC} Command exited with code {process.returncode}")
+            return False
+        return True
+    except Exception as e:
+        print(f"{Colors.FAIL}[ERROR]{Colors.ENDC} Execution failed: {e}")
+        return False
 
 def fix_epub_file(src_path):
     """Sanitize EPUB: Remove scripts, inline events, and broken res:/// font links."""
