@@ -107,18 +107,23 @@ const getStorehouseUrl = (mediaId: string, platform?: string) => {
 const fetchRecentMessages = async () => {
   loading.value = true;
   try {
-    const [msgData, remarkData] = await Promise.all([
+    const results = await Promise.all([
       apiService.getChatLogs(filters.value.platform, filters.value.q, filters.value.startDate, filters.value.endDate),
       apiService.getRemarks()
     ]);
-    recentMessages.value = msgData.slice(0, filters.value.limit);
+    
+    recentMessages.value = results[0].slice(0, filters.value.limit);
+    const remarkData = results[1];
     remarkContainers.value = remarkData.containers || [];
     
-    // Explicitly use remarkData to avoid TS6198
-    console.log(`Fetched ${recentMessages.value.length} messages and ${remarkContainers.value.length} remarks.`);
-
-    remarkData.containers?.forEach((c: any) => { if (!remarkEditModes.value[c.id]) remarkEditModes.value[c.id] = 'preview'; });
-  } catch (err) { console.error(err); } finally { loading.value = false; }
+    remarkData.containers?.forEach((c: any) => { 
+      if (!remarkEditModes.value[c.id]) remarkEditModes.value[c.id] = 'preview'; 
+    });
+  } catch (err) { 
+    console.error("Fetch failed:", err); 
+  } finally { 
+    loading.value = false; 
+  }
 };
 
 onMounted(() => {
