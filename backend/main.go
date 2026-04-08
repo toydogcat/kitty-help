@@ -65,9 +65,15 @@ func main() {
 		WriteTimeout: 120 * time.Second,
 	})
 
-	// 🛡️ Aggressive CORS Policy for Cloudflare / Firebase
+	// 🛡️ [Dynamic CORS] Support Cloudflare Tunnels and Firebase Hosting
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:     "https://kitty-help.web.app, https://kitty-help.firebaseapp.com, http://localhost:5173",
+		AllowOrigins: "https://kitty-help.web.app, https://kitty-help.firebaseapp.com, http://localhost:5173",
+		AllowOriginsFunc: func(origin string) bool {
+			return strings.HasSuffix(origin, ".trycloudflare.com") || 
+				   strings.HasSuffix(origin, ".web.app") || 
+				   strings.HasSuffix(origin, ".firebaseapp.com") ||
+				   origin == "https://kitty-help.web.app"
+		},
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, X-Refresh-Token, cf-skip-browser-warning, ngrok-skip-browser-warning, X-Requested-With",
 		ExposeHeaders:    "X-Refresh-Token, Content-Disposition",
