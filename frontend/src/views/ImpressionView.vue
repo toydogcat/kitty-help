@@ -127,7 +127,6 @@ const initGraph = async () => {
         
         if (params.nodes.length > 0) {
             const nid = params.nodes[0];
-            const node = nodes.value.get(nid);
             const isH = highlightedNodes.value.has(nid);
             
             if (isH) {
@@ -141,7 +140,6 @@ const initGraph = async () => {
             handleNodeClick(nid);
         } else if (params.edges.length > 0) {
             const eid = params.edges[0];
-            const edge = edges.value.get(eid);
             const isH = highlightedEdges.value.has(eid);
             
             if (isH) {
@@ -342,7 +340,7 @@ const performQuickLink = async (src: string, tgt: string) => {
     } catch (e) { console.error(e); resetSelection(); }
 };
 
-watch(isPhysicsEnabled, (newVal) => {
+watch(isPhysicsEnabled, () => {
     if (network.value) {
         // We always keep physics enabled on the network level to allow selective physics
         network.value.setOptions({ physics: { enabled: true } }); 
