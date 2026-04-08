@@ -170,6 +170,7 @@ func main() {
 	protected.Delete("/bookcase/:id", handlers.RemoveBook)
 	protected.Get("/bookcase/available", handlers.GetAvailableBooks)
 	protected.Put("/bookcase/:id/folder", handlers.UpdateBookFolder)
+	protected.Put("/bookcase/:id/sort-order", handlers.UpdateBookSortOrder)
 	
 	// Bookcase Notes (One book, multiple notes)
 	protected.Get("/bookcase/:id/notes", handlers.GetBookNotes)

@@ -332,6 +332,7 @@ func EnsureTables() {
 			category TEXT DEFAULT 'Book',
 			folder TEXT DEFAULT '', -- Grouping for books
 			notes TEXT DEFAULT '', -- Legacy/Single note fallback
+			sort_order INT DEFAULT 0,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(user_id, store_id)
@@ -404,6 +405,7 @@ func EnsureTables() {
 				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 			)`,
+			`ALTER TABLE bookcase ADD COLUMN IF NOT EXISTS sort_order INT DEFAULT 0`,
 		}
 		for _, m := range migrations {
 			LocalDB.Exec(ctx, m)

@@ -263,13 +263,36 @@ const onDropIntoFolder = async (event: DragEvent, folderName: string) => {
   }
 };
 
+const moveUp = async (book: any, folderBooks: any[]) => {
+  const index = folderBooks.findIndex(b => b.id === book.id);
+  if (index <= 0) return;
+  
+  const prevBook = folderBooks[index - 1];
+  const newOrder = (prevBook.sortOrder || 0) - 1;
+  await syncService.moveBook(book.id, newOrder);
+};
+
+const moveDown = async (book: any, folderBooks: any[]) => {
+  const index = folderBooks.findIndex(b => b.id === book.id);
+  if (index < 0 || index >= folderBooks.length - 1) return;
+  
+  const nextBook = folderBooks[index + 1];
+  const newOrder = (nextBook.sortOrder || 0) + 1;
+  await syncService.moveBook(book.id, newOrder);
+};
+
 const folders = computed(() => {
   const groups: Record<string, any[]> = { 'Uncategorized': [] };
   customFolders.value.forEach(f => { if (!groups[f]) groups[f] = []; });
-  books.value.forEach(book => {
+  
+  // Sort all books by sortOrder before grouping
+  const sortedBooks = [...books.value].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+
+  sortedBooks.forEach(book => {
     if (searchTerm.value && !book.title?.toLowerCase().includes(searchTerm.value.toLowerCase())) return;
     const f = book.folder || 'Uncategorized';
-    if (!groups[f]) groups[f] = []; groups[f].push(book);
+    if (!groups[f]) groups[f] = []; 
+    groups[f].push(book);
   });
   return groups;
 });
@@ -298,7 +321,15 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
           </div>
           <div v-show="!collapsedFolders.has(String(folderName))" class="folder-content">
             <div v-for="book in folderBooks" :key="book.id" class="book-item" :class="{ active: activeBook?.id === book.id }" draggable="true" @dragstart="onDragStart($event, book.id)" @click="selectBook(book)">
-              <div class="item-icon">🔖</div><div class="item-info"><div class="item-title">{{ book.title }}</div><div class="item-meta">{{ book.category }}</div></div>
+              <div class="item-icon">🔖</div>
+              <div class="item-info">
+                <div class="item-title">{{ book.title }}</div>
+                <div class="item-meta">{{ book.category }}</div>
+              </div>
+              <div class="sort-actions" @click.stop>
+                <button @click="moveUp(book, folderBooks)">▴</button>
+                <button @click="moveDown(book, folderBooks)">▾</button>
+              </div>
             </div>
           </div>
         </div>
@@ -384,6 +415,10 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 .book-item.active { background: #d977061a; border: 1px solid #d9770633; color: #fff; }
 .item-title { font-size: 0.8rem; text-align: left; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
 .item-meta { font-size: 0.6rem; opacity: 0.4; }
+.sort-actions { display: none; flex-direction: column; gap: 0; margin-left: auto; }
+.book-item:hover .sort-actions { display: flex; }
+.sort-actions button { background: transparent; border: none; color: #555; cursor: pointer; padding: 0 4px; font-size: 0.9rem; line-height: 1; }
+.sort-actions button:hover { color: #fbbf24; }
 .workspace { flex: 1; display: flex; flex-direction: column; }
 .active-book-info { display: flex; align-items: center; gap: 0.8rem; overflow: hidden; flex: 1; }
 .active-book-info h2 { font-size: 1.1rem; color: #fff; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

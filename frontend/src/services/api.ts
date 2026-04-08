@@ -523,6 +523,10 @@ export const apiService = {
     const res = await axios.put(`${API_BASE}/bookcase/${id}/folder`, { folder });
     return res.data;
   },
+  async updateBookSortOrder(id: string, sortOrder: number) {
+    const res = await axios.put(`${API_BASE}/bookcase/${id}/sort-order`, { sortOrder });
+    return res.data;
+  },
   // Bookcase Notes (One book, multiple notes)
   async getBookNotes(bookId: string) {
     const res = await axios.get(`${API_BASE}/bookcase/${bookId}/notes`);

@@ -188,6 +188,11 @@ export const syncService = {
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'book', entityId: id, data: { folder }, timestamp: Date.now() });
         this.processQueue();
     },
+    async moveBook(id: string, sortOrder: number) {
+        await db.bookcase.update(id, { sortOrder, syncStatus: 'pending' });
+        await db.sync_queue.add({ action: 'UPDATE', entityType: 'book', entityId: id, data: { sortOrder }, timestamp: Date.now() });
+        this.processQueue();
+    },
     async removeBook(id: string) {
         await db.bookcase.delete(id);
         await db.sync_queue.add({ action: 'DELETE', entityType: 'book', entityId: id, data: null, timestamp: Date.now() });
@@ -363,7 +368,12 @@ export const syncService = {
                         const res = await apiService.addBookToBookcase(action.data);
                         await db.bookcase.update(action.entityId, { id: res.id, syncStatus: 'synced' });
                     } else if (action.action === 'UPDATE') {
-                        await apiService.updateBookFolder(action.entityId, action.data.folder);
+                        if (action.data.folder !== undefined) {
+                            await apiService.updateBookFolder(action.entityId, action.data.folder);
+                        }
+                        if (action.data.sortOrder !== undefined) {
+                            await apiService.updateBookSortOrder(action.entityId, action.data.sortOrder);
+                        }
                         await db.bookcase.update(action.entityId, { syncStatus: 'synced' });
                     } else if (action.action === 'DELETE') {
                         await apiService.removeBook(action.entityId);
@@ -403,7 +413,10 @@ export const syncService = {
                 break; 
             }
         }
-    },
+    } finally {
+        this.isProcessing = false;
+    }
+},
 
     async purgeDatabase() {
         if (!confirm("🚨 警告：這將清除所有本地快取並重新與伺服器同步。尚未同步的更改將會遺失。確定要執行嗎？")) return;

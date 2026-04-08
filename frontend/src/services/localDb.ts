@@ -49,6 +49,7 @@ export interface LocalBook {
     title: string;
     category: string;
     folder: string;
+    sortOrder: number;
     notes?: string;
     updatedAt: string;
     syncStatus: 'synced' | 'pending' | 'error';
@@ -113,12 +114,12 @@ export class EverSyncDatabase extends Dexie {
 
     constructor() {
         super('EverSyncDB');
-        this.version(4).stores({
+        this.version(5).stores({
             snippets: 'id, parentId, name, syncStatus',
             bookmarks: 'id, parentId, title, url, syncStatus',
             shelves: 'id, name, sortOrder, syncStatus',
             deskItems: 'id, refId, shelfId, sortOrder, syncStatus',
-            bookcase: 'id, storeId, title, folder, syncStatus',
+            bookcase: 'id, storeId, title, folder, sortOrder, syncStatus',
             bookNotes: 'id, bookId, title, syncStatus',
             remarks: 'id, name, isPinned, syncStatus',
             remarkItems: 'id, containerId, logId, syncStatus',
