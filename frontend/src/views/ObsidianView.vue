@@ -167,6 +167,9 @@ onMounted(() => {
   </header>
 
   <div class="layout-container">
+    <!-- Backdrop for mobile -->
+    <div v-if="showExplorer" class="mobile-backdrop" @click="showExplorer = false"></div>
+
     <!-- File List -->
     <aside class="file-browser card glow" :class="{ open: showExplorer }">
         <div v-if="loading" class="loader">
@@ -290,12 +293,28 @@ onMounted(() => {
     z-index: 100; 
     background: #1a1a20;
     transition: transform 0.3s ease;
-    box-shadow: 10px 0 30px rgba(0,0,0,0.5);
+    box-shadow: 10px 0 30px rgba(0,0,0,0.8);
     display: block !important;
+    background: #0d0d12 !important; /* Pure Dark Opaque */
   }
   /* If explorer is closed, slide it out */
   .file-browser:not(.open) {
     transform: translateX(-100%);
+  }
+}
+
+.mobile-backdrop {
+  display: none;
+}
+
+@media (max-width: 850px) {
+  .mobile-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    backdrop-filter: blur(4px);
+    z-index: 90;
   }
 }
 
