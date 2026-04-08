@@ -416,6 +416,18 @@ export const syncService = {
                 break; 
             }
         }
+    },
+
+    async purgeDatabase() {
+        if (!confirm("🚨 警告：這將清除所有本地快取並重新與伺服器同步。尚未同步的更改將會遺失。確定要執行嗎？")) return;
+        try {
+            await db.delete();
+            localStorage.clear();
+            window.location.reload();
+        } catch (err) {
+            console.error("Purge failed:", err);
+            alert("清除失敗，請嘗試手動清理瀏覽器快取。");
+        }
     }
 };
 

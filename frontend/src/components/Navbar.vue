@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useSyncStatus } from '../composables/useSyncStatus';
+import { syncService } from '../services/syncService';
 
 const { pendingCount } = useSyncStatus();
 
@@ -16,7 +17,6 @@ const route = useRoute();
 const navItems = computed(() => {
   const role = props.userRole.toLowerCase();
   
-  // 1. Base Items (User+)
   const items = [
     { name: 'home', label: 'Home', icon: '🏠', path: '/' },
   ];
@@ -25,25 +25,21 @@ const navItems = computed(() => {
     items.push({ name: 'login', label: 'Login', icon: '🔑', path: '/login_trigger' });
   }
 
-  // Everyone above visitor sees Chat
   if (role !== 'visitor') {
     items.push({ name: 'chat', label: 'Chat', icon: '💬', path: '/chat' });
   }
 
-  // 2. VIP level items (VIP, Admin, SuperAdmin)
   if (['vip', 'admin', 'superadmin', 'toby'].includes(role)) {
     items.push({ name: 'impression', label: 'Impress', icon: '🧠', path: '/impression' });
     items.push({ name: 'personal', label: 'Personal', icon: '📋', path: '/personal' });
     items.push({ name: 'desk', label: 'Desk', icon: '🖥️', path: '/desk' });
   }
 
-  // 3. Admin level items (Admin, SuperAdmin)
   if (['admin', 'superadmin', 'toby'].includes(role)) {
     items.push({ name: 'storehouse', label: 'Store', icon: '📦', path: '/storehouse' });
     items.push({ name: 'obsidian', label: 'Vault', icon: '📑', path: '/obsidian' });
   }
 
-  // 4. SuperAdmin level items (SuperAdmin Only)
   if (role === 'superadmin' || role === 'toby') {
     items.push({ name: 'admin', label: 'Admin', icon: '⚙️', path: '/admin' });
   }
@@ -61,6 +57,10 @@ const navigate = (path: string) => {
     return;
   }
   router.push(path);
+};
+
+const emergencyReset = async () => {
+    await syncService.purgeDatabase();
 };
 </script>
 
@@ -80,6 +80,10 @@ const navigate = (path: string) => {
     <div v-if="pendingCount > 0" class="sync-status-floating" :title="`待同步項目: ${pendingCount}`">
       <span class="sync-icon">🔄</span>
       <span class="sync-count">{{ pendingCount }}</span>
+      <button @click="emergencyReset" class="emergency-btn" title="緊急重置本地資料">🆘</button>
+    </div>
+    <div v-else class="emergency-sync-static">
+       <button @click="emergencyReset" class="emergency-btn-small" title="重置本地資料">🆘</button>
     </div>
   </nav>
 </template>
@@ -147,15 +151,37 @@ const navigate = (path: string) => {
 
 .sync-status-floating {
   position: absolute;
-  right: -60px; top: 50%;
+  right: -80px; top: 50%;
   transform: translateY(-50%);
   display: flex; align-items: center; gap: 0.5rem;
   background: rgba(var(--primary-rgb), 0.2);
   border: 1px solid var(--primary-color);
-  padding: 0.5rem 1rem; border-radius: 100px;
+  padding: 0.5rem 0.8rem; border-radius: 100px;
   color: white; font-weight: bold; font-size: 0.9rem;
   backdrop-filter: blur(10px);
   animation: slideIn 0.3s ease;
+  z-index: 1001;
+}
+
+.emergency-btn, .emergency-btn-small {
+  background: rgba(255, 0, 0, 0.2);
+  border: 1px solid rgba(255, 0, 0, 0.4);
+  padding: 2px 6px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+
+.emergency-btn:hover, .emergency-btn-small:hover {
+  background: red;
+  transform: scale(1.2);
+}
+
+.emergency-sync-static {
+  position: absolute;
+  right: -40px; top: 50%;
+  transform: translateY(-50%);
 }
 
 .sync-icon {
