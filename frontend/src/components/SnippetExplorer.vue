@@ -352,9 +352,12 @@ const handleReorder = async (data: { targetNode: any, position: 'before' | 'afte
     try {
         loading.value = true;
         const parentId = target.parentId;
-        const siblings = allSnippets.value
+        const siblings = [...allSnippets.value]
             .filter(s => s.parentId === parentId && s.id !== draggedItem.value.id)
             .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+        
+        const targetIdx = siblings.findIndex(s => s.id === target.id);
+        const insertIdx = data.position === 'before' ? targetIdx : targetIdx + 1;
 
         // Sanitize dragged item
         const cleanDragged = {
@@ -364,27 +367,23 @@ const handleReorder = async (data: { targetNode: any, position: 'before' | 'afte
             isFolder: draggedItem.value.isFolder,
             parentId: parentId
         };
-        
+
         siblings.splice(insertIdx, 0, cleanDragged as any);
 
         const updates = [];
         for (let i = 0; i < siblings.length; i++) {
             const node = siblings[i];
-            if (node.sortOrder !== i || node.id === cleanDragged.id) {
-                const updateData = {
-                    name: node.name,
-                    content: node.content,
-                    isFolder: node.isFolder,
-                    parentId: node.parentId,
-                    sortOrder: i
-                };
-                updates.push(syncService.updateSnippet(node.id, updateData));
-            }
+            const updateData = {
+                name: node.name,
+                content: node.content,
+                isFolder: node.isFolder,
+                parentId: node.parentId,
+                sortOrder: i
+            };
+            updates.push(syncService.updateSnippet(node.id, updateData));
         }
 
-        if (updates.length > 0) {
-            await Promise.all(updates);
-        }
+        await Promise.all(updates);
         await fetchData();
     } catch (err) {
         console.error("Reorder failed:", err);
