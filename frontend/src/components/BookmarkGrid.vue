@@ -116,7 +116,7 @@ const treeData = computed(() => {
   
   items.forEach(b => map[b.id] = b);
   items.forEach(b => {
-    if (b.parentId && map[b.parentId]) {
+    if (b.parentId && b.parentId !== 'root' && map[b.parentId]) {
       map[b.parentId].children.push(b);
     } else {
       roots.push(b);
