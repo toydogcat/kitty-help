@@ -1,7 +1,8 @@
 import { apiService } from './api';
 import { db, type LocalSnippet } from './localDb';
+import { reactive } from 'vue';
 
-export const syncService = {
+export const syncService = reactive({
     // Snippets Methods (EverSync Enhanced)
     async getSnippets(parentId: string | null = null) {
         const pid = parentId || 'root';
@@ -311,3 +312,144 @@ export const syncService = {
     },
 
     syncTimer: null as any,
+    isProcessing: false,
+
+    async processQueue() {
+        if (this.isProcessing) return;
+        
+        const actions = await db.sync_queue.toArray();
+        if (actions.length === 0) return;
+
+        this.isProcessing = true;
+        console.log(`🔄 EverSync: Processing ${actions.length} pending actions...`);
+
+        try {
+            for (const action of actions) {
+                try {
+                if (action.entityType === 'snippet') {
+                    if (action.action === 'CREATE') {
+                        const res = await apiService.createSnippet(action.data);
+                        await db.snippets.update(action.entityId, { id: res.id, syncStatus: 'synced' });
+                    } else if (action.action === 'UPDATE') {
+                        await apiService.updateSnippet(action.entityId, action.data);
+                        await db.snippets.update(action.entityId, { syncStatus: 'synced' });
+                    } else if (action.action === 'DELETE') {
+                        await apiService.deleteSnippet(action.entityId);
+                    }
+                } else if (action.entityType === 'bookmark') {
+                    if (action.action === 'CREATE') {
+                        const res = await apiService.addBookmark(action.data);
+                        await db.bookmarks.update(action.entityId, { id: res.id, syncStatus: 'synced' });
+                    } else if (action.action === 'UPDATE') {
+                        await apiService.updateBookmark(action.entityId, action.data);
+                        await db.bookmarks.update(action.entityId, { syncStatus: 'synced' });
+                    } else if (action.action === 'DELETE') {
+                        await apiService.deleteBookmark(action.entityId);
+                    }
+                } else if (action.entityType === 'shelf') {
+                    if (action.action === 'CREATE') {
+                        const res = await apiService.createShelf(action.data);
+                        await db.shelves.update(action.entityId, { id: res.id, syncStatus: 'synced' });
+                    } else if (action.action === 'UPDATE') {
+                        await apiService.updateShelf(action.entityId, action.data);
+                        await db.shelves.update(action.entityId, { syncStatus: 'synced' });
+                    } else if (action.action === 'DELETE') {
+                        await apiService.deleteShelf(action.entityId);
+                    }
+                } else if (action.entityType === 'deskItem') {
+                    if (action.action === 'CREATE') {
+                        const res = await apiService.addDeskItem(action.data);
+                        await db.deskItems.update(action.entityId, { id: res.id, syncStatus: 'synced' });
+                    } else if (action.action === 'UPDATE') {
+                        await apiService.updateDeskItem(action.entityId, action.data);
+                        await db.deskItems.update(action.entityId, { syncStatus: 'synced' });
+                    } else if (action.action === 'DELETE') {
+                        await apiService.deleteDeskItem(action.entityId);
+                    }
+                } else if (action.entityType === 'book') {
+                    if (action.action === 'CREATE') {
+                        const res = await apiService.addBookToBookcase(action.data);
+                        await db.bookcase.update(action.entityId, { id: res.id, syncStatus: 'synced' });
+                    } else if (action.action === 'UPDATE') {
+                        if (action.data.folder !== undefined) {
+                            await apiService.updateBookFolder(action.entityId, action.data.folder);
+                        }
+                        if (action.data.sortOrder !== undefined) {
+                            await apiService.updateBookSortOrder(action.entityId, action.data.sortOrder);
+                        }
+                        await db.bookcase.update(action.entityId, { syncStatus: 'synced' });
+                    } else if (action.action === 'DELETE') {
+                        await apiService.removeBook(action.entityId);
+                    }
+                } else if (action.entityType === 'bookNote') {
+                    if (action.action === 'CREATE') {
+                        const res = await apiService.addBookNote(action.data.bookId, action.data);
+                        await db.bookNotes.update(action.entityId, { id: res.id, syncStatus: 'synced' });
+                    } else if (action.action === 'UPDATE') {
+                        await apiService.updateBookNote(action.entityId, action.data);
+                        await db.bookNotes.update(action.entityId, { syncStatus: 'synced' });
+                    } else if (action.action === 'DELETE') {
+                        await apiService.removeBookNote(action.entityId);
+                    }
+                } else if (action.entityType === 'remark') {
+                    if (action.action === 'CREATE') {
+                        const res = await apiService.createRemark(action.data);
+                        await db.remarks.update(action.entityId, { id: res.id, syncStatus: 'synced' });
+                    } else if (action.action === 'UPDATE') {
+                        await apiService.updateRemark(action.entityId, action.data);
+                        await db.remarks.update(action.entityId, { syncStatus: 'synced' });
+                    } else if (action.action === 'DELETE') {
+                        await apiService.deleteRemark(action.entityId);
+                    }
+                } else if (action.entityType === 'remarkItem') {
+                    if (action.action === 'CREATE') {
+                        const res = await apiService.addRemarkItem(action.data);
+                        await db.remarkItems.update(action.entityId, { id: res.id, syncStatus: 'synced' });
+                    } else if (action.action === 'DELETE') {
+                        await apiService.removeRemarkItem(action.entityId);
+                    }
+                }
+                
+                if (action.id) await db.sync_queue.delete(action.id);
+                } catch (err) {
+                    console.error(\`❌ Sync failed:\`, err);
+                    break; 
+                }
+            }
+        } finally {
+            this.isProcessing = false;
+        }
+    },
+
+    requestSync() {
+        console.log(\"💳 Credit Card Sync: Change recorded, will sync in 10s...\");
+        if (this.syncTimer) clearTimeout(this.syncTimer);
+        this.syncTimer = setTimeout(() => {
+            this.processQueue();
+        }, 10000); 
+    },
+
+    async syncNow() {
+        console.log(\"🚀 Settle Balance Now!\");
+        if (this.syncTimer) clearTimeout(this.syncTimer);
+        await this.processQueue();
+    },
+
+    async purgeDatabase() {
+        if (!confirm(\"🚨 警告：這將清除所有本地快取並重新與伺服器同步。尚未同步的更改將會遺失。確定要執行嗎？\")) return;
+        try {
+            await db.delete();
+            localStorage.clear();
+            window.location.reload();
+        } catch (err) {
+            console.error(\"Purge failed:\", err);
+            alert(\"清除失敗，請嘗試手動清理瀏覽器快取。\");
+        }
+    }
+});
+
+// Auto-sync when network comes online
+window.addEventListener('online', () => {
+    console.log('🌐 Network online! Triggering EverSync...');
+    syncService.processQueue();
+});
