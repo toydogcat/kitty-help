@@ -440,3 +440,88 @@ func ListObsidianFiles(c *fiber.Ctx) error {
 		"files":       files,
 	})
 }
+
+func SearchObsidianFiles(c *fiber.Ctx) error {
+	query := strings.ToLower(c.Query("q", ""))
+	if query == "" {
+		return c.JSON(fiber.Map{"results": []fiber.Map{}})
+	}
+
+	root := "/root/obsidian"
+	var results []fiber.Map
+
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			if strings.HasPrefix(info.Name(), ".") && info.Name() != "." {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if !strings.HasSuffix(strings.ToLower(info.Name()), ".md") {
+			return nil
+		}
+
+		// Check filename
+		relPath, _ := filepath.Rel(root, path)
+		if strings.Contains(strings.ToLower(info.Name()), query) {
+			results = append(results, fiber.Map{
+				"name":    info.Name(),
+				"path":    relPath,
+				"snippet": "匹配檔案名稱",
+				"isDir":   false,
+				"modTime": info.ModTime(),
+			})
+			return nil
+		}
+
+		// Check content (limit to some size to prevent memory issues)
+		if info.Size() > 1024*1024 { // Skip files > 1MB for now
+			return nil
+		}
+
+		content, err := os.ReadFile(path)
+		if err == nil {
+			contentStr := string(content)
+			lowerContent := strings.ToLower(contentStr)
+			if idx := strings.Index(lowerContent, query); idx != -1 {
+				// Get a small snippet
+				start := idx - 30
+				if start < 0 {
+					start = 0
+				}
+				end := idx + 70
+				if end > len(contentStr) {
+					end = len(contentStr)
+				}
+				snippet := contentStr[start:end]
+				
+				// Highlight the query in the snippet
+				highlighted := strings.ReplaceAll(snippet, query, "<strong>"+query+"</strong>")
+				if query == strings.ToLower(query) {
+					// Also handle potential case differences if query was normalized
+					// Simplified: we'll just use ReplaceAll for the direct match for now
+				}
+
+				results = append(results, fiber.Map{
+					"name":    info.Name(),
+					"path":    relPath,
+					"snippet": "..." + highlighted + "...",
+					"isDir":   false,
+					"modTime": info.ModTime(),
+				})
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"results": results})
+}

@@ -211,6 +211,32 @@ def sync_obsidian():
     except Exception as e:
         print(f"{Colors.FAIL}❌ Git Sync failed: {e}{Colors.ENDC}")
 
+def clean_uploads():
+    """Clear all files in the uploads directory."""
+    path = "/root/.kitty-help/workspace/uploads"
+    if not os.path.exists(path):
+        # Fallback to local uploads if workspace doesn't exist
+        path = "uploads"
+    
+    if not os.path.exists(path):
+        print(f"{Colors.WARNING}[SKIP]{Colors.ENDC} Uploads directory not found: {path}")
+        return
+
+    print_step(f"🧹 Cleaning uploads directory: {path}")
+    count = 0
+    try:
+        for filename in os.listdir(path):
+            file_path = os.path.join(path, filename)
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)
+                count += 1
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)
+                count += 1
+        print(f"{Colors.OKGREEN}✅ Successfully cleared {count} items from {path}{Colors.ENDC}")
+    except Exception as e:
+        print(f"{Colors.FAIL}❌ Cleaning failed: {e}{Colors.ENDC}")
+
 def main():
     parser = argparse.ArgumentParser(description='🚀 Kitty-Help Full Stack Orchestrator')
     
@@ -222,6 +248,7 @@ def main():
     parser.add_argument('-i', '--import-db', action='store_true', help='Restore/Import Database from SQL')
     parser.add_argument('-f', '--fix', type=str, help='Purify EPUB file (remove res:/// and scripts)')
     parser.add_argument('-obs', '--obsidian', action='store_true', help='Sync Obsidian Vault (git pull)')
+    parser.add_argument('-clean', '--clean-uploads', action='store_true', help='Clear all temporary files in uploads')
     parser.add_argument('-all', '--full', action='store_true', help='Run everything (default if no flags)')
     parser.add_argument('--kill', action='store_true', help='Force kill port 3000')
 
@@ -244,6 +271,10 @@ def main():
 
     if args.obsidian:
         sync_obsidian()
+        if not args.full: return
+
+    if args.clean_uploads:
+        clean_uploads()
         if not args.full: return
 
     if args.fix:

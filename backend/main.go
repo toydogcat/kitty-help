@@ -103,6 +103,7 @@ func main() {
 	api.Post("/storehouse/:id/index", handlers.IndexStorehouseItem) // ← MISSING BEFORE
 	api.Post("/opencli", handlers.ProxyOpenCLI)
 	api.Get("/obsidian/list", handlers.ListObsidianFiles)
+	api.Get("/obsidian/search", handlers.SearchObsidianFiles)
 	if lineBotInstance != nil { app.Post("/webhook/line", lineBotInstance.HandleFiberWebhook) }
 
 	// --- 2. JWT Protected (Sliding Session) ---

@@ -11,6 +11,9 @@ const markdownContent = ref('');
 const fetchingContent = ref(false);
 const showHidden = ref(false);
 const errorMsg = ref('');
+const searchQuery = ref('');
+const isSearching = ref(false);
+const searchResults = ref<any[]>([]);
 
 const loadFiles = async (path: string = '') => {
   loading.value = true;
@@ -29,6 +32,35 @@ const loadFiles = async (path: string = '') => {
   } finally {
     loading.value = false;
   }
+};
+
+let searchTimer: any = null;
+const handleSearch = () => {
+  clearTimeout(searchTimer);
+  if (!searchQuery.value) {
+    isSearching.value = false;
+    searchResults.value = [];
+    return;
+  }
+  
+  searchTimer = setTimeout(async () => {
+    isSearching.value = true;
+    loading.value = true;
+    try {
+        const data = await apiService.searchObsidianFiles(searchQuery.value);
+        searchResults.value = data.results || [];
+    } catch (err) {
+        console.error("Search failed:", err);
+    } finally {
+        loading.value = false;
+    }
+  }, 500);
+};
+
+const clearSearch = () => {
+    searchQuery.value = '';
+    isSearching.value = false;
+    searchResults.value = [];
 };
 
 watch(showHidden, () => {
@@ -99,13 +131,24 @@ onMounted(() => {
         <h2>📑 Obsidian Vault</h2>
         <div class="header-meta">
           <p>本地知識庫直接存取 (Path: /root/obsidian/{{ currentPath }})</p>
+          <div class="search-container">
+            <span class="search-icon">🔍</span>
+            <input 
+                type="text" 
+                v-model="searchQuery" 
+                placeholder="搜尋筆記標題或內容..." 
+                @input="handleSearch"
+                class="search-input"
+            />
+            <button v-if="searchQuery" @click="clearSearch" class="btn-clear">✕</button>
+          </div>
           <label class="toggle-hidden">
             <input type="checkbox" v-model="showHidden" />
             顯示隱藏檔案 (.)
           </label>
         </div>
       </div>
-      <button v-if="currentPath" @click="goBack" class="btn-back">⬅️ 返回上一層</button>
+      <button v-if="currentPath && !isSearching" @click="goBack" class="btn-back">⬅️ 返回上一層</button>
     </header>
 
     <div class="layout-container">
@@ -115,7 +158,28 @@ onMounted(() => {
           <div class="spinner"></div>
         </div>
         <div v-else-if="errorMsg" class="error-msg">{{ errorMsg }}</div>
+        
+        <!-- Search Results List -->
+        <div v-else-if="isSearching" class="file-list">
+          <div class="list-label">搜尋結果 ({{ searchResults.length }})</div>
+          <div 
+            v-for="file in searchResults" 
+            :key="file.path" 
+            class="file-item search-result-item" 
+            :class="{ active: selectedFile?.path === file.path }"
+            @click="navigateTo(file)"
+          >
+            <div class="result-info">
+              <span class="file-name">{{ file.name }}</span>
+              <span class="file-snippet" v-html="file.snippet"></span>
+            </div>
+          </div>
+          <div v-if="searchResults.length === 0" class="empty-msg">找不到匹配的內容</div>
+        </div>
+
+        <!-- Directory Browse List -->
         <div v-else class="file-list">
+          <div v-if="currentPath" class="list-label">📂 {{ currentPath }}</div>
           <div 
             v-for="file in files" 
             :key="file.path" 
@@ -160,8 +224,22 @@ onMounted(() => {
 }
 
 .view-header { display: flex; justify-content: space-between; align-items: flex-end; }
-.header-meta { display: flex; align-items: center; gap: 2rem; font-size: 0.9rem; opacity: 0.8; }
-.toggle-hidden { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: var(--primary-color); }
+.header-meta { display: flex; align-items: center; gap: 1.5rem; font-size: 0.9rem; opacity: 0.8; }
+.toggle-hidden { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: var(--primary-color); white-space: nowrap; }
+
+.search-container {
+  position: relative; flex: 1; min-width: 300px;
+  display: flex; align-items: center;
+}
+.search-input {
+  width: 100%; padding: 0.6rem 2.5rem; border-radius: 12px;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(var(--primary-rgb), 0.3);
+  color: white; font-size: 0.9rem; transition: all 0.3s;
+}
+.search-input:focus { outline: none; border-color: var(--primary-color); background: rgba(255,255,255,0.1); }
+.search-icon { position: absolute; left: 0.8rem; opacity: 0.5; }
+.btn-clear { position: absolute; right: 0.8rem; background: none; border: none; color: white; opacity: 0.5; cursor: pointer; }
+.btn-clear:hover { opacity: 1; }
 
 .btn-back {
   padding: 0.6rem 1.2rem; border-radius: 12px;
@@ -202,6 +280,10 @@ onMounted(() => {
 .file-header { margin-bottom: 1.5rem; }
 .file-header h3 { margin: 0 0 0.5rem 0; color: var(--primary-color); font-size: 1.8rem; }
 .file-meta { font-size: 0.85rem; opacity: 0.6; }
+
+.search-result-item { flex-direction: column; align-items: flex-start; gap: 0.3rem; padding: 1rem; }
+.file-snippet { font-size: 0.8rem; opacity: 0.7; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; font-family: 'Inter', sans-serif; text-align: left; width: 100%; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.5rem; }
+.file-snippet :deep(strong) { color: #fbbf24; font-weight: bold; }
 
 .error-box { padding: 2rem; background: rgba(255, 0, 0, 0.1); border: 1px solid red; border-radius: 10px; color: #ff6666; text-align: center; }
 .error-msg { padding: 1rem; color: #ff6666; font-size: 0.9rem; text-align: center; }

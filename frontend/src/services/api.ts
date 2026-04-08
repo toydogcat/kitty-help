@@ -186,6 +186,10 @@ export const apiService = {
     const res = await axios.get(`${API_BASE}/obsidian/list`, { params: { path, showHidden } });
     return res.data;
   },
+  async searchObsidianFiles(query: string) {
+    const res = await axios.get(`${API_BASE}/obsidian/search`, { params: { q: query } });
+    return res.data;
+  },
   async getObsidianFileContent(path: string) {
     const res = await axios.get(`${API_BASE}/storehouse/file/${path}`, { 
       params: { platform: 'local' } 
