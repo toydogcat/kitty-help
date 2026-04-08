@@ -3,20 +3,12 @@ import { db, type LocalSnippet } from './localDb';
 
 export const syncService = {
     // Snippets Methods (EverSync Enhanced)
-    async getSnippets(parentId: string | null = null, all: boolean = false) {
-        // 1. Try to get from local first for instant UI
+    async getSnippets(parentId: string | null = null) {
         const pid = parentId || 'root';
-        const localItems = await db.snippets
+        return await db.snippets
             .where('parentId')
             .equals(pid)
             .sortBy('sortOrder');
-
-        // 2. Refresh from API in background (Non-blocking)
-        this.refreshSnippets(parentId, all).catch(err => {
-            console.warn('Network refresh failed (Offline mode active):', err.message);
-        });
-
-        return localItems;
     },
 
     async refreshSnippets(parentId: string | null = null, all: boolean = false) {
@@ -70,11 +62,9 @@ export const syncService = {
     },
 
     // --- Bookmarks Methods ---
-    async getBookmarks(parentId?: string | 'root', all: boolean = false) {
+    async getBookmarks(parentId?: string | 'root') {
         const pid = parentId || 'root';
-        const localItems = await db.bookmarks.where('parentId').equals(pid).sortBy('sortOrder');
-        this.refreshBookmarks(parentId, all).catch(() => {});
-        return localItems;
+        return await db.bookmarks.where('parentId').equals(pid).sortBy('sortOrder');
     },
 
     async refreshBookmarks(parentId?: string | 'root', all: boolean = false) {
@@ -115,9 +105,7 @@ export const syncService = {
 
     // --- Desk Methods ---
     async getShelves() {
-        const local = await db.shelves.orderBy('sortOrder').toArray();
-        this.refreshShelves().catch(() => {});
-        return local;
+        return await db.shelves.orderBy('sortOrder').toArray();
     },
     async refreshShelves() {
         const remote = await apiService.getShelves();
@@ -147,9 +135,7 @@ export const syncService = {
     },
     async getDeskItems(shelfId?: string) {
         const sid = shelfId || 'null';
-        const local = await db.deskItems.where('shelfId').equals(sid).sortBy('sortOrder');
-        this.refreshDeskItems(sid).catch(() => {});
-        return local;
+        return await db.deskItems.where('shelfId').equals(sid).sortBy('sortOrder');
     },
     async refreshDeskItems(shelfId: string = 'null') {
         const remote = await apiService.getDeskItems(shelfId === 'null' ? undefined : shelfId);
@@ -180,9 +166,7 @@ export const syncService = {
 
     // --- Bookcase Methods ---
     async getBookcase() {
-        const local = await db.bookcase.toArray();
-        this.refreshBookcase().catch(() => {});
-        return local;
+        return await db.bookcase.toArray();
     },
     async refreshBookcase() {
         const remote = await apiService.getBookcase();
@@ -210,9 +194,7 @@ export const syncService = {
         this.processQueue();
     },
     async getBookNotes(bookId: string) {
-        const local = await db.bookNotes.where('bookId').equals(bookId).toArray();
-        this.refreshBookNotes(bookId).catch(() => {});
-        return local;
+        return await db.bookNotes.where('bookId').equals(bookId).toArray();
     },
     async refreshBookNotes(bookId: string) {
         const remote = await apiService.getBookNotes(bookId);
@@ -243,9 +225,7 @@ export const syncService = {
 
     // --- Remarks (Obs) Methods ---
     async getRemarks() {
-        const local = await db.remarks.toArray();
-        this.refreshRemarks().catch(() => {});
-        return local;
+        return await db.remarks.toArray();
     },
     async refreshRemarks() {
         const remote = await apiService.getRemarks();
@@ -325,12 +305,19 @@ export const syncService = {
         });
     },
 
+    isProcessing: false,
     async processQueue() {
+        if (this.isProcessing) return;
+        
         const actions = await db.sync_queue.toArray();
         if (actions.length === 0) return;
 
-        for (const action of actions) {
-            try {
+        this.isProcessing = true;
+        console.log(`🔄 EverSync: Processing ${actions.length} pending actions...`);
+
+        try {
+            for (const action of actions) {
+                try {
                 if (action.entityType === 'snippet') {
                     if (action.action === 'CREATE') {
                         const res = await apiService.createSnippet(action.data);
