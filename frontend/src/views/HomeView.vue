@@ -176,7 +176,16 @@ document.documentElement.setAttribute('data-font-size', fontSize.value);
 .bulletin-content { font-size: 1.3rem; padding: 0.5rem; line-height: 1.6; color: var(--text-color); white-space: pre-wrap; }
 
 /* MOBILE RWD SLIMMING & REORDERING */
-@media (max-width: 1024px) {
+/* TABLET (iPad) RWD - 2 Column but narrower or stack selectively */
+@media (max-width: 1100px) {
+  .dashboard-grid {
+    grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr);
+    gap: 1rem;
+  }
+}
+
+/* MOBILE RWD SLIMMING & REORDERING */
+@media (max-width: 991px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
     grid-template-areas: 

@@ -9,9 +9,13 @@ const remainingSeconds = ref(0);
 const isActive = ref(false);
 const timer = ref<any>(null);
 
-const notificationPermission = ref(Notification.permission);
+const notificationPermission = ref(typeof Notification !== 'undefined' ? Notification.permission : 'default');
 
 const requestPermission = async () => {
+  if (typeof Notification === 'undefined') {
+    alert("桌面通知在您的瀏覽器中不受支援（iOS 需要先「加入主畫面」才能開啟）");
+    return;
+  }
   const permission = await Notification.requestPermission();
   notificationPermission.value = permission;
 };
