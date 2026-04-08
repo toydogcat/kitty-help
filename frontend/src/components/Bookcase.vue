@@ -254,17 +254,6 @@ const importBook = async (res: any) => {
   } catch (e) { alert('Import error'); }
 };
 
-const onDropIntoFolder = async (event: DragEvent, folderName: string) => {
-  event.preventDefault(); dragOverFolder.value = null;
-  const bookId = event.dataTransfer?.getData('bookId');
-  if (!bookId) return;
-  const targetFolder = folderName === 'Uncategorized' ? '' : folderName;
-  try { 
-    await syncService.updateBookFolder(bookId, targetFolder); 
-  } catch (e) { 
-    console.error("Folder update failed", e);
-  }
-};
 
 const moveUp = async (book: any, folderBooks: any[]) => {
   const index = folderBooks.findIndex(b => b.id === book.id);
@@ -304,10 +293,20 @@ const onDragStart = (item: any) => {
   draggedItem.value = item;
 };
 
-const handleDragOver = (event: DragEvent, target: any, position: 'before' | 'after' | 'inside') => {
+const handleDragOver = (event: DragEvent, target: any, explicitPosition?: 'inside') => {
   event.preventDefault();
-  dropTargetId.value = target.id || target; // target can be folder name string or book object
-  dropPosition.value = position;
+  dropTargetId.value = target.id || target; 
+  
+  if (explicitPosition) {
+    dropPosition.value = explicitPosition;
+  } else {
+    const targetElement = event.currentTarget as HTMLElement | null;
+    if (targetElement) {
+      const rect = targetElement.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      dropPosition.value = event.clientY < mid ? 'before' : 'after';
+    }
+  }
 };
 
 const handleDragLeave = () => {
@@ -315,8 +314,8 @@ const handleDragLeave = () => {
     dropPosition.value = null;
 };
 
-const handleReorder = async (data: { targetBook: any, position: 'before' | 'after' }) => {
-    if (!draggedItem.value) return;
+const handleReorder = async (data: { targetBook: any, position: 'before' | 'after' | 'inside' | null }) => {
+    if (!draggedItem.value || !data.position || data.position === 'inside') return;
     const target = data.targetBook;
     if (draggedItem.value.id === target.id) return;
 
@@ -354,7 +353,7 @@ const handleReorder = async (data: { targetBook: any, position: 'before' | 'afte
     }
 };
 
-const onDropIntoFolder = async (folderName: string) => {
+const handleFolderDrop = async (folderName: string) => {
   const folder = folderName === 'Uncategorized' ? '' : folderName;
   if (!draggedItem.value) return;
   
@@ -383,7 +382,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
              :class="{ 'drop-over': dropTargetId === String(folderName) && dropPosition === 'inside' }" 
              @dragover.prevent="handleDragOver($event, String(folderName), 'inside')" 
              @dragleave="handleDragLeave" 
-             @drop="onDropIntoFolder(String(folderName))">
+             @drop="handleFolderDrop(String(folderName))">
           <div class="folder-header" @click="collapsedFolders.has(String(folderName)) ? collapsedFolders.delete(String(folderName)) : collapsedFolders.add(String(folderName))">
             <span class="fold-arrow">{{ collapsedFolders.has(String(folderName)) ? '▶' : '▼' }}</span>
             <span class="folder-name">{{ folderName }}</span>
@@ -402,7 +401,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
               }" 
               draggable="true" 
               @dragstart="onDragStart(book)" 
-              @dragover.prevent="handleDragOver($event, book, $event.clientY < $event.currentTarget.getBoundingClientRect().top + $event.currentTarget.getBoundingClientRect().height / 2 ? 'before' : 'after')"
+              @dragover.prevent="handleDragOver($event, book)" 
               @dragleave="handleDragLeave"
               @drop="handleReorder({ targetBook: book, position: dropPosition })"
               @click="selectBook(book)"
