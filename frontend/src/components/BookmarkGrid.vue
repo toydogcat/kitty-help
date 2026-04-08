@@ -57,6 +57,7 @@ const newBookmark = ref({
 // Drag and drop state
 const draggedItem = ref<any>(null);
 const dropTargetId = ref<string | null>(null);
+const dropPosition = ref<'inside' | 'before' | 'after'>('inside');
 const isDropOverRoot = ref(false);
 
 const categories = ['General', 'Work', 'Social', 'Dev', 'Entertainment', 'Tools'];
@@ -425,7 +426,7 @@ export default {
           class="breadcrumb-item" 
           :class="{ 'drop-target-breadcrumb': dropTargetId === 'root' }"
           @click="goBack('root')"
-          @dragover.prevent="handleDragOver('root')"
+          @dragover.prevent="handleDragOver($event, 'root')"
           @dragleave="handleDragLeave"
           @drop="handleDrop('root')"
         >🏠 Root</span>
@@ -435,7 +436,7 @@ export default {
             class="breadcrumb-item" 
             :class="{ 'drop-target-breadcrumb': dropTargetId === crumb.id }"
             @click="goBack(crumb.id)"
-            @dragover.prevent="handleDragOver(crumb.id)"
+            @dragover.prevent="handleDragOver($event, crumb.id)"
             @dragleave="handleDragLeave"
             @drop="handleDrop(crumb.id)"
           >{{ crumb.title }}</span>
