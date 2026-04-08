@@ -12,11 +12,12 @@ import (
 func GetSnippets(c *fiber.Ctx) error {
 	userClaims := c.Locals("user").(*Claims)
 	
-	// Resolve internal DB User ID from email
-	var dbUserID string
-	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
+	dbUserID := userClaims.ID
+	if dbUserID == "" {
+		err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+		if err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
+		}
 	}
 
 	parentId := c.Query("parentId")
@@ -65,11 +66,12 @@ func CreateSnippet(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	// Resolve internal DB User ID from email
-	var dbUserID string
-	err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
+	dbUserID := userClaims.ID
+	if dbUserID == "" {
+		err := database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
+		if err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "User profile not found"})
+		}
 	}
 	s.UserID = dbUserID
 
@@ -83,7 +85,7 @@ func CreateSnippet(c *fiber.Ctx) error {
 
 	// Insert into Local PG
 	query := "INSERT INTO snippets (user_id, parent_id, name, content, is_folder, sort_order) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at"
-	err = database.LocalDB.QueryRow(context.Background(), query, s.UserID, s.ParentID, s.Name, s.Content, s.IsFolder, s.SortOrder).Scan(&s.ID, &s.CreatedAt)
+	err := database.LocalDB.QueryRow(context.Background(), query, s.UserID, s.ParentID, s.Name, s.Content, s.IsFolder, s.SortOrder).Scan(&s.ID, &s.CreatedAt)
 	if err != nil {
 		log.Printf("Insert snippet failed: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to create snippet"})

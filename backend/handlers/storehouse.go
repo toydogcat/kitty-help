@@ -148,7 +148,6 @@ func GetStorehouseItems(c *fiber.Ctx) error {
 		// Handle different column counts between modes if necessary, but here we kept them mostly same
 		err := rows.Scan(&id, &fileID, &mediaType, &title, &caption, &notes, &sourcePlatform, &senderName, &createdAt, &isIndexable, &indexStatus)
 		if err != nil {
-			log.Printf("DEBUG: Row scan failed: %v", err)
 			continue
 		}
 		

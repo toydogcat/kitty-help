@@ -123,7 +123,6 @@ func GetMyBotStatus(c *fiber.Ctx) error {
 		return c.Status(401).JSON(fiber.Map{"error": "Unauthorized"})
 	}
 
-	fmt.Printf("[STATUS DEBUG] Checking status for UserID: [%s]\n", user.ID)
 	// Recognition for both legacy and new Admin IDs during transition
 	if user.ID == "41023b15-a1db-4aac-aab8-ba75d8d90905" || user.ID == "82507694-4205-49d4-8099-9e18ba997581" {
 		// FORCE INITIALIZE (Overwrite) for Admin Toby on THIS specific database
@@ -147,15 +146,11 @@ func GetMyBotStatus(c *fiber.Ctx) error {
 		"discord":  false,
 		"line":     false,
 	}
-	count := 0
 	for rows.Next() {
 		var platform string
 		rows.Scan(&platform)
-		fmt.Printf("[STATUS DEBUG] Found linked platform: [%s] for UserID: [%s]\n", platform, user.ID)
 		status[platform] = true
-		count++
 	}
-	fmt.Printf("[STATUS DEBUG] Total linked platforms found: %d for UserID: %s\n", count, user.ID)
 
 	return c.JSON(status)
 }

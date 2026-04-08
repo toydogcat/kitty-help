@@ -23,7 +23,9 @@ const activeShelfId = ref<string | null>(null);
 const loading = ref(true);
 const modalLoading = ref(false);
 const draggingItem = ref<any>(null);
+const draggingShelf = ref<any>(null); // Track shelf reordering
 const dragOverShelfId = ref<string | null | 'desktop'>(null);
+const draggingShelfOverId = ref<string | null>(null); // For visual feedback on shelf reordering
 
 // Modals
 const showAddShelfModal = ref(false);
@@ -170,13 +172,55 @@ const deleteShelf = async (id: string) => {
 
 const onDragStart = (item: any) => {
   draggingItem.value = item;
+  draggingShelf.value = null; // Ensure we are not shelf-dragging
+};
+
+const onShelfDragStart = (shelf: any) => {
+  draggingShelf.value = shelf;
+  draggingItem.value = null;
 };
 
 const onDragOverShelf = (id: string | null | 'desktop') => {
+  if (draggingShelf.value) {
+    if (id !== 'desktop') draggingShelfOverId.value = id;
+    return;
+  }
   dragOverShelfId.value = id;
 };
 
+const onShelfDrop = async (targetId: string | null) => {
+  if (!draggingShelf.value || draggingShelf.value.id === targetId) return;
+  
+  const oldIndex = shelves.value.findIndex(s => s.id === draggingShelf.value.id);
+  const newIndex = shelves.value.findIndex(s => s.id === targetId);
+  
+  if (oldIndex === -1 || newIndex === -1) return;
+  
+  // Optimistic UI Update
+  const newShelves = [...shelves.value];
+  const [removed] = newShelves.splice(oldIndex, 1);
+  newShelves.splice(newIndex, 0, removed);
+  shelves.value = newShelves;
+
+  try {
+    // Sync all orders to backend - include name and color to avoid clearing them
+    await Promise.all(newShelves.map((s, idx) => 
+      apiService.updateShelf(s.id, { name: s.name, color: s.color, sortOrder: idx })
+    ));
+  } catch (err) {
+    console.error("Reorder failed:", err);
+    fetchData(); // Rollback
+  } finally {
+    draggingShelf.value = null;
+    draggingShelfOverId.value = null;
+  }
+};
+
 const onDropOnShelf = async (shelfId: string | null) => {
+  if (draggingShelf.value) {
+    onShelfDrop(shelfId);
+    return;
+  }
   if (!draggingItem.value) return;
   try {
     await apiService.updateDeskItem(draggingItem.value.id, { shelfId });
@@ -336,6 +380,59 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
       </div>
     </div>
 
+    <!-- Shelves Area (Moved to Top) -->
+    <div class="shelves-rail shadow-lg">
+      <div class="rail-header">
+        <span class="rail-title">📚 My Shelves</span>
+        <span class="rail-hint">Drag folders to reorder • Drag items onto them to move</span>
+      </div>
+      <div class="shelves-container custom-scrollbar">
+        <div 
+          class="shelf-card desktop-link" 
+          :class="{ active: activeShelfId === null, 'drag-over': dragOverShelfId === 'desktop' }" 
+          @click="switchShelf(null)" 
+          @dragover.prevent="onDragOverShelf('desktop')" 
+          @dragleave="onDragOverShelf(null)" 
+          @drop="onDropOnShelf(null)"
+        >
+          <span class="s-icon">{{ dragOverShelfId === 'desktop' ? '📥' : '🏠' }}</span>
+          <span class="s-name">Desktop</span>
+        </div>
+        
+        <div 
+          v-for="s in shelves" 
+          :key="s.id" 
+          class="shelf-card" 
+          :class="{ 
+            active: activeShelfId === s.id, 
+            'drag-over': dragOverShelfId === s.id,
+            'shelf-dragging': draggingShelf?.id === s.id,
+            'shelf-reorder-target': draggingShelfOverId === s.id && draggingShelf?.id !== s.id
+          }" 
+          draggable="true"
+          @dragstart="onShelfDragStart(s)"
+          @click="switchShelf(s.id)" 
+          @dragover.prevent="onDragOverShelf(s.id)" 
+          @dragleave="draggingShelfOverId = null; dragOverShelfId = null" 
+          @drop="onDropOnShelf(s.id)"
+        >
+          <div class="shelf-top">
+            <span class="s-icon">
+              <template v-if="draggingShelf">📁</template>
+              <template v-else>{{ dragOverShelfId === s.id ? '📥' : '📁' }}</template>
+            </span>
+            <div class="s-actions" v-if="!draggingShelf">
+              <button @click.stop="duplicateShelf(s.id)" class="s-dup" title="Duplicate">👯</button>
+              <button @click.stop="openRenameModal(s)" class="s-edit" title="Rename">✎</button>
+              <button @click.stop="deleteShelf(s.id)" class="s-del" title="Delete">×</button>
+            </div>
+          </div>
+          <span class="s-name">{{ s.name || 'Unnamed' }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Desktop Workspace -->
     <div 
       class="desktop-canvas" 
       :class="{ 'drop-active': draggingItem && activeShelfId !== null }"
@@ -371,31 +468,6 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
             </div>
           </div>
           <button @click.stop="removeItem(it.id, it.type)" class="remove-btn" title="Unlink from desk">×</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Shelves Area -->
-    <div class="shelves-rail shadow-lg">
-      <div class="rail-header">
-        <span class="rail-title">📚 My Shelves</span>
-        <span class="rail-hint">Drag items below to store</span>
-      </div>
-      <div class="shelves-container custom-scrollbar">
-        <div class="shelf-card desktop-link" :class="{ active: activeShelfId === null, 'drag-over': dragOverShelfId === 'desktop' }" @click="switchShelf(null)" @dragover.prevent="onDragOverShelf('desktop')" @dragleave="onDragOverShelf(null)" @drop="onDropOnShelf(null)">
-          <span class="s-icon">{{ dragOverShelfId === 'desktop' ? '📥' : '🏠' }}</span>
-          <span class="s-name">Desktop</span>
-        </div>
-        <div v-for="s in shelves" :key="s.id" class="shelf-card" :class="{ active: activeShelfId === s.id, 'drag-over': dragOverShelfId === s.id }" @click="switchShelf(s.id)" @dragover.prevent="onDragOverShelf(s.id)" @dragleave="onDragOverShelf(null)" @drop="onDropOnShelf(s.id)">
-          <div class="shelf-top">
-            <span class="s-icon">{{ dragOverShelfId === s.id ? '📥' : '📁' }}</span>
-            <div class="s-actions">
-              <button @click.stop="duplicateShelf(s.id)" class="s-dup">👯</button>
-              <button @click.stop="openRenameModal(s)" class="s-edit">✎</button>
-              <button @click.stop="deleteShelf(s.id)" class="s-del">×</button>
-            </div>
-          </div>
-          <span class="s-name">{{ s.name }}</span>
         </div>
       </div>
     </div>
@@ -494,12 +566,26 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
 .desk-tile:hover .remove-btn { opacity: 1; }
 .remove-btn:hover { background: #e74c3c; border-color: #e74c3c; transform: scale(1.1); }
 
-.shelves-rail { background: rgba(13, 17, 23, 0.9); border-radius: 24px; padding: 1.5rem; border: 1px solid rgba(var(--primary-rgb), 0.2); display: flex; flex-direction: column; gap: 1rem; box-shadow: 0 -10px 40px rgba(0,0,0,0.5); }
-.rail-header { display: flex; align-items: center; justify-content: space-between; padding: 0 8px; }
-.rail-title { color: var(--primary-color); font-weight: 800; font-size: 1.2rem; letter-spacing: 1px; }
-.rail-hint { font-size: 0.8rem; opacity: 0.5; font-style: italic; }
+.shelves-rail { 
+  background: rgba(13, 17, 23, 0.85); 
+  border-radius: 20px; 
+  padding: 1rem 1.5rem; 
+  border: 1px solid rgba(var(--primary-rgb), 0.2); 
+  display: flex; 
+  flex-direction: column; 
+  gap: 0.8rem; 
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5); 
+  backdrop-filter: blur(20px);
+  position: sticky;
+  top: 0px;
+  z-index: 100;
+  margin-top: -0.5rem;
+}
+.rail-header { display: flex; align-items: center; justify-content: space-between; padding: 0 8px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 8px; }
+.rail-title { color: var(--primary-color); font-weight: 800; font-size: 1.1rem; letter-spacing: 0.5px; }
+.rail-hint { font-size: 0.75rem; opacity: 0.4; font-style: italic; }
 
-.shelves-container { display: flex; gap: 1.2rem; overflow-x: auto; padding: 0.5rem; }
+.shelves-container { display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 4px; }
 .shelf-card { 
   min-width: 160px; 
   height: 110px; 
@@ -510,33 +596,44 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
   display: flex; 
   flex-direction: column; 
   align-items: center; 
-  justify-content: center; 
-  gap: 8px; 
+  justify-content: flex-start; 
+  padding: 1.2rem 1rem;
+  gap: 4px; 
   cursor: pointer; 
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   position: relative;
   overflow: hidden;
+  text-align: center;
+}
+
+.shelf-top {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+  flex: 1;
 }
 
 .shelf-card.active { border-color: var(--primary-color); background: rgba(var(--primary-rgb), 0.15); box-shadow: 0 0 20px rgba(var(--primary-rgb), 0.2); }
 .shelf-card:hover { transform: translateY(-5px); background: rgba(255,255,255,0.06); }
 
 .shelf-card.drag-over { 
-  transform: scale(1.1); 
-  background: rgba(var(--primary-rgb), 0.25) !important; 
-  border: 2px dashed var(--primary-color); 
-  animation: pulse 1s infinite;
+  transform: scale(1.05); 
+  background: rgba(var(--primary-rgb), 0.2) !important; 
+  border: 1px solid var(--primary-color); 
 }
 
-.shelf-card.drag-over::before {
-  content: '📥';
-  font-size: 1.5rem;
-  margin-bottom: 4px;
+.shelf-dragging {
+  opacity: 0.4;
+  border: 2px dashed rgba(var(--primary-rgb), 0.5) !important;
 }
 
-.shelf-card.drag-over .s-name {
-  color: var(--primary-color);
-  font-weight: 900;
+.shelf-reorder-target {
+  background: rgba(var(--primary-rgb), 0.1) !important;
+  border-left: 6px solid var(--primary-color) !important;
+  padding-left: 1.5rem !important;
 }
 
 @keyframes pulse {
@@ -545,13 +642,30 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
   100% { box-shadow: 0 0 0 0 rgba(var(--primary-rgb), 0); }
 }
 
-.s-icon { font-size: 1.8rem; transition: transform 0.3s; }
-.shelf-card:hover .s-icon { transform: scale(1.2); }
-.s-name { font-weight: 700; font-size: 0.95rem; opacity: 0.9; }
+.s-icon { 
+  font-size: 1.8rem; 
+  transition: transform 0.3s; 
+  line-height: 1;
+  display: block;
+}
+.shelf-card:hover .s-icon { transform: scale(1.1); }
 
-.s-actions { position: absolute; top: 10px; right: 10px; display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s; }
+.s-name { 
+  font-weight: 700; 
+  font-size: 0.85rem; 
+  color: #fff !important;
+  opacity: 1; 
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  margin-top: 4px;
+  display: block;
+}
+
+.s-actions { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s; z-index: 10; }
 .shelf-card:hover .s-actions { opacity: 1; }
-.s-actions button { background: rgba(0,0,0,0.5); border: none; padding: 4px; border-radius: 6px; cursor: pointer; color: #fff; font-size: 0.7rem; }
+.s-actions button { background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); padding: 4px; border-radius: 6px; cursor: pointer; color: #fff; font-size: 0.7rem; display: flex; align-items: center; justify-content: center; }
 
 .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(var(--primary-rgb), 0.2); border-radius: 10px; }
