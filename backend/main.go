@@ -73,9 +73,11 @@ func main() {
 
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: allowedOrigins,
-		// 🛡️ [Security Booster] Automatically trust all Cloudflare Tunnels (trycloudflare.com)
+		// 🛡️ [Security Booster] Automatically trust Cloudflare Tunnels and Firebase Hosting
 		AllowOriginsFunc: func(origin string) bool {
-			return strings.HasSuffix(origin, ".trycloudflare.com")
+			return strings.HasSuffix(origin, ".trycloudflare.com") || 
+				   strings.HasSuffix(origin, ".web.app") || 
+				   strings.HasSuffix(origin, ".firebaseapp.com")
 		},
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, X-Refresh-Token, cf-skip-browser-warning, ngrok-skip-browser-warning",
