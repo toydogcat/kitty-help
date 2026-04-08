@@ -50,6 +50,7 @@ const showCommandHelp = ref(false);
 
 // Event Timers
 let clickTimer: any = null;
+let isWaitingForSecondClick = false;
 
 // Advanced Interactive Buffers
 const candidateNodeId = ref<string | null>(null);
@@ -125,9 +126,16 @@ const initGraph = async () => {
   }
 
   network.value.on('click', (params: any) => {
-    // Wait to see if it becomes a double-click
+    // 🧠 Multi-click differentiation logic
+    isWaitingForSecondClick = true;
     clearTimeout(clickTimer);
+
     clickTimer = setTimeout(() => {
+        // If 350ms have passed and NO doubleClick event killed this timer, 
+        // it is officially a SINGLE click.
+        if (!isWaitingForSecondClick) return;
+        isWaitingForSecondClick = false;
+
         if (interactionMode.value === 'view') {
             isLinkingMode.value = false;
             
@@ -179,11 +187,13 @@ const initGraph = async () => {
                 selectedEdgeDetails.value = null;
             }
         }
-    }, 250); // 250ms is standard human double click threshold
+    }, 350); // Increased sensitivity threshold to 350ms
   });
 
   network.value.on('doubleClick', async (params: any) => {
-    clearTimeout(clickTimer); // 🛑 STOP the single click from firing!
+    // 🛑 KILL THE SINGLE CLICK IMMEDIATELY
+    isWaitingForSecondClick = false;
+    clearTimeout(clickTimer);
     
     if (interactionMode.value === 'view') {
         if (params.nodes.length > 0) {
