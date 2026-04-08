@@ -47,12 +47,10 @@ const openFile = async (file: any) => {
   selectedFile.value = file;
   fetchingContent.value = true;
   try {
-    const url = apiService.getStorehouseFileUrl(file.path, 'local');
-    const res = await fetch(url, { headers: { 'cf-skip-browser-warning': 'true' } });
-    const text = await res.text();
+    const text = await apiService.getObsidianFileContent(file.path);
     markdownContent.value = await marked(text);
   } catch (err) {
-    console.error("Failed to fetch markdown:", err);
+    console.error("Failed to fetch obsidian content:", err);
     markdownContent.value = '<p class="error">無法載入筆記內容</p>';
   } finally {
     fetchingContent.value = false;

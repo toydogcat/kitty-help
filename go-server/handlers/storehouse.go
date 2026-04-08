@@ -306,7 +306,7 @@ func IndexStorehouseItem(c *fiber.Ctx) error {
 }
 
 func GetFileProxy(c *fiber.Ctx) error {
-	fileID := c.Params("fileID")
+	fileID := c.Params("*")
 	platform := c.Query("platform", "telegram")
 	width := c.QueryInt("w", 0)
 

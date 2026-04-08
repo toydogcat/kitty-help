@@ -96,7 +96,6 @@ func main() {
 	api.Get("/storehouse", handlers.GetStorehouseItems)
 	api.Put("/storehouse/:id", handlers.UpdateStorehouseItem) // ← MISSING BEFORE
 	api.Post("/storehouse/:id/index", handlers.IndexStorehouseItem) // ← MISSING BEFORE
-	api.Get("/storehouse/file/:fileID", handlers.GetFileProxy)
 	api.Post("/opencli", handlers.ProxyOpenCLI)
 	api.Get("/obsidian/list", handlers.ListObsidianFiles)
 	if lineBotInstance != nil { app.Post("/webhook/line", lineBotInstance.HandleFiberWebhook) }
@@ -179,6 +178,7 @@ func main() {
 	protected.Post("/desk/items", handlers.AddDeskItem)
 	protected.Put("/desk/items/:id", handlers.UpdateDeskItem)
 	protected.Delete("/desk/items/:id", handlers.DeleteDeskItem)
+	protected.Get("/storehouse/file/*", handlers.GetFileProxy)
 
 	protected.Post("/bulletin", handlers.UpdateBulletin)
 	protected.Post("/calendar", handlers.UpdateCalendarEvent)
