@@ -368,7 +368,12 @@ const formatSize = (bytes: number) => {
                @drop="handleDropOnRemark($event, c.id)" @dragover.prevent @click="openRemarkModal(c)">
             <div class="r-top">
               <span class="r-title">{{ c.name }}</span>
-              <span class="r-pin">📌</span>
+              <div class="r-actions" @click.stop>
+                <button @click="togglePin(c)" title="Unpin">📌</button>
+                <button @click="addToDesk(c)" title="Add to Desk">🖥️</button>
+                <button @click="copyRemark(c)" title="Copy MD">📋</button>
+                <button @click="deleteRemark(c.id)" class="del" title="Delete">🗑️</button>
+              </div>
             </div>
             <div class="r-preview" v-html="marked.parse(c.content || '...')"></div>
             <footer class="r-foot">🔗 {{ c.items?.length || 0 }} items</footer>
@@ -379,6 +384,12 @@ const formatSize = (bytes: number) => {
                @drop="handleDropOnRemark($event, c.id)" @dragover.prevent @click="openRemarkModal(c)">
             <div class="r-top">
               <span class="r-title">{{ c.name }}</span>
+              <div class="r-actions" @click.stop>
+                <button @click="togglePin(c)" title="Pin">📍</button>
+                <button @click="addToDesk(c)" title="Add to Desk">🖥️</button>
+                <button @click="copyRemark(c)" title="Copy MD">📋</button>
+                <button @click="deleteRemark(c.id)" class="del" title="Delete">🗑️</button>
+              </div>
             </div>
             <div class="r-preview" v-html="marked.parse(c.content || '...')"></div>
             <footer class="r-foot">🔗 {{ c.items?.length || 0 }} items</footer>
@@ -393,7 +404,7 @@ const formatSize = (bytes: number) => {
       :item="{ ...editingRemark, type: 'remark' }"
       :details="remarkModalDetails"
       @close="showRemarkModal = false" 
-      @save="fetchRecentMessages"
+      @save="handleSaveRemark"
     />
     <Teleport to="body">
       <div v-if="zoomedImageUrl" class="zoom-portal" @click="zoomedImageUrl = ''">
@@ -538,7 +549,14 @@ textarea.glow-input { min-height: 60px; resize: none; }
   border: 1px solid rgba(255,255,255,0.04); margin-bottom: 0.8rem; cursor: pointer;
 }
 .remark-box:hover { border-color: #6366f1; background: rgba(99,102,241,0.03); }
-.r-title { font-weight: 800; font-size: 0.9rem; color: #fff; }
+.r-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
+.r-title { font-weight: 800; font-size: 0.9rem; color: #fff; flex: 1; }
+.r-actions { display: flex; gap: 0.3rem; opacity: 0; transition: 0.2s; }
+.remark-box:hover .r-actions { opacity: 1; }
+.r-actions button { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.7rem; transition: 0.2s; }
+.r-actions button:hover { background: rgba(99,102,241,0.2); border-color: #6366f1; }
+.r-actions button.del:hover { background: rgba(231,76,60,0.2); border-color: #e74c3c; }
+
 .r-preview { font-size: 0.75rem; opacity: 0.4; margin-top: 0.4rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .r-foot { font-size: 0.55rem; font-weight: 800; color: #6366f1; margin-top: 0.6rem; }
 
