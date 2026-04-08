@@ -231,8 +231,8 @@ def main():
         time.sleep(1)
 
     if args.docker or run_all:
-        run_command("docker compose -f infra/docker-compose.yml down", "1/4: Stopping containers...")
-        run_command("docker compose -f infra/docker-compose.yml up -d --build", "1/4: Rebuilding and starting Backend...")
+        run_command("docker compose --env-file .env -f infra/docker-compose.yml down", "1/4: Stopping containers...")
+        run_command("docker compose --env-file .env -f infra/docker-compose.yml up -d --build", "1/4: Rebuilding and starting Backend...")
 
     if args.catch or run_all:
         catch_tunnel_url()
