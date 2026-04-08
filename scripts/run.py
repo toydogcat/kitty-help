@@ -155,12 +155,22 @@ def export_db():
         print_step(f"📂 Creating backup directory: {BACKUP_DIR}")
         os.makedirs(BACKUP_DIR, exist_ok=True)
 
+    # 🕒 Generate filename with current date and time
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    target_file = os.path.join(BACKUP_DIR, f"kitty_help_backup_{timestamp}.sql")
+
     print_step(f"🗄️ Exporting database [kitty_help] from 192.168.0.150...")
-    cmd = f'docker run --rm -e PGPASSWORD=andy1984 postgres:latest pg_dump -h 192.168.0.150 -U toby kitty_help > "{BACKUP_FILE}"'
+    cmd = f'docker run --rm -e PGPASSWORD=andy1984 postgres:latest pg_dump -h 192.168.0.150 -U toby kitty_help > "{target_file}"'
     try:
         subprocess.run(cmd, shell=True, check=True)
-        print(f"{Colors.OKGREEN}✅ Successfully backed up to: {BACKUP_FILE}{Colors.ENDC}")
-        print(f"{Colors.OKCYAN}📍 File Size: {os.path.getsize(BACKUP_FILE) / 1024:.2f} KB{Colors.ENDC}")
+        print(f"{Colors.OKGREEN}✅ Successfully backed up to: {target_file}{Colors.ENDC}")
+        print(f"{Colors.OKCYAN}📍 File Size: {os.path.getsize(target_file) / 1024:.2f} KB{Colors.ENDC}")
+        
+        # Optional: update the "latest" link or constant for easier import
+        if os.path.exists(BACKUP_FILE):
+            os.remove(BACKUP_FILE)
+        shutil.copy2(target_file, BACKUP_FILE)
+        print(f"{Colors.OKCYAN}🔗 Synced latest backup to: {BACKUP_FILE}{Colors.ENDC}")
     except Exception as e:
         print(f"{Colors.FAIL}❌ Backup failed: {e}{Colors.ENDC}")
 
