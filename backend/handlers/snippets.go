@@ -27,7 +27,7 @@ func GetSnippets(c *fiber.Ctx) error {
 	var args []interface{}
 	args = append(args, dbUserID)
 
-	query = "SELECT id, user_id, parent_id, name, content, is_folder, sort_order, created_at FROM snippets WHERE user_id = $1"
+	query = "SELECT id, user_id, parent_id, name, content, is_folder, sort_order, COALESCE(created_at, NOW()) FROM snippets WHERE user_id = $1"
 	if all != "true" {
 		if parentId == "root" || parentId == "" {
 			query += " AND parent_id IS NULL"
@@ -98,7 +98,7 @@ func CreateSnippet(c *fiber.Ctx) error {
 		s.ID, s.UserID, s.ParentID, s.Name, s.Content, s.IsFolder, s.SortOrder).Scan(&s.ID, &s.CreatedAt)
 	if err != nil {
 		log.Printf("Insert snippet failed: %v", err)
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to create snippet"})
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to create snippet: " + err.Error()})
 	}
 
 	return c.JSON(s)
@@ -137,7 +137,7 @@ func UpdateSnippet(c *fiber.Ctx) error {
         Scan(&s.ID, &s.UserID, &s.ParentID, &s.Name, &s.Content, &s.IsFolder, &s.SortOrder, &s.CreatedAt)
 	if err != nil {
 		log.Printf("Update snippet failed: %v", err)
-		return c.Status(500).JSON(fiber.Map{"error": "Update failed"})
+		return c.Status(500).JSON(fiber.Map{"error": "Update failed: " + err.Error()})
 	}
 
 	return c.JSON(s)

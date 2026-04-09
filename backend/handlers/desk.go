@@ -22,8 +22,9 @@ func GetShelves(c *fiber.Ctx) error {
 		}
 	}
 
-	rows, err := db.Query(context.Background(), "SELECT id, user_id, name, color, sort_order, created_at FROM desk_shelves WHERE user_id = $1 ORDER BY sort_order ASC", dbUserID)
+	rows, err := db.Query(context.Background(), "SELECT id, user_id, name, color, sort_order, COALESCE(created_at, NOW()) FROM desk_shelves WHERE user_id = $1 ORDER BY sort_order ASC", dbUserID)
 	if err != nil {
+		log.Printf("GetShelves query error: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch shelves"})
 	}
 	defer rows.Close()
@@ -31,7 +32,11 @@ func GetShelves(c *fiber.Ctx) error {
 	shelves := []models.DeskShelf{}
 	for rows.Next() {
 		var s models.DeskShelf
-		rows.Scan(&s.ID, &s.UserID, &s.Name, &s.Color, &s.SortOrder, &s.CreatedAt)
+		err := rows.Scan(&s.ID, &s.UserID, &s.Name, &s.Color, &s.SortOrder, &s.CreatedAt)
+		if err != nil {
+			log.Printf("Scan DeskShelf error: %v", err)
+			continue
+		}
 		shelves = append(shelves, s)
 	}
 	return c.JSON(shelves)
@@ -203,7 +208,7 @@ func GetDeskItems(c *fiber.Ctx) error {
 	}
 
 	query := `
-		SELECT di.id, di.user_id, di.shelf_id, di.type, di.ref_id, di.sort_order, di.created_at,
+		SELECT di.id, di.user_id, di.shelf_id, di.type, di.ref_id, di.sort_order, COALESCE(di.created_at, NOW()),
 		COALESCE(
 			(SELECT title FROM bookcase_notes WHERE id::text = di.ref_id::text),
 			(SELECT title FROM bookmarks WHERE id::text = di.ref_id::text),

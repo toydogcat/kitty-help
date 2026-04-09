@@ -458,11 +458,19 @@ const getFileUrl = (book: any) => {
   // 🚀 Device-Specific Preview Refinement: 
   // Appending the title + extension helps iPad/ChromeOS recognize previewable content
   const baseUrl = apiService.getAbsoluteUrl(`/api/storehouse/file/${book.storeId}`);
-  let safeTitle = encodeURIComponent(book.title || 'document').replace(/%20/g, '+');
   
-  // Force extension if missing from title to satisfy strict MIME detection
-  if (isEPUB(book) && !safeTitle.toLowerCase().endsWith('.epub')) safeTitle += '.epub';
-  else if (!isEPUB(book) && !safeTitle.toLowerCase().endsWith('.pdf')) safeTitle += '.pdf';
+  // Clean title: remove existing extension to re-apply it safely if needed
+  let title = book.title || 'document';
+  let safeTitle = encodeURIComponent(title).replace(/%20/g, '+');
+  
+  // Force extension only if missing to avoid "file.pdf.pdf"
+  const isE = isEPUB(book);
+  const lowerTitle = title.toLowerCase();
+  
+  if (isE && !lowerTitle.endsWith('.epub')) safeTitle += '.epub';
+  else if (!isE && (book.category === 'DOCUMENT' || book.category === 'VOLUME' || lowerTitle.endsWith('.pdf')) && !lowerTitle.endsWith('.pdf')) {
+    safeTitle += '.pdf';
+  }
 
   let url = `${baseUrl}/${safeTitle}`;
   if (book.source === 'local') {
@@ -544,7 +552,13 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 
       <div class="ws-body" :class="'mode-' + viewMode">
         <div v-if="viewMode !== 'notes'" class="preview-pane">
-          <iframe v-if="activeBookIsPdf && activeBookFileUrl" :src="activeBookFileUrl" class="pdf-frame"></iframe>
+          <iframe 
+            v-if="activeBookIsPdf && activeBookFileUrl" 
+            :src="activeBookFileUrl" 
+            class="pdf-frame"
+            loading="lazy"
+            allow="fullscreen; clipboard-read; clipboard-write"
+          ></iframe>
           <div v-else-if="activeBookIsEpub" class="epub-reader">
              <div ref="epubViewerRef" class="epub-canvas"></div>
              <div v-if="isEpubLoading" class="loader"><div class="spin"></div></div>

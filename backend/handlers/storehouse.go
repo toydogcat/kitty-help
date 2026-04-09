@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -380,11 +381,7 @@ func GetFileProxy(c *fiber.Ctx) error {
 		}
 		
 		c.Set("Content-Type", contentType)
-		if c.Query("download") == "1" {
-			c.Set("Content-Disposition", "attachment; filename=" + filepath.Base(fullPath))
-		} else {
-			c.Set("Content-Disposition", "inline")
-		}
+		c.Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", filepath.Base(fullPath)))
 		return c.Send(data)
 	}
 
@@ -409,10 +406,20 @@ func GetFileProxy(c *fiber.Ctx) error {
 		}
 	}
 
+	// 🚀 FINAL DEFENSE: Active Content Sniffing if type is still generic
+	if (contentType == "application/octet-stream" || contentType == "") && len(bodyBytes) > 0 {
+		limit := len(bodyBytes)
+		if limit > 512 {
+			limit = 512
+		}
+		contentType = http.DetectContentType(bodyBytes[:limit])
+		log.Printf("🔍 [Proxy] Sniffed type: %s for %s", contentType, fileID)
+	}
+
 	if c.Query("download") == "1" {
 		c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", fakeFileName))
 	} else {
-		// 🛠️ Enhanced iPad/ChromeOS Preview Support: Add filename to inline disposition
+		// 🛠️ Enhanced iPad/ChromeOS Preview Support: Force inline with filename
 		c.Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", fakeFileName))
 	}
 

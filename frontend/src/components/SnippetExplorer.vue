@@ -404,32 +404,50 @@ const addToDesk = async (item: any) => {
 };
 
 const moveUp = async (item: any) => {
+  if (loading.value) return;
   const index = snippets.value.findIndex(s => s.id === item.id);
   if (index > 0) {
-    const prev = snippets.value[index-1];
-    const oldOrder = (item.sortOrder !== undefined && item.sortOrder !== null) ? item.sortOrder : index;
-    let newOrder = (prev.sortOrder !== undefined && prev.sortOrder !== null) ? prev.sortOrder : (index - 1);
-    
-    // Safety check to ensure distinct values
-    if (newOrder >= oldOrder) newOrder = oldOrder - 1;
-    
-    await syncService.moveSnippet(item.id, newOrder);
-    await syncService.moveSnippet(prev.id, oldOrder);
+    try {
+      loading.value = true;
+      const prev = snippets.value[index-1];
+      const oldOrder = (item.sortOrder !== undefined && item.sortOrder !== null) ? item.sortOrder : index;
+      let newOrder = (prev.sortOrder !== undefined && prev.sortOrder !== null) ? prev.sortOrder : (index - 1);
+      
+      if (newOrder >= oldOrder) newOrder = oldOrder - 1;
+      
+      // Sequential for safety in Cloud mode
+      await syncService.moveSnippet(item.id, newOrder);
+      await syncService.moveSnippet(prev.id, oldOrder);
+      await fetchData();
+    } catch (err) {
+      console.error("Move up failed:", err);
+    } finally {
+      loading.value = false;
+    }
   }
 };
 
 const moveDown = async (item: any) => {
+  if (loading.value) return;
   const index = snippets.value.findIndex(s => s.id === item.id);
   if (index < snippets.value.length - 1) {
-    const next = snippets.value[index+1];
-    const oldOrder = (item.sortOrder !== undefined && item.sortOrder !== null) ? item.sortOrder : index;
-    let newOrder = (next.sortOrder !== undefined && next.sortOrder !== null) ? next.sortOrder : (index + 1);
-    
-    // Safety check to ensure distinct values
-    if (newOrder <= oldOrder) newOrder = oldOrder + 1;
-    
-    await syncService.moveSnippet(item.id, newOrder);
-    await syncService.moveSnippet(next.id, oldOrder);
+    try {
+      loading.value = true;
+      const next = snippets.value[index+1];
+      const oldOrder = (item.sortOrder !== undefined && item.sortOrder !== null) ? item.sortOrder : index;
+      let newOrder = (next.sortOrder !== undefined && next.sortOrder !== null) ? next.sortOrder : (index + 1);
+      
+      if (newOrder <= oldOrder) newOrder = oldOrder + 1;
+      
+      // Sequential for safety in Cloud mode
+      await syncService.moveSnippet(item.id, newOrder);
+      await syncService.moveSnippet(next.id, oldOrder);
+      await fetchData();
+    } catch (err) {
+      console.error("Move down failed:", err);
+    } finally {
+      loading.value = false;
+    }
   }
 };
 </script>

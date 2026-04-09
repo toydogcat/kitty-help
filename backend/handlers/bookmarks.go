@@ -31,11 +31,11 @@ func GetBookmarks(c *fiber.Ctx) error {
 	args = append(args, dbUserID)
 
 	if all == "true" {
-		query = "SELECT id, user_id, parent_id, title, url, category, icon_url, password_id, is_folder, sort_order, created_at FROM bookmarks WHERE user_id = $1 ORDER BY sort_order ASC, created_at DESC"
+		query = "SELECT id, user_id, parent_id, title, url, category, icon_url, password_id, is_folder, sort_order, COALESCE(created_at, NOW()) FROM bookmarks WHERE user_id = $1 ORDER BY sort_order ASC, created_at DESC"
 	} else if parentId == "root" || parentId == "" {
-		query = "SELECT id, user_id, parent_id, title, url, category, icon_url, password_id, is_folder, sort_order, created_at FROM bookmarks WHERE user_id = $1 AND parent_id IS NULL ORDER BY sort_order ASC, created_at DESC"
+		query = "SELECT id, user_id, parent_id, title, url, category, icon_url, password_id, is_folder, sort_order, COALESCE(created_at, NOW()) FROM bookmarks WHERE user_id = $1 AND parent_id IS NULL ORDER BY sort_order ASC, created_at DESC"
 	} else {
-		query = "SELECT id, user_id, parent_id, title, url, category, icon_url, password_id, is_folder, sort_order, created_at FROM bookmarks WHERE user_id = $1 AND parent_id = $2 ORDER BY sort_order ASC, created_at DESC"
+		query = "SELECT id, user_id, parent_id, title, url, category, icon_url, password_id, is_folder, sort_order, COALESCE(created_at, NOW()) FROM bookmarks WHERE user_id = $1 AND parent_id = $2 ORDER BY sort_order ASC, created_at DESC"
 		args = append(args, parentId)
 	}
 
@@ -52,7 +52,7 @@ func GetBookmarks(c *fiber.Ctx) error {
 		err := rows.Scan(&b.ID, &b.UserID, &b.ParentID, &b.Title, &b.URL, &b.Category, &b.IconURL, &b.PasswordID, &b.IsFolder, &b.SortOrder, &b.CreatedAt)
 		if err != nil {
 			log.Printf("Scan bookmark failed: %v", err)
-			return c.Status(500).JSON(fiber.Map{"error": "Failed to scan bookmarks"})
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to scan bookmarks: " + err.Error()})
 		}
 		bookmarks = append(bookmarks, b)
 	}
@@ -161,7 +161,7 @@ func UpdateBookmark(c *fiber.Ctx) error {
         Scan(&b.ID, &b.UserID, &b.ParentID, &b.Title, &b.URL, &b.Category, &b.IconURL, &b.PasswordID, &b.IsFolder, &b.SortOrder, &b.CreatedAt)
 	if err != nil {
 		log.Printf("Update bookmark failed: %v", err)
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to update bookmark"})
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to update bookmark: " + err.Error()})
 	}
 
 	return c.JSON(b)
