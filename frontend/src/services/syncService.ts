@@ -190,6 +190,13 @@ export const syncService = reactive({
         await db.sync_queue.add({ action: 'DELETE', entityType: 'deskItem', entityId: id, data: null, timestamp: Date.now() });
         this.requestSync();
     },
+    async moveDeskItem(id: string, sortOrder: number) {
+        const item = await db.deskItems.get(id);
+        const shelfId = item?.shelfId || 'null';
+        await db.deskItems.update(id, { sortOrder, syncStatus: 'pending' });
+        await db.sync_queue.add({ action: 'UPDATE', entityType: 'deskItem', entityId: id, data: { shelfId: shelfId === 'null' ? null : shelfId, sortOrder }, timestamp: Date.now() });
+        this.requestSync();
+    },
 
     // --- Bookcase Methods ---
     async getBookcase() {

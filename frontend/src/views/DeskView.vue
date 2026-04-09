@@ -29,6 +29,7 @@ const draggingItem = ref<any>(null);
 const draggingShelf = ref<any>(null); // Track shelf reordering
 const dragOverShelfId = ref<string | null | 'desktop'>(null);
 const draggingShelfOverId = ref<string | null>(null); // For visual feedback on shelf reordering
+const isSorting = ref(false);
 
 // Modals
 const showAddShelfModal = ref(false);
@@ -242,13 +243,63 @@ const onDropOnShelf = async (shelfId: string | null) => {
   }
   if (!draggingItem.value) return;
   try {
-    await syncService.updateDeskItem(draggingItem.value.id, { shelfId });
+    // When moving between shelves, we default to the end (sortOrder = desktopItems.length)
+    // Actually, it's better to find the max sortOrder in the target shelf
+    const targetItems = await db.deskItems.where('shelfId').equals(shelfId || 'null').toArray();
+    const maxSort = targetItems.reduce((max, it) => Math.max(max, it.sortOrder || 0), -1);
+    
+    await syncService.updateDeskItem(draggingItem.value.id, { 
+      shelfId,
+      sortOrder: maxSort + 1
+    });
     draggingItem.value = null;
     dragOverShelfId.value = null;
   } catch (err) {
     console.error("Move failed:", err);
   } finally {
     dragOverShelfId.value = null;
+  }
+};
+
+const moveUp = async (item: any) => {
+  if (isSorting.value) return;
+  const index = desktopItems.value.findIndex(it => it.id === item.id);
+  if (index <= 0) return;
+
+  try {
+    isSorting.value = true;
+    const items = [...desktopItems.value];
+    // Swap in local view
+    [items[index - 1], items[index]] = [items[index], items[index - 1]];
+    
+    // Update all sortOrders in this context to ensure no collisions
+    const updates = items.map((it, i) => syncService.moveDeskItem(it.id, i));
+    await Promise.all(updates);
+  } catch (err) {
+    console.error("Move up failed:", err);
+  } finally {
+    isSorting.value = false;
+  }
+};
+
+const moveDown = async (item: any) => {
+  if (isSorting.value) return;
+  const index = desktopItems.value.findIndex(it => it.id === item.id);
+  if (index < 0 || index >= desktopItems.value.length - 1) return;
+
+  try {
+    isSorting.value = true;
+    const items = [...desktopItems.value];
+    // Swap in local view
+    [items[index], items[index + 1]] = [items[index + 1], items[index]];
+    
+    // Update all sortOrders in this context to ensure no collisions
+    const updates = items.map((it, i) => syncService.moveDeskItem(it.id, i));
+    await Promise.all(updates);
+  } catch (err) {
+    console.error("Move down failed:", err);
+  } finally {
+    isSorting.value = false;
   }
 };
 
@@ -501,7 +552,13 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
               <span class="badge" :class="it.type">{{ it.type.toUpperCase() }}</span>
             </div>
           </div>
-          <button @click.stop="removeItem(it.id, it.type)" class="remove-btn" title="Unlink from desk">×</button>
+          
+          <div class="item-actions" @click.stop v-if="!isSorting">
+            <button @click="moveUp(it)" class="action-btn up" title="Move Up">▴</button>
+            <button @click="moveDown(it)" class="action-btn down" title="Move Down">▾</button>
+            <button @click="removeItem(it.id, it.type)" class="action-btn remove" title="Unlink from desk">×</button>
+          </div>
+          <div class="item-actions sorting" v-else>...</div>
         </div>
       </div>
     </div>
@@ -596,9 +653,15 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
 .badge.password { background: #f1c40f; color: #000; }
 .badge.snippet { background: #f1c40f; color: #000; }
 
-.remove-btn { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 50%; width: 24px; height: 24px; opacity: 0; transition: all 0.2s; display: flex; align-items: center; justify-content: center; z-index: 5; }
-.desk-tile:hover .remove-btn { opacity: 1; }
-.remove-btn:hover { background: #e74c3c; border-color: #e74c3c; transform: scale(1.1); }
+.item-actions { position: absolute; top: 12px; right: 12px; display: flex; gap: 4px; opacity: 0; transition: all 0.2s; z-index: 5; }
+.desk-tile:hover .item-actions { opacity: 1; }
+.item-actions.sorting { opacity: 1; color: var(--primary-color); font-size: 0.7rem; font-weight: bold; background: rgba(0,0,0,0.5); padding: 2px 8px; border-radius: 10px; }
+
+.action-btn { background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 6px; width: 26px; height: 26px; transition: all 0.2s; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.9rem; border: none; }
+.action-btn:hover { background: var(--primary-color); transform: scale(1.1); }
+.action-btn.remove:hover { background: #e74c3c; }
+
+.remove-btn { display: none; }
 
 .shelves-rail { 
   background: rgba(13, 17, 23, 0.85); 
