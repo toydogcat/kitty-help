@@ -251,7 +251,7 @@ func AddRemarkItem(c *fiber.Ctx) error {
 
 	query := `
 		INSERT INTO remark_items (id, user_id, container_id, log_id) 
-		VALUES (COALESCE(NULLIF($1, ''), gen_random_uuid()::text), $2, $3, $4)
+		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4)
 		ON CONFLICT (id) DO UPDATE SET 
 			container_id = EXCLUDED.container_id,
 			log_id = EXCLUDED.log_id

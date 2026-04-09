@@ -106,7 +106,7 @@ func CreateBookmark(c *fiber.Ctx) error {
 
 	query := `
 		INSERT INTO bookmarks (id, user_id, parent_id, title, url, category, icon_url, password_id, is_folder, sort_order) 
-		VALUES (COALESCE(NULLIF($1, ''), gen_random_uuid()::text), $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO UPDATE SET
 			title = EXCLUDED.title,
 			url = EXCLUDED.url,

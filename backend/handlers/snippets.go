@@ -86,7 +86,7 @@ func CreateSnippet(c *fiber.Ctx) error {
 	// Insert into Local PG with UPSERT support for EverSync
 	query := `
 		INSERT INTO snippets (id, user_id, parent_id, name, content, is_folder, sort_order) 
-		VALUES (COALESCE(NULLIF($1, ''), gen_random_uuid()::text), $2, $3, $4, $5, $6, $7)
+		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
 			content = EXCLUDED.content,

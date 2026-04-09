@@ -225,9 +225,18 @@ func AddBookNote(c *fiber.Ctx) error {
 	if req.NoteType == "" { req.NoteType = "markdown" }
 
 	var id string
-	err := database.LocalDB.QueryRow(context.Background(),
-		"INSERT INTO bookcase_notes (book_id, title, content, note_type) VALUES ($1, $2, $3, $4) RETURNING id",
-		bookID, req.Title, req.Content, req.NoteType).Scan(&id)
+	query := `
+		INSERT INTO bookcase_notes (id, book_id, title, content, note_type) 
+		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5)
+		ON CONFLICT (id) DO UPDATE SET 
+			title = EXCLUDED.title,
+			content = EXCLUDED.content,
+			note_type = EXCLUDED.note_type,
+			updated_at = NOW()
+		RETURNING id
+	`
+	err := database.LocalDB.QueryRow(context.Background(), query,
+		"", bookID, req.Title, req.Content, req.NoteType).Scan(&id)
 	
 	if err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})

@@ -56,7 +56,7 @@ func CreateShelf(c *fiber.Ctx) error {
 
 	query := `
 		INSERT INTO desk_shelves (id, user_id, name, color, sort_order) 
-		VALUES (COALESCE(NULLIF($1, ''), gen_random_uuid()::text), $2, $3, $4, $5)
+		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5)
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
 			color = EXCLUDED.color,
@@ -287,7 +287,7 @@ func AddDeskItem(c *fiber.Ctx) error {
 
 	query := `
 		INSERT INTO desk_items (id, user_id, shelf_id, type, ref_id, sort_order) 
-		VALUES (COALESCE(NULLIF($1, ''), gen_random_uuid()::text), $2, $3, $4, $5, $6)
+		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6)
 		ON CONFLICT (id) DO UPDATE SET
 			shelf_id = EXCLUDED.shelf_id,
 			sort_order = EXCLUDED.sort_order,
