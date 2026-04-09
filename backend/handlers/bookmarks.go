@@ -91,12 +91,18 @@ func CreateBookmark(c *fiber.Ctx) error {
 	}
 
 	// Internal validation for virtual IDs to NULL (Postgres UUID requirement)
-	if b.ParentID != nil && (*b.ParentID == "" || *b.ParentID == "root") {
-		b.ParentID = nil
+	// We handle: "", "root", "null", "none", "undefined" as NULL
+	sanitizeUUID := func(s *string) *string {
+		if s == nil { return nil }
+		val := *s
+		if val == "" || val == "root" || val == "null" || val == "none" || val == "undefined" {
+			return nil
+		}
+		return s
 	}
-	if b.PasswordID != nil && (*b.PasswordID == "" || *b.PasswordID == "root") {
-		b.PasswordID = nil
-	}
+
+	b.ParentID = sanitizeUUID(b.ParentID)
+	b.PasswordID = sanitizeUUID(b.PasswordID)
 
 	query := `
 		INSERT INTO bookmarks (id, user_id, parent_id, title, url, category, icon_url, password_id, is_folder, sort_order) 
@@ -113,8 +119,11 @@ func CreateBookmark(c *fiber.Ctx) error {
 	err = db.QueryRow(context.Background(), query, 
 		b.ID, b.UserID, b.ParentID, b.Title, b.URL, b.Category, b.IconURL, b.PasswordID, b.IsFolder, b.SortOrder).Scan(&b.ID, &b.CreatedAt)
 	if err != nil {
-		log.Printf("Insert bookmark failed: %v", err)
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to create bookmark"})
+		log.Printf("❌ [Bookmark] Insert failed: %v | User: %s | Title: %s | ParentID: %v", err, b.UserID, b.Title, b.ParentID)
+		return c.Status(500).JSON(fiber.Map{
+			"error": "Failed to create bookmark",
+			"details": err.Error(),
+		})
 	}
 
 	return c.JSON(b)
