@@ -308,7 +308,7 @@ func AddDeskItem(c *fiber.Ctx) error {
         VALUES (
             COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), 
             $2, 
-            CASE WHEN $3 IS NULL OR $3 = '' OR $3 = 'null' THEN NULL ELSE $3::uuid END, 
+            CASE WHEN $3::text IS NULL OR $3::text = '' OR $3::text = 'null' THEN NULL ELSE $3::uuid END, 
             $4, 
             NULLIF($5, '')::uuid, 
             $6
@@ -349,8 +349,9 @@ func UpdateDeskItem(c *fiber.Ctx) error {
 
     query := `
         UPDATE desk_items 
-        SET shelf_id = CASE WHEN $1 IS NULL OR $1 = '' OR $1 = 'null' THEN NULL ELSE $1::uuid END, 
-            sort_order = $2 
+        SET shelf_id = CASE WHEN $1::text IS NULL OR $1::text = '' OR $1::text = 'null' THEN NULL ELSE $1::uuid END, 
+            sort_order = $2,
+            updated_at = NOW()
         WHERE id = $3::uuid
     `
     _, err = db.Exec(context.Background(), query, sId, it.SortOrder, id)
