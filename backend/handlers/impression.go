@@ -469,7 +469,12 @@ func ExportImpressionGraph(c *fiber.Ctx) error {
 	err := db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
 	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User not found"}) }
 
-	rows, err := db.Query(context.Background(), "SELECT id, media_id, title, content, node_type, desk_shelf_id, created_at, kg_name FROM impression_nodes WHERE user_id = $1", dbUserID)
+	kgName := c.Query("kgName")
+	nodesQuery := `SELECT id, media_id, title, content, node_type, desk_shelf_id, created_at, kg_name 
+	               FROM impression_nodes 
+	               WHERE user_id = $1 AND ($2 = '' OR COALESCE(kg_name, 'default') = $2)`
+	
+	rows, err := db.Query(context.Background(), nodesQuery, dbUserID, kgName)
 	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
 	defer rows.Close()
 
@@ -481,7 +486,10 @@ func ExportImpressionGraph(c *fiber.Ctx) error {
 		}
 	}
 
-	eRows, err := db.Query(context.Background(), "SELECT id, source_id, target_id, label, created_at, kg_name FROM impression_edges WHERE user_id = $1", dbUserID)
+	edgesQuery := `SELECT id, source_id, target_id, label, created_at, kg_name 
+	               FROM impression_edges 
+	               WHERE user_id = $1 AND ($2 = '' OR COALESCE(kg_name, 'default') = $2)`
+	eRows, err := db.Query(context.Background(), edgesQuery, dbUserID, kgName)
 	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
 	defer eRows.Close()
 
@@ -509,14 +517,16 @@ func ImportImpressionGraph(c *fiber.Ctx) error {
 	err := db.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&dbUserID)
 	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User not found"}) }
 
+	kgName := c.Query("kgName")
 	ctx := context.Background()
 	tx, err := db.Begin(ctx)
 	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
 	defer tx.Rollback(ctx)
 
 	for _, n := range graph.Nodes {
-		// Clean kg_name: if empty in JSON, set to 'default'
+		// Context-aware: override if kgName passed, otherwise clean/set to default
 		kg := n.KGName
+		if kgName != "" { kg = kgName }
 		if kg == "" { kg = "default" }
 
 		_, err = tx.Exec(ctx, `
@@ -535,6 +545,7 @@ func ImportImpressionGraph(c *fiber.Ctx) error {
 
 	for _, e := range graph.Edges {
 		kg := e.KGName
+		if kgName != "" { kg = kgName }
 		if kg == "" { kg = "default" }
 
 		_, err = tx.Exec(ctx, `

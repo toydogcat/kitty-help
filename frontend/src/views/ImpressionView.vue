@@ -605,6 +605,13 @@ const executeCommand = async () => {
             } else {
                 commandResults.value = all;
             }
+        } else if (cmd === '/backup') {
+            await backupAll();
+            commandInput.value = '';
+            commandResults.value = [{ id: 'b-a', title: 'Universe Backup Initiated.', resultType: 'info' }];
+        } else if (cmd === '/recover') {
+            recoverFileRef.value?.click();
+            commandInput.value = '';
         } else if (cmd === '/kg') {
             if (!args[0]) throw new Error('KG name required. Usage: /kg [name] OR /kg copy [src] [tgt]');
             
@@ -656,7 +663,7 @@ const executeCommand = async () => {
     }
 };
 
-const COMMAND_LIST = ['/add', '/edit', '/model', '/search', '/list', '/kg', '/layout', '/rank', '/pin', '/help'];
+const COMMAND_LIST = ['/add', '/edit', '/model', '/search', '/list', '/kg', '/layout', '/rank', '/pin', '/backup', '/recover', '/help'];
 
 const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Tab') {
@@ -673,14 +680,26 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
 const exportGraphData = async () => {
     try {
+        const data = await apiService.exportImpressionGraph(kgName.value);
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `kg_${kgName.value}_${Date.now()}.json`;
+        link.click();
+    } catch (e) { alert('Export failed'); }
+};
+
+const backupAll = async () => {
+    try {
         const data = await apiService.exportImpressionGraph();
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `impression_backup_${Date.now()}.json`;
+        link.download = `universe_backup_${Date.now()}.json`;
         link.click();
-    } catch (e) { alert('Export failed'); }
+    } catch (e) { alert('Backup failed'); }
 };
 
 const importGraphData = async (event: any) => {
@@ -690,14 +709,36 @@ const importGraphData = async (event: any) => {
     reader.onload = async (e) => {
         try {
             const data = JSON.parse(e.target?.result as string);
-            await apiService.importImpressionGraph(data);
-            alert('Universe Restored Successfully.');
-            if (importFileRef.value) importFileRef.value.value = ''; // Reset input
-            await loadGraph(); // Full fresh reload
+            await apiService.importImpressionGraph(data, kgName.value);
+            alert(`KG '${kgName.value}' Restored Successfully.`);
+            if (importFileRef.value) importFileRef.value.value = ''; 
+            await loadGraph(); 
         } catch (err: any) { 
             console.error(err);
             alert(`Restore Failed: ${err.response?.data?.error || err.message}`); 
             if (importFileRef.value) importFileRef.value.value = '';
+        }
+    };
+    reader.readAsText(file);
+};
+
+const recoverFileRef = ref<HTMLInputElement | null>(null);
+const recoverAll = async (event: any) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const data = JSON.parse(e.target?.result as string);
+            const res = await apiService.importImpressionGraph(data);
+            alert(`Universe Recovered: ${res.nodes} nodes, ${res.edges} links.`);
+            if (recoverFileRef.value) recoverFileRef.value.value = '';
+            await loadGraph();
+            await fetchKGs();
+        } catch (err: any) {
+            console.error(err);
+            alert(`Recovery Failed: ${err.response?.data?.error || err.message}`);
+            if (recoverFileRef.value) recoverFileRef.value.value = '';
         }
     };
     reader.readAsText(file);
@@ -979,6 +1020,7 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
                     <li><code>/rank [centrality/pagerank]</code> - 執行節點權重分析，自動縮放重要節點</li>
                     <li><code>/edit [標題]</code> - 快速跳轉至節點並開啟編輯面板</li>
                     <li><code>/kg [名稱]</code> - 切換知識宇宙；<code>/kg copy [源] [目]</code> - 複製整個宇宙</li>
+                    <li><code>/backup</code> - 備份「全宇宙」所有圖譜；<code>/recover</code> - 從備份恢復全宇宙</li>
                     <li><code>[全局操作]</code> - 空白處長按開關【全局物理】；滾輪縮放與平移位置會自動記憶</li>
                     <li><code>λ 指令系統</code> - 支援 /add, /search, /list, /pin 等所有進階管理功能</li>
                 </ul>
@@ -1011,8 +1053,8 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
                 <div class="t-label">Pin Desk</div>
             </div>
             <div class="t-sep"></div>
-            <div class="tool-btn" @click="exportGraphData"><div class="t-icon">📥</div><div class="t-label">Export</div></div>
-            <div class="tool-btn" @click="importFileRef?.click()"><div class="t-icon">📤</div><div class="t-label">Load</div></div>
+            <div class="tool-btn" @click="exportGraphData" title="Export Current KG"><div class="t-icon">📥</div><div class="t-label">Export</div></div>
+            <div class="tool-btn" @click="importFileRef?.click()" title="Load onto Current KG"><div class="t-icon">📤</div><div class="t-label">Load</div></div>
         </div>
 
         <!-- Node Explorer Bottom Card -->
@@ -1175,6 +1217,7 @@ onMounted(() => { initGraph(); fetchKGs(); loadGraph(); });
     </div>
 
     <input type="file" ref="importFileRef" class="hidden" accept=".json" @change="importGraphData" />
+    <input type="file" ref="recoverFileRef" class="hidden" accept=".json" @change="recoverAll" />
     <div v-if="isLoading" class="loading-overlay"><div class="spin"></div></div>
   </div>
 </template>

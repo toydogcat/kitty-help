@@ -306,8 +306,9 @@ export const apiService = {
     const response = await axios.post(`${API_BASE}/impression/nodes/${id}/clone`);
     return response.data;
   },
-  async exportImpressionGraph() {
-    const response = await axios.get(`${API_BASE}/impression/export`);
+  async exportImpressionGraph(kgName?: string) {
+    const params = kgName ? { params: { kgName } } : {};
+    const response = await axios.get(`${API_BASE}/impression/export`, params);
     return response.data;
   },
   async getImpressionRandom() {
@@ -322,8 +323,9 @@ export const apiService = {
     const response = await axios.get(`${API_BASE}/impression/snippets/${id}`);
     return response.data;
   },
-  async importImpressionGraph(data: any) {
-    const response = await axios.post(`${API_BASE}/impression/import`, data);
+  async importImpressionGraph(data: any, kgName?: string) {
+    const params = kgName ? { params: { kgName } } : {};
+    const response = await axios.post(`${API_BASE}/impression/import`, data, params);
     return response.data;
   },
   async getKnowledgeGraphs() {
