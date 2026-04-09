@@ -686,6 +686,95 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
   .tabs-nav button { padding: 0.4rem 0.6rem; font-size: 0.65rem; }
 }
 
+/* 🛠️ Workspace Layout Expansion Fix */
+.workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #000;
+  position: relative;
+}
+
+.ws-header {
+  height: 72px;
+  padding: 0 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #050505;
+  border-bottom: 1px solid #1a1e23;
+  gap: 1.5rem;
+  flex-shrink: 0;
+}
+
+.active-book-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.active-book-info h2 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+
+.badge {
+  background: #1e293b;
+  color: #94a3b8;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tabs-nav {
+  display: flex;
+  gap: 4px;
+  background: #111;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid #222;
+}
+
+.tabs-nav button {
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #555;
+  cursor: pointer;
+  transition: 0.2s;
+  white-space: nowrap;
+}
+
+.tabs-nav button.active {
+  background: #d97706;
+  color: #fff;
+}
+
+.detach-btn {
+  background: transparent;
+  border: 1px solid #222;
+  color: #555;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
 .ws-body { flex: 1; display: flex; overflow: hidden; }
 .preview-pane { flex: 1.4; position: relative; background: #121519; border-right: 1px solid #1a1e23; overflow: hidden; }
 .pdf-frame { width: 100%; height: 100%; border: none; background: #1a1e23; }
