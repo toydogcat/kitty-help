@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { apiService, socket } from '../services/api';
+import { syncService } from '../services/syncService';
 import StoreItemModal from '../components/StoreItemModal.vue';
 
 const items = ref<any[]>([]);
@@ -41,7 +42,7 @@ const loadItems = async () => {
       mode: searchMode.value,
       limit: limit.value
     };
-    items.value = await apiService.getStorehouseItems(params);
+    items.value = await syncService.getStorehouseItems(params);
   } catch (err) {
     console.error("Failed to load storehouse items:", err);
   } finally {
@@ -96,7 +97,7 @@ const getItemThumbnail = (item: any) => {
 
 const addToDesk = async (item: any) => {
   try {
-    await apiService.addDeskItem({
+    await syncService.addDeskItem({
       type: 'media',
       refId: item.id,
       shelfId: null,

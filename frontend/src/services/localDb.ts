@@ -91,10 +91,56 @@ export interface LocalAICache {
     expiresAt: number;
 }
 
+export interface LocalImpressionNode {
+    id: string;
+    title: string;
+    content: string;
+    nodeType: string;
+    imageUrl?: string;
+    fileId?: string;
+    sourcePlatform?: string;
+    kgName: string;
+    deskShelfId?: string | null;
+    updatedAt: string;
+    syncStatus: 'synced' | 'pending' | 'error';
+}
+
+export interface LocalImpressionLink {
+    id: string;
+    sourceId: string;
+    targetId: string;
+    label: string;
+    kgName: string;
+    updatedAt: string;
+    syncStatus: 'synced' | 'pending' | 'error';
+}
+
+export interface LocalStorehouseItem {
+    id: string;
+    title: string;
+    caption: string;
+    notes: string;
+    source: string;
+    category: string;
+    file_id: string;
+    sender: string;
+    created_at: string;
+    index_status: string;
+    updatedAt: string;
+    syncStatus: 'synced' | 'pending' | 'error';
+}
+
+export interface LocalBulletin {
+    id: string;
+    message: string;
+    updatedAt: string;
+    syncStatus: 'synced' | 'pending' | 'error';
+}
+
 export interface SyncAction {
     id?: number;
     action: 'CREATE' | 'UPDATE' | 'DELETE' | 'MOVE';
-    entityType: 'snippet' | 'bookmark' | 'remark' | 'remarkItem' | 'shelf' | 'deskItem' | 'book' | 'bookNote';
+    entityType: 'snippet' | 'bookmark' | 'remark' | 'remarkItem' | 'shelf' | 'deskItem' | 'book' | 'bookNote' | 'impressionNode' | 'impressionLink' | 'storehouseItem' | 'bulletin';
     entityId: string;
     data: any;
     timestamp: number;
@@ -109,6 +155,10 @@ export class EverSyncDatabase extends Dexie {
     bookNotes!: Table<LocalBookNote>;
     remarks!: Table<LocalRemark>;
     remarkItems!: Table<LocalRemarkItem>;
+    impressionNodes!: Table<LocalImpressionNode>;
+    impressionLinks!: Table<LocalImpressionLink>;
+    storehouseItems!: Table<LocalStorehouseItem>;
+    bulletin!: Table<LocalBulletin>;
     ai_cache!: Table<LocalAICache>;
     sync_queue!: Table<SyncAction>;
 
@@ -123,6 +173,10 @@ export class EverSyncDatabase extends Dexie {
             bookNotes: 'id, bookId, title, syncStatus',
             remarks: 'id, name, isPinned, syncStatus',
             remarkItems: 'id, containerId, logId, syncStatus',
+            impressionNodes: 'id, title, nodeType, kgName, syncStatus',
+            impressionLinks: 'id, sourceId, targetId, kgName, syncStatus',
+            storehouseItems: 'id, title, source, category, index_status, syncStatus',
+            bulletin: 'id, syncStatus',
             ai_cache: 'query, expiresAt',
             sync_queue: '++id, action, entityId, timestamp'
         });

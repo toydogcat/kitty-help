@@ -426,8 +426,7 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
         content: updatedData.content
       });
     } else if (editingItem.value.type === 'media') {
-      // Media doesn't have EverSync yet
-      await apiService.updateStorehouseItem(editingItem.value.refId, {
+      await syncService.updateStorehouseItem(editingItem.value.refId, {
         title: updatedData.title,
         notes: updatedData.content
       });

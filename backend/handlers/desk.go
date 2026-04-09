@@ -321,8 +321,11 @@ func AddDeskItem(c *fiber.Ctx) error {
     `
     err = db.QueryRow(context.Background(), query, it.ID, dbUserID, sId, it.Type, it.RefID, it.SortOrder).Scan(&it.ID, &it.CreatedAt)
     if err != nil {
-        log.Printf("AddDeskItem SQL error: %v (ID: %s, RefID: %s, ShelfID: %v)", err, it.ID, it.RefID, sId)
-        return c.Status(500).JSON(fiber.Map{"error": "Failed to add item to desk"})
+        log.Printf("❌ [AddDeskItem] SQL Error: %v | ID: %s | RefID: %s | User: %s", err, it.ID, it.RefID, dbUserID)
+        return c.Status(500).JSON(fiber.Map{
+            "error": "Failed to add item to desk",
+            "details": err.Error(),
+        })
     }
 	it.UserID = dbUserID
 	return c.JSON(it)

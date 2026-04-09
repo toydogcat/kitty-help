@@ -120,7 +120,9 @@ func CreateBookmark(c *fiber.Ctx) error {
 	err = db.QueryRow(context.Background(), query, 
 		b.ID, b.UserID, b.ParentID, b.Title, b.URL, b.Category, b.IconURL, b.PasswordID, b.IsFolder, b.SortOrder).Scan(&b.ID, &b.CreatedAt)
 	if err != nil {
-		log.Printf("❌ [Bookmark] Insert failed: %v | User: %s | Title: %s | ParentID: %v", err, b.UserID, b.Title, b.ParentID)
+		title := "nil"
+		if b.Title != nil { title = *b.Title }
+		log.Printf("❌ [Bookmark] Insert failed: %v | User: %s | Title: %s | ParentID: %v", err, b.UserID, title, b.ParentID)
 		return c.Status(500).JSON(fiber.Map{
 			"error": "Failed to create bookmark",
 			"details": err.Error(),

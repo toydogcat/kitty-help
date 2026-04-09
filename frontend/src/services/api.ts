@@ -128,7 +128,7 @@ export const apiService = {
     const response = await axios.post(`${API_BASE}/snippets`, data);
     return response.data;
   },
-  async updateSnippet(id: string, data: { name: string; content?: string; parentId?: string | null; sortOrder?: number }) {
+  async updateSnippet(id: string, data: { name?: string; content?: string; parentId?: string | null; sortOrder?: number }) {
     const response = await axios.put(`${API_BASE}/snippets/${id}`, data);
     return response.data;
   },
@@ -248,6 +248,8 @@ export const apiService = {
     category?: string;
     parentId?: string | null;
     sortOrder?: number;
+    iconUrl?: string;
+    passwordId?: string | null;
   }) {
     const res = await axios.put(`${API_BASE}/bookmarks/${id}`, data);
     return res.data;

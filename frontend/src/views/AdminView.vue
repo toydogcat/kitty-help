@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue';
 import AdminDashboard from '../components/AdminDashboard.vue';
 import { apiService } from '../services/api';
+import { syncService } from '../services/syncService';
 
 const props = defineProps<{ 
   deviceId: string;
@@ -66,7 +67,7 @@ const handleDeleteBotUser = async (id: string) => {
 onMounted(async () => {
   try {
     const [bullRes, settings] = await Promise.all([
-      apiService.getBulletin(),
+      syncService.getBulletin(),
       apiService.getSettings(),
       fetchBotData()
     ]);
@@ -93,7 +94,7 @@ const saveBulletin = async () => {
   if (!bulletinMessage.value.trim()) return;
   saving.value = true;
   try {
-    await apiService.updateBulletin(bulletinMessage.value, props.adminEmail, props.deviceId);
+    await syncService.updateBulletin(bulletinMessage.value, props.adminEmail, props.deviceId);
     alert('Bulletin updated successfully! 📢');
   } catch (err) {
     alert('Failed to update bulletin. Please check permissions.');

@@ -50,6 +50,18 @@ export const syncService = reactive({
     },
 
     async createSnippet(data: { parentId: string | null; name: string; content?: string; isFolder: boolean; sortOrder?: number }) {
+        if (this.mode === 'cloud') {
+            const res = await apiService.createSnippet(data);
+            const newSnippet = {
+                ...res,
+                parentId: res.parentId || 'root',
+                syncStatus: 'synced' as const,
+                updatedAt: new Date().toISOString()
+            };
+            await db.snippets.put(newSnippet);
+            return newSnippet;
+        }
+
         const id = crypto.randomUUID();
         const newSnippet: LocalSnippet = {
             id,
@@ -68,11 +80,21 @@ export const syncService = reactive({
     },
 
     async updateSnippet(id: string, data: any) {
+        if (this.mode === 'cloud') {
+            await apiService.updateSnippet(id, data);
+            await db.snippets.update(id, { ...data, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return;
+        }
         await db.snippets.update(id, { ...data, syncStatus: 'pending' });
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'snippet', entityId: id, data, timestamp: Date.now() });
         this.requestSync();
     },
     async moveSnippet(id: string, sortOrder: number) {
+        if (this.mode === 'cloud') {
+            await apiService.updateSnippet(id, { sortOrder });
+            await db.snippets.update(id, { sortOrder, syncStatus: 'synced' });
+            return;
+        }
         // Defensive Merge: ensure we don't overwrite server data with empty fields during a move
         const existing = await db.snippets.get(id);
         const name = existing?.name || '';
@@ -90,6 +112,11 @@ export const syncService = reactive({
     },
 
     async deleteSnippet(id: string) {
+        if (this.mode === 'cloud') {
+            await apiService.deleteSnippet(id);
+            await db.snippets.delete(id);
+            return;
+        }
         const item = await db.snippets.get(id);
         const isGhost = item && (!item.name || item.name.trim() === '');
         
@@ -133,6 +160,18 @@ export const syncService = reactive({
     },
 
     async addBookmark(data: any) {
+        if (this.mode === 'cloud') {
+            const res = await apiService.addBookmark(data);
+            const newBookmark = {
+                ...res,
+                parentId: res.parentId || 'root',
+                syncStatus: 'synced' as const,
+                updatedAt: new Date().toISOString()
+            };
+            await db.bookmarks.put(newBookmark);
+            return newBookmark;
+        }
+
         const id = crypto.randomUUID();
         const newBookmark = { ...data, id, syncStatus: 'pending', updatedAt: new Date().toISOString() };
         await db.bookmarks.add(newBookmark);
@@ -142,11 +181,21 @@ export const syncService = reactive({
     },
 
     async updateBookmark(id: string, data: any) {
+        if (this.mode === 'cloud') {
+            await apiService.updateBookmark(id, data);
+            await db.bookmarks.update(id, { ...data, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return;
+        }
         await db.bookmarks.update(id, { ...data, syncStatus: 'pending' });
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'bookmark', entityId: id, data, timestamp: Date.now() });
         this.requestSync();
     },
     async moveBookmark(id: string, sortOrder: number) {
+        if (this.mode === 'cloud') {
+            await apiService.updateBookmark(id, { sortOrder });
+            await db.bookmarks.update(id, { sortOrder, syncStatus: 'synced' });
+            return;
+        }
         // Defensive Merge: ensure we don't overwrite server data with empty fields during a move
         const existing = await db.bookmarks.get(id);
         const title = existing?.title || '';
@@ -165,6 +214,11 @@ export const syncService = reactive({
     },
 
     async deleteBookmark(id: string) {
+        if (this.mode === 'cloud') {
+            await apiService.deleteBookmark(id);
+            await db.bookmarks.delete(id);
+            return;
+        }
         const item = await db.bookmarks.get(id);
         const isGhost = item && (!item.title || item.title.trim() === '');
 
@@ -200,6 +254,11 @@ export const syncService = reactive({
         return remote;
     },
     async createShelf(data: any) {
+        if (this.mode === 'cloud') {
+            const res = await apiService.createShelf(data);
+            await db.shelves.put({ ...res, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return { id: res.id };
+        }
         const id = crypto.randomUUID();
         await db.shelves.add({ ...data, id, syncStatus: 'pending', updatedAt: new Date().toISOString() });
         await db.sync_queue.add({ action: 'CREATE', entityType: 'shelf', entityId: id, data: { ...data, id }, timestamp: Date.now() });
@@ -207,11 +266,21 @@ export const syncService = reactive({
         return { id };
     },
     async updateShelf(id: string, data: any) {
+        if (this.mode === 'cloud') {
+            await apiService.updateShelf(id, data);
+            await db.shelves.update(id, { ...data, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return;
+        }
         await db.shelves.update(id, { ...data, syncStatus: 'pending' });
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'shelf', entityId: id, data, timestamp: Date.now() });
         this.requestSync();
     },
     async deleteShelf(id: string) {
+        if (this.mode === 'cloud') {
+            await apiService.deleteShelf(id);
+            await db.shelves.delete(id);
+            return;
+        }
         await db.shelves.delete(id);
         await db.sync_queue.add({ action: 'DELETE', entityType: 'shelf', entityId: id, data: null, timestamp: Date.now() });
         this.requestSync();
@@ -239,6 +308,11 @@ export const syncService = reactive({
         return remote;
     },
     async addDeskItem(data: any) {
+        if (this.mode === 'cloud') {
+            const res = await apiService.addDeskItem(data);
+            await db.deskItems.put({ ...res, shelfId: res.shelfId || 'null', syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return { id: res.id };
+        }
         const id = crypto.randomUUID();
         await db.deskItems.add({ ...data, id, shelfId: data.shelfId || 'null', syncStatus: 'pending', updatedAt: new Date().toISOString() });
         await db.sync_queue.add({ action: 'CREATE', entityType: 'deskItem', entityId: id, data: { ...data, id }, timestamp: Date.now() });
@@ -246,16 +320,31 @@ export const syncService = reactive({
         return { id };
     },
     async updateDeskItem(id: string, data: any) {
+        if (this.mode === 'cloud') {
+            await apiService.updateDeskItem(id, data);
+            await db.deskItems.update(id, { ...data, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return;
+        }
         await db.deskItems.update(id, { ...data, syncStatus: 'pending' });
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'deskItem', entityId: id, data, timestamp: Date.now() });
         this.requestSync();
     },
     async deleteDeskItem(id: string) {
+        if (this.mode === 'cloud') {
+            await apiService.deleteDeskItem(id);
+            await db.deskItems.delete(id);
+            return;
+        }
         await db.deskItems.delete(id);
         await db.sync_queue.add({ action: 'DELETE', entityType: 'deskItem', entityId: id, data: null, timestamp: Date.now() });
         this.requestSync();
     },
     async moveDeskItem(id: string, sortOrder: number) {
+        if (this.mode === 'cloud') {
+            await apiService.updateDeskItem(id, { sortOrder });
+            await db.deskItems.update(id, { sortOrder, syncStatus: 'synced' });
+            return;
+        }
         const item = await db.deskItems.get(id);
         const shelfId = item?.shelfId || 'null';
         await db.deskItems.update(id, { sortOrder, syncStatus: 'pending' });
@@ -285,6 +374,11 @@ export const syncService = reactive({
         return remote;
     },
     async addBookToBookcase(data: any) {
+        if (this.mode === 'cloud') {
+            const res = await apiService.addBookToBookcase(data);
+            await db.bookcase.put({ ...res, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return;
+        }
         const id = crypto.randomUUID();
         await db.bookcase.add({ 
             folder: '', 
@@ -298,16 +392,31 @@ export const syncService = reactive({
         this.requestSync();
     },
     async updateBookFolder(id: string, folder: string) {
+        if (this.mode === 'cloud') {
+            await apiService.updateBookFolder(id, folder);
+            await db.bookcase.update(id, { folder, syncStatus: 'synced' });
+            return;
+        }
         await db.bookcase.update(id, { folder, syncStatus: 'pending' });
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'book', entityId: id, data: { folder }, timestamp: Date.now() });
         this.requestSync();
     },
     async moveBook(id: string, sortOrder: number) {
+        if (this.mode === 'cloud') {
+            await apiService.updateBookSortOrder(id, sortOrder);
+            await db.bookcase.update(id, { sortOrder, syncStatus: 'synced' });
+            return;
+        }
         await db.bookcase.update(id, { sortOrder, syncStatus: 'pending' });
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'book', entityId: id, data: { sortOrder }, timestamp: Date.now() });
         this.requestSync();
     },
     async removeBook(id: string) {
+        if (this.mode === 'cloud') {
+            await apiService.removeBook(id);
+            await db.bookcase.delete(id);
+            return;
+        }
         await db.bookcase.delete(id);
         await db.sync_queue.add({ action: 'DELETE', entityType: 'book', entityId: id, data: null, timestamp: Date.now() });
         this.requestSync();
@@ -329,6 +438,11 @@ export const syncService = reactive({
         return remote;
     },
     async addBookNote(bookId: string, data: any) {
+        if (this.mode === 'cloud') {
+            const res = await apiService.addBookNote(bookId, data);
+            await db.bookNotes.put({ ...res, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return { id: res.id };
+        }
         const id = crypto.randomUUID();
         await db.bookNotes.add({ ...data, id, bookId, syncStatus: 'pending', updatedAt: new Date().toISOString() });
         await db.sync_queue.add({ action: 'CREATE', entityType: 'bookNote', entityId: id, data: { ...data, id, bookId }, timestamp: Date.now() });
@@ -336,11 +450,21 @@ export const syncService = reactive({
         return { id };
     },
     async updateBookNote(id: string, data: any) {
+        if (this.mode === 'cloud') {
+            await apiService.updateBookNote(id, data);
+            await db.bookNotes.update(id, { ...data, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return;
+        }
         await db.bookNotes.update(id, { ...data, syncStatus: 'pending' });
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'bookNote', entityId: id, data, timestamp: Date.now() });
         this.requestSync();
     },
     async removeBookNote(id: string) {
+        if (this.mode === 'cloud') {
+            await apiService.removeBookNote(id);
+            await db.bookNotes.delete(id);
+            return;
+        }
         await db.bookNotes.delete(id);
         await db.sync_queue.add({ action: 'DELETE', entityType: 'bookNote', entityId: id, data: null, timestamp: Date.now() });
         this.requestSync();
@@ -382,6 +506,11 @@ export const syncService = reactive({
         return remote;
     },
     async createRemark(data: any) {
+        if (this.mode === 'cloud') {
+            const res = await apiService.createRemark(data);
+            await db.remarks.put({ ...res, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return { id: res.id };
+        }
         const id = crypto.randomUUID();
         await db.remarks.add({ ...data, id, isPinned: false, syncStatus: 'pending', updatedAt: new Date().toISOString() });
         await db.sync_queue.add({ action: 'CREATE', entityType: 'remark', entityId: id, data: { ...data, id }, timestamp: Date.now() });
@@ -389,16 +518,31 @@ export const syncService = reactive({
         return { id };
     },
     async updateRemark(id: string, data: any) {
+        if (this.mode === 'cloud') {
+            await apiService.updateRemark(id, data);
+            await db.remarks.update(id, { ...data, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return;
+        }
         await db.remarks.update(id, { ...data, syncStatus: 'pending' });
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'remark', entityId: id, data, timestamp: Date.now() });
         this.requestSync();
     },
     async deleteRemark(id: string) {
+        if (this.mode === 'cloud') {
+            await apiService.deleteRemark(id);
+            await db.remarks.delete(id);
+            return;
+        }
         await db.remarks.delete(id);
         await db.sync_queue.add({ action: 'DELETE', entityType: 'remark', entityId: id, data: null, timestamp: Date.now() });
         this.requestSync();
     },
     async addRemarkItem(data: { containerId: string, logId: string, log?: any }) {
+        if (this.mode === 'cloud') {
+            const res = await apiService.addRemarkItem(data);
+            await db.remarkItems.put({ ...res, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return { id: res.id };
+        }
         const id = crypto.randomUUID();
         // data.log is provided from the UI (drag payload)
         await db.remarkItems.add({ 
@@ -413,8 +557,137 @@ export const syncService = reactive({
         return { id };
     },
     async removeRemarkItem(id: string) {
+        if (this.mode === 'cloud') {
+            await apiService.removeRemarkItem(id);
+            await db.remarkItems.delete(id);
+            return;
+        }
         await db.remarkItems.delete(id);
         await db.sync_queue.add({ action: 'DELETE', entityType: 'remarkItem', entityId: id, data: null, timestamp: Date.now() });
+        this.requestSync();
+    },
+
+    // --- Impression (KG) Methods ---
+    async getImpressionGraph(centerId: string = '', kgName: string = 'default') {
+        if (this.mode === 'cloud') {
+            console.log(`📡 [Cloud Mode] Fetching graph '${kgName}' from API...`);
+            return await apiService.getImpressionGraph(centerId, kgName);
+        }
+        const nodes = await db.impressionNodes.where('kgName').equals(kgName).toArray();
+        const links = await db.impressionLinks.where('kgName').equals(kgName).toArray();
+        return {
+            nodes,
+            edges: links.map(l => ({ ...l, sourceId: l.sourceId, targetId: l.targetId }))
+        };
+    },
+    async createImpressionNode(data: { title: string; content: string; nodeType: string; kgName: string; mediaId?: string }) {
+        if (this.mode === 'cloud') {
+            const res = await apiService.createImpressionNode(data);
+            await db.impressionNodes.put({ ...res, kgName: data.kgName, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return res;
+        }
+        const id = crypto.randomUUID();
+        const newNode = { ...data, id, syncStatus: 'pending' as const, updatedAt: new Date().toISOString() };
+        await db.impressionNodes.add(newNode);
+        await db.sync_queue.add({ action: 'CREATE', entityType: 'impressionNode', entityId: id, data: { ...data, id }, timestamp: Date.now() });
+        this.requestSync();
+        return newNode;
+    },
+    async updateImpressionNode(id: string, data: any) {
+        if (this.mode === 'cloud') {
+            const res = await apiService.updateImpressionNode(id, data);
+            await db.impressionNodes.update(id, { ...res, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return res;
+        }
+        await db.impressionNodes.update(id, { ...data, syncStatus: 'pending' });
+        await db.sync_queue.add({ action: 'UPDATE', entityType: 'impressionNode', entityId: id, data, timestamp: Date.now() });
+        this.requestSync();
+    },
+    async deleteImpressionNode(id: string) {
+        if (this.mode === 'cloud') {
+            await apiService.deleteImpressionNode(id);
+            await db.impressionNodes.delete(id);
+            return;
+        }
+        await db.impressionNodes.delete(id);
+        await db.sync_queue.add({ action: 'DELETE', entityType: 'impressionNode', entityId: id, data: null, timestamp: Date.now() });
+        this.requestSync();
+    },
+    async createImpressionLink(data: { sourceId: string; targetId: string; label: string; kgName: string }) {
+        if (this.mode === 'cloud') {
+            const res = await apiService.createImpressionLink(data);
+            await db.impressionLinks.put({ ...res, kgName: data.kgName, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return res;
+        }
+        const id = crypto.randomUUID();
+        const newLink = { ...data, id, syncStatus: 'pending' as const, updatedAt: new Date().toISOString() };
+        await db.impressionLinks.add(newLink);
+        await db.sync_queue.add({ action: 'CREATE', entityType: 'impressionLink', entityId: id, data: { ...data, id }, timestamp: Date.now() });
+        this.requestSync();
+        return newLink;
+    },
+    async deleteImpressionLink(id: string) {
+        if (this.mode === 'cloud') {
+            await apiService.deleteImpressionLink(id);
+            await db.impressionLinks.delete(id);
+            return;
+        }
+        await db.impressionLinks.delete(id);
+        await db.sync_queue.add({ action: 'DELETE', entityType: 'impressionLink', entityId: id, data: null, timestamp: Date.now() });
+        this.requestSync();
+    },
+    async updateImpressionLink(id: string, data: any) {
+        if (this.mode === 'cloud') {
+            const res = await apiService.updateImpressionLink(id, data);
+            await db.impressionLinks.update(id, { ...res, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return res;
+        }
+        await db.impressionLinks.update(id, { ...data, syncStatus: 'pending' });
+        await db.sync_queue.add({ action: 'UPDATE', entityType: 'impressionLink', entityId: id, data, timestamp: Date.now() });
+        this.requestSync();
+    },
+
+    // --- Storehouse (Clip) Methods ---
+    async getStorehouseItems(params: any = {}) {
+        if (this.mode === 'cloud') {
+            return await apiService.getStorehouseItems(params);
+        }
+        let query = db.storehouseItems.toCollection();
+        if (params.platform) query = db.storehouseItems.where('source').equals(params.platform);
+        if (params.q) {
+             const words = params.q.toLowerCase().split(' ');
+             query = query.filter(it => words.every((w: string) => (it.title || '').toLowerCase().includes(w) || (it.caption || '').toLowerCase().includes(w)));
+        }
+        return await query.reverse().limit(params.limit || 20).toArray();
+    },
+    async updateStorehouseItem(id: string, data: any) {
+        if (this.mode === 'cloud') {
+            const res = await apiService.updateStorehouseItem(id, data);
+            await db.storehouseItems.update(id, { ...res, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return res;
+        }
+        await db.storehouseItems.update(id, { ...data, syncStatus: 'pending' });
+        await db.sync_queue.add({ action: 'UPDATE', entityType: 'storehouseItem', entityId: id, data, timestamp: Date.now() });
+        this.requestSync();
+    },
+
+    // --- Bulletin (News) Methods ---
+    async getBulletin() {
+        if (this.mode === 'cloud') {
+            return await apiService.getBulletin();
+        }
+        const locally = await db.bulletin.toArray();
+        return locally.length > 0 ? locally[0] : { message: 'Offline mode: No bulletin cached.' };
+    },
+    async updateBulletin(message: string, adminEmail?: string, deviceId?: string) {
+        if (this.mode === 'cloud') {
+            const res = await apiService.updateBulletin(message, adminEmail, deviceId);
+            await db.bulletin.clear();
+            await db.bulletin.add({ id: 'main', message, syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return res;
+        }
+        await db.bulletin.put({ id: 'main', message, syncStatus: 'pending', updatedAt: new Date().toISOString() });
+        await db.sync_queue.add({ action: 'UPDATE', entityType: 'bulletin', entityId: 'main', data: { message, adminEmail, deviceId }, timestamp: Date.now() });
         this.requestSync();
     },
 
@@ -578,6 +851,36 @@ export const syncService = reactive({
                             await this.handleIdTransition(db.remarkItems, action.entityId, res);
                         } else if (action.action === 'DELETE') {
                             await apiService.removeRemarkItem(action.entityId);
+                        }
+                    } else if (action.entityType === 'impressionNode') {
+                        if (action.action === 'CREATE') {
+                            const res = await apiService.createImpressionNode(action.data);
+                            await this.handleIdTransition(db.impressionNodes, action.entityId, res);
+                        } else if (action.action === 'UPDATE') {
+                            await apiService.updateImpressionNode(action.entityId, action.data);
+                            await db.impressionNodes.update(action.entityId, { syncStatus: 'synced' });
+                        } else if (action.action === 'DELETE') {
+                            await apiService.deleteImpressionNode(action.entityId);
+                        }
+                    } else if (action.entityType === 'impressionLink') {
+                        if (action.action === 'CREATE') {
+                            const res = await apiService.createImpressionLink(action.data);
+                            await this.handleIdTransition(db.impressionLinks, action.entityId, res);
+                        } else if (action.action === 'UPDATE') {
+                            await apiService.updateImpressionLink(action.entityId, action.data);
+                            await db.impressionLinks.update(action.entityId, { syncStatus: 'synced' });
+                        } else if (action.action === 'DELETE') {
+                            await apiService.deleteImpressionLink(action.entityId);
+                        }
+                    } else if (action.entityType === 'storehouseItem') {
+                        if (action.action === 'UPDATE') {
+                            await apiService.updateStorehouseItem(action.entityId, action.data);
+                            await db.storehouseItems.update(action.entityId, { syncStatus: 'synced' });
+                        }
+                    } else if (action.entityType === 'bulletin') {
+                        if (action.action === 'UPDATE') {
+                            await apiService.updateBulletin(action.data.message, action.data.adminEmail, action.data.deviceId);
+                            await db.bulletin.update(action.entityId, { syncStatus: 'synced' });
                         }
                     }
                     

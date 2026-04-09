@@ -253,20 +253,20 @@ const initGraph = async () => {
         if (params.nodes.length > 0) {
             const nodeId = params.nodes[0] as string;
             if (confirm(`⚠️ DELETE Node?`)) {
-                await apiService.deleteImpressionNode(nodeId);
+                await syncService.deleteImpressionNode(nodeId);
                 await clearKGCache();
                 await loadGraph();
             }
         } else if (params.edges.length > 0) {
             if (confirm(`⚠️ SEVER Edge?`)) {
-                await apiService.deleteImpressionLink(params.edges[0]);
+                await syncService.deleteImpressionLink(params.edges[0]);
                 await clearKGCache();
                 await loadGraph();
             }
         } else {
             const title = prompt("New Node Title:");
             if (title) {
-                const res = await apiService.createImpressionNode({ title, content: '', nodeType: 'general', kgName: kgName.value });
+                const res = await syncService.createImpressionNode({ title, content: '', nodeType: 'general', kgName: kgName.value });
                 await clearKGCache();
                 await loadGraph(res.id);
             }
@@ -334,7 +334,7 @@ const linkShelf = async (shelfId: string | null) => {
     if (!selectedNodeDetails.value) return;
     try {
         const updated = { ...selectedNodeDetails.value, deskShelfId: shelfId };
-        await apiService.updateImpressionNode(selectedNodeDetails.value.id, updated);
+        await syncService.updateImpressionNode(selectedNodeDetails.value.id, updated);
         selectedNodeDetails.value.deskShelfId = shelfId;
         const existingNode = nodes.value.get(selectedNodeDetails.value.id) as any;
         if (existingNode && existingNode.raw) {
@@ -362,7 +362,7 @@ const resetSelection = () => {
 
 const performQuickLink = async (src: string, tgt: string) => {
     try {
-        await apiService.createImpressionLink({ sourceId: src, targetId: tgt, label: '', kgName: kgName.value });
+        await syncService.createImpressionLink({ sourceId: src, targetId: tgt, label: '', kgName: kgName.value });
         await clearKGCache();
         resetSelection();
         await loadGraph(src);
@@ -428,7 +428,7 @@ const loadGraph = async (nodeId?: string) => {
     if (cached) {
         data = JSON.parse(cached);
     } else {
-        data = await apiService.getImpressionGraph(nid, kgName.value);
+        data = await syncService.getImpressionGraph(nid, kgName.value);
         // Cache for 3 hours
         await syncService.setAICache(cacheKey, JSON.stringify(data), 3);
     }
@@ -533,7 +533,7 @@ const executeCommand = async () => {
         if (cmd === '/add' && args[0] === 'point') {
             const title = args.slice(1).join(' ');
             if (!title) throw new Error('Title required. Usage: /add point [title]');
-            const newNode = await apiService.createImpressionNode({ title, content: '', nodeType: 'general', kgName: kgName.value });
+            const newNode = await syncService.createImpressionNode({ title, content: '', nodeType: 'general', kgName: kgName.value });
             await loadGraph(newNode.id);
             commandInput.value = '';
             fetchKGs();
@@ -567,7 +567,7 @@ const executeCommand = async () => {
             const label = cleanArgs[2] || '';
 
             if (!src || !tgt) throw new Error(`Node not found: ${!src ? cleanArgs[0] : cleanArgs[1]}`);
-            await apiService.createImpressionLink({ sourceId: src.id, targetId: tgt.id, label, kgName: kgName.value });
+            await syncService.createImpressionLink({ sourceId: src.id, targetId: tgt.id, label, kgName: kgName.value });
             await loadGraph(src.id);
             commandInput.value = '';
         } else if (cmd === '/search') {
@@ -716,7 +716,7 @@ const goToRandomNode = async () => {
 const saveNodeEdits = async () => {
     if (!selectedNodeDetails.value) return;
     try {
-        const updated = await apiService.updateImpressionNode(selectedNodeDetails.value.id, editForm.value);
+        const updated = await syncService.updateImpressionNode(selectedNodeDetails.value.id, editForm.value);
         await clearKGCache();
         selectedNodeDetails.value = updated;
         isEditingNode.value = false;
@@ -727,7 +727,7 @@ const saveNodeEdits = async () => {
 const deleteNode = async (id: string) => {
     if (!confirm('Destroy this memory node?')) return;
     try { 
-        await apiService.deleteImpressionNode(id); 
+        await syncService.deleteImpressionNode(id); 
         await clearKGCache();
         selectedNodeDetails.value = null; 
         await loadGraph(); 
@@ -737,7 +737,7 @@ const deleteNode = async (id: string) => {
 const saveEdgeEdits = async () => {
     if (!selectedEdgeDetails.value) return;
     try {
-        await apiService.updateImpressionLink(selectedEdgeDetails.value.id, { label: edgeEditForm.value.label });
+        await syncService.updateImpressionLink(selectedEdgeDetails.value.id, { label: edgeEditForm.value.label });
         await clearKGCache();
         selectedEdgeDetails.value = null;
         isEditingEdge.value = false;
@@ -748,7 +748,7 @@ const saveEdgeEdits = async () => {
 const deleteEdge = async (id: string) => {
     if (!confirm('Sever this relationship bond?')) return;
     try {
-        await apiService.deleteImpressionLink(id);
+        await syncService.deleteImpressionLink(id);
         await clearKGCache();
         selectedEdgeDetails.value = null;
         isEditingEdge.value = false;
@@ -817,7 +817,7 @@ const setAsCenter = (id: string) => { loadGraph(id); selectedNodeDetails.value =
 const createLink = async () => {
     if (!selectedNodeDetails.value || !targetNode.value) return;
     try {
-        await apiService.createImpressionLink({ sourceId: selectedNodeDetails.value.id, targetId: targetNode.value.id, label: linkLabel.value, kgName: kgName.value });
+        await syncService.createImpressionLink({ sourceId: selectedNodeDetails.value.id, targetId: targetNode.value.id, label: linkLabel.value, kgName: kgName.value });
         await clearKGCache();
         targetNode.value = null; isLinkingMode.value = false; linkLabel.value = ''; await loadGraph(selectedNodeDetails.value.id);
     } catch (e) { console.error(e); }
