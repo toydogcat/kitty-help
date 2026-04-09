@@ -318,6 +318,38 @@ export const syncService = reactive({
         });
     },
 
+    async handleIdTransition(table: any, oldId: string, res: any) {
+        console.log(`[Sync Debug] Transitioning ID for ${table.name}. Response:`, res);
+        
+        // 嘗試從各種可能的欄位中提取 ID
+        const newId = res.id || res.ID || res._id || (res.data && (res.data.id || res.data._id));
+        
+        if (!newId) {
+            console.warn(`[Sync Warning] No new ID found in response for ${table.name}. Retaining old ID.`);
+            // 如果沒新 ID，至少更新狀態為已同步
+            await table.update(oldId, { syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return;
+        }
+
+        if (newId === oldId) {
+            await table.update(oldId, { syncStatus: 'synced', updatedAt: new Date().toISOString() });
+            return;
+        }
+
+        const oldRecord = await table.get(oldId);
+        if (oldRecord) {
+            await table.delete(oldId);
+            await table.put({
+                ...oldRecord,
+                ...res,
+                id: newId,
+                syncStatus: 'synced',
+                updatedAt: new Date().toISOString()
+            });
+            console.log(`[Sync Debug] ${table.name} ID transitioned: ${oldId} -> ${newId}`);
+        }
+    },
+
     syncTimer: null as any,
     isProcessing: false,
 
@@ -336,119 +368,84 @@ export const syncService = reactive({
                     if (action.entityType === 'snippet') {
                         if (action.action === 'CREATE') {
                             const res = await apiService.createSnippet(action.data);
-                            await db.snippets.update(action.entityId, { id: res.id, syncStatus: 'synced' });
-                            console.log('✅ Snippet created on server');
+                            await this.handleIdTransition(db.snippets, action.entityId, res);
                         } else if (action.action === 'UPDATE') {
                             await apiService.updateSnippet(action.entityId, action.data);
                             await db.snippets.update(action.entityId, { syncStatus: 'synced' });
-                            console.log('✅ Snippet updated on server');
                         } else if (action.action === 'DELETE') {
                             await apiService.deleteSnippet(action.entityId);
-                            console.log('✅ Snippet deleted on server');
                         }
                     } else if (action.entityType === 'bookmark') {
                         if (action.action === 'CREATE') {
                             const res = await apiService.addBookmark(action.data);
-                            await db.bookmarks.update(action.entityId, { id: res.id, syncStatus: 'synced' });
-                            console.log('✅ Bookmark created on server');
+                            await this.handleIdTransition(db.bookmarks, action.entityId, res);
                         } else if (action.action === 'UPDATE') {
                             await apiService.updateBookmark(action.entityId, action.data);
                             await db.bookmarks.update(action.entityId, { syncStatus: 'synced' });
-                            console.log('✅ Bookmark updated on server');
                         } else if (action.action === 'DELETE') {
                             await apiService.deleteBookmark(action.entityId);
-                            console.log('✅ Bookmark deleted on server');
                         }
                     } else if (action.entityType === 'shelf') {
                         if (action.action === 'CREATE') {
                             const res = await apiService.createShelf(action.data);
-                            await db.shelves.update(action.entityId, { id: res.id, syncStatus: 'synced' });
-                            console.log('✅ Shelf created on server');
+                            await this.handleIdTransition(db.shelves, action.entityId, res);
                         } else if (action.action === 'UPDATE') {
                             await apiService.updateShelf(action.entityId, action.data);
                             await db.shelves.update(action.entityId, { syncStatus: 'synced' });
-                            console.log('✅ Shelf updated on server');
                         } else if (action.action === 'DELETE') {
                             await apiService.deleteShelf(action.entityId);
-                            console.log('✅ Shelf deleted on server');
                         }
                     } else if (action.entityType === 'deskItem') {
                         if (action.action === 'CREATE') {
                             const res = await apiService.addDeskItem(action.data);
-                            await db.deskItems.update(action.entityId, { id: res.id, syncStatus: 'synced' });
-                            console.log('✅ Desk item created on server');
+                            await this.handleIdTransition(db.deskItems, action.entityId, res);
                         } else if (action.action === 'UPDATE') {
                             await apiService.updateDeskItem(action.entityId, action.data);
                             await db.deskItems.update(action.entityId, { syncStatus: 'synced' });
-                            console.log('✅ Desk item updated on server');
                         } else if (action.action === 'DELETE') {
                             await apiService.deleteDeskItem(action.entityId);
-                            console.log('✅ Desk item deleted on server');
                         }
                     } else if (action.entityType === 'book') {
                         if (action.action === 'CREATE') {
                             const res = await apiService.addBookToBookcase(action.data);
-                            // ID 轉換：IndexDB Key 是不可變的，必須刪除舊的再新增新的
-                            const oldRecord = await db.bookcase.get(action.entityId);
-                            if (oldRecord) {
-                                await db.bookcase.delete(action.entityId);
-                                await db.bookcase.put({ 
-                                    ...oldRecord, 
-                                    ...res, 
-                                    id: res.id, 
-                                    syncStatus: 'synced',
-                                    updatedAt: new Date().toISOString()
-                                });
-                            }
-                            console.log('✅ Book added on server and ID updated locally');
+                            await this.handleIdTransition(db.bookcase, action.entityId, res);
                         } else if (action.action === 'UPDATE') {
                             if (action.data.folder !== undefined) {
                                 await apiService.updateBookFolder(action.entityId, action.data.folder);
-                                console.log('✅ Book folder updated on server');
                             }
                             if (action.data.sortOrder !== undefined) {
                                 await apiService.updateBookSortOrder(action.entityId, action.data.sortOrder);
-                                console.log(`✅ Book [${action.entityId}] sortOrder updated: ${action.data.sortOrder}`);
                             }
                             await db.bookcase.update(action.entityId, { syncStatus: 'synced' });
                         } else if (action.action === 'DELETE') {
                             await apiService.removeBook(action.entityId);
-                            console.log('✅ Book removed on server');
                         }
                     } else if (action.entityType === 'bookNote') {
                         if (action.action === 'CREATE') {
                             const res = await apiService.addBookNote(action.data.bookId, action.data);
-                            await db.bookNotes.update(action.entityId, { id: res.id, syncStatus: 'synced' });
-                            console.log('✅ Book note created on server');
+                            await this.handleIdTransition(db.bookNotes, action.entityId, res);
                         } else if (action.action === 'UPDATE') {
                             await apiService.updateBookNote(action.entityId, action.data);
                             await db.bookNotes.update(action.entityId, { syncStatus: 'synced' });
-                            console.log('✅ Book note updated on server');
                         } else if (action.action === 'DELETE') {
                             await apiService.removeBookNote(action.entityId);
-                            console.log('✅ Book note deleted on server');
                         }
                     } else if (action.entityType === 'remark') {
                         if (action.action === 'CREATE') {
                             const res = await apiService.createRemark(action.data);
-                            await db.remarks.update(action.entityId, { id: res.id, syncStatus: 'synced' });
-                            console.log('✅ Remark created on server');
+                            await this.handleIdTransition(db.remarks, action.entityId, res);
                         } else if (action.action === 'UPDATE') {
                             await apiService.updateRemark(action.entityId, action.data);
                             await db.remarks.update(action.entityId, { syncStatus: 'synced' });
-                            console.log('✅ Remark updated on server');
                         } else if (action.action === 'DELETE') {
                             await apiService.deleteRemark(action.entityId);
-                            console.log('✅ Remark deleted on server');
                         }
                     } else if (action.entityType === 'remarkItem') {
                         if (action.action === 'CREATE') {
                             const res = await apiService.addRemarkItem(action.data);
-                            await db.remarkItems.update(action.entityId, { id: res.id, syncStatus: 'synced' });
-                            console.log('✅ Remark item created on server');
+                            await this.handleIdTransition(db.remarkItems, action.entityId, res);
                         } else if (action.action === 'DELETE') {
                             await apiService.removeRemarkItem(action.entityId);
-                            console.log('✅ Remark item deleted on server');
                         }
                     }
                     
