@@ -259,7 +259,7 @@ const saveCurrentNote = async () => {
 };
 
 let autoSaveTimer: any = null;
-watch(() => activeNote.value?.content, (newVal) => {
+watch(() => activeNote.value?.content, () => {
   if (!activeNote.value || activeNote.value.id.startsWith('temp-')) return;
   if (autoSaveTimer) clearTimeout(autoSaveTimer);
   autoSaveTimer = setTimeout(() => {
