@@ -94,9 +94,9 @@ const options = {
   },
   physics: {
     enabled: true,
-    forceAtlas2Based: { gravitationalConstant: -100, springLength: 200, springConstant: 0.04 },
+    forceAtlas2Based: { gravitationalConstant: -200, springLength: 200, springConstant: 0.04 },
     solver: 'forceAtlas2Based',
-    stabilization: { iterations: 100 }
+    stabilization: { iterations: 1000, updateInterval: 25, fit: true }
   },
   interaction: { hover: true, navigationButtons: false, keyboard: true, zoomView: true }
 };
@@ -469,9 +469,11 @@ const loadGraph = async (nodeId?: string) => {
         font: { color: kgName.value === 'default' ? '#94a3b8' : '#22d3ee' }
     })));
     
-    // Initial State: All nodes fixed to prevent initial explosion
-    const allIds = nodes.value.getIds();
-    nodes.value.update(allIds.map((id: string) => ({ id, physics: false })));
+    // After load, respect the physics flag but allow a small settle window
+    if (!isPhysicsEnabled.value) {
+        const allIds = nodes.value.getIds();
+        nodes.value.update(allIds.map((id: string) => ({ id, physics: false })));
+    }
     
     if (nid && network.value && nodes.value.length > 0) {
         setTimeout(() => {
