@@ -306,25 +306,30 @@ func IndexStorehouseItem(c *fiber.Ctx) error {
 }
 
 func GetFileProxy(c *fiber.Ctx) error {
+	platform := c.Query("platform", "telegram")
 	fullPath := c.Params("*")
-	// 🚀 Path Intelligence: Support subdirectories (fileID) + trailing fake filename (Chromebook fix)
-	parts := strings.Split(fullPath, "/")
+	
 	fileID := ""
 	fakeFileName := ""
 
-	if len(parts) > 1 {
-		// Join all segments except the last one as the real fileID
-		fileID = strings.Join(parts[:len(parts)-1], "/")
-		fakeFileName = parts[len(parts)-1]
+	// 🚀 Path Intelligence Analysis:
+	// If platform is 'local' (Obsidian), the path IS the ID (it naturally contains slashes).
+	// For other platforms (Telegram/Media), we apply the 'Chromebook Fix' by stripping the fake trailing filename.
+	if platform == "local" {
+		fileID = fullPath
+		fakeFileName = filepath.Base(fullPath)
 	} else {
-		fileID = parts[0]
-		fakeFileName = "document"
+		parts := strings.Split(fullPath, "/")
+		if len(parts) > 1 {
+			fileID = strings.Join(parts[:len(parts)-1], "/")
+			fakeFileName = parts[len(parts)-1]
+		} else {
+			fileID = parts[0]
+			fakeFileName = "document"
+		}
 	}
-	
-	platform := c.Query("platform", "telegram")
 	width := c.QueryInt("w", 0)
 
-	c.Set("Access-Control-Allow-Origin", "*")
 	c.Set("Cache-Control", "public, max-age=604800, immutable")
 	c.Set("ETag", fileID)
 
