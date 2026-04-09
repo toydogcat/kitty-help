@@ -429,6 +429,9 @@ const loadGraph = async (nodeId?: string) => {
         data = JSON.parse(cached);
     } else {
         data = await syncService.getImpressionGraph(nid, kgName.value);
+        if (data && data.nodes && data.nodes.length === 0 && (nodeId || centerNodeId.value)) {
+            console.warn("Requested specific graph center but got 0 nodes. Potential kg_name mismatch or legacy data issue.");
+        }
         // Cache for 3 hours
         await syncService.setAICache(cacheKey, JSON.stringify(data), 3);
     }

@@ -433,6 +433,8 @@ func EnsureTables() {
 			`ALTER TABLE desk_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
 			`ALTER TABLE impression_nodes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
 			`ALTER TABLE impression_edges ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
+			`UPDATE impression_nodes SET kg_name = 'default' WHERE kg_name IS NULL`,
+			`UPDATE impression_edges SET kg_name = 'default' WHERE kg_name IS NULL`,
 		}
 		for _, m := range migrations {
 			LocalDB.Exec(ctx, m)

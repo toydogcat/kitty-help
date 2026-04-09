@@ -193,7 +193,7 @@ func GetImpressionGraph(c *fiber.Ctx) error {
 			n.kg_name
 		FROM impression_nodes n
 		LEFT JOIN media_archives m ON n.media_id = m.id
-		WHERE n.user_id = $1 AND n.kg_name = $2
+		WHERE n.user_id = $1 AND COALESCE(n.kg_name, 'default') = $2
 	`
 
 	rows, err := db.Query(context.Background(), nodesQuery, dbUserID, kgName)
@@ -215,7 +215,7 @@ func GetImpressionGraph(c *fiber.Ctx) error {
 	edgesQuery := `
 		SELECT id::TEXT, user_id::TEXT, source_id::TEXT, target_id::TEXT, label, created_at, kg_name
 		FROM impression_edges
-		WHERE user_id = $1 AND kg_name = $2
+		WHERE user_id = $1 AND COALESCE(kg_name, 'default') = $2
 	`
 	rowsE, err := db.Query(context.Background(), edgesQuery, dbUserID, kgName)
 	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
@@ -301,7 +301,7 @@ func SearchImpression(c *fiber.Ctx) error {
 	WHERE n.user_id = $1 AND n.title ILIKE $2
 	`
 	if kgSearch != "" {
-		nodesSQL += " AND n.kg_name = '" + kgSearch + "'"
+		nodesSQL += " AND COALESCE(n.kg_name, 'default') = '" + kgSearch + "'"
 	}
 	nodesSQL += " LIMIT 20"
 
@@ -337,7 +337,7 @@ func SearchImpression(c *fiber.Ctx) error {
 	WHERE e.user_id = $1 AND e.label ILIKE $2
 	`
 	if kgSearch != "" {
-		edgesSQL += " AND e.kg_name = '" + kgSearch + "'"
+		edgesSQL += " AND COALESCE(e.kg_name, 'default') = '" + kgSearch + "'"
 	}
 	edgesSQL += " LIMIT 20"
 
@@ -369,9 +369,9 @@ func GetKnowledgeGraphs(c *fiber.Ctx) error {
 	dbUserID, err := resolveUserID(c, db, userClaims)
 	if err != nil { return c.Status(404).JSON(fiber.Map{"error": "User profile not found"}) }
 
-	sql := `SELECT DISTINCT kg_name FROM impression_nodes WHERE user_id = $1 
+	sql := `SELECT DISTINCT COALESCE(kg_name, 'default') FROM impression_nodes WHERE user_id = $1 
 	        UNION 
-	        SELECT DISTINCT kg_name FROM impression_edges WHERE user_id = $1`
+	        SELECT DISTINCT COALESCE(kg_name, 'default') FROM impression_edges WHERE user_id = $1`
 	
 	rows, err := db.Query(context.Background(), sql, dbUserID)
 	if err != nil { return c.Status(500).JSON(fiber.Map{"error": err.Error()}) }
