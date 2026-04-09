@@ -4,7 +4,7 @@ import StyleSwitcher from '../components/StyleSwitcher.vue';
 import CountdownTimer from '../components/CountdownTimer.vue';
 import Calculator from '../components/Calculator.vue';
 import OpenCliExplorer from '../components/OpenCliExplorer.vue';
-import { apiService, socket } from '../services/api';
+import { socket } from '../services/api';
 import { syncService } from '../services/syncService';
 
 const bulletin = ref('Loading notice...');
