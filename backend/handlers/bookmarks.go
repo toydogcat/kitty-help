@@ -78,16 +78,17 @@ func CreateBookmark(c *fiber.Ctx) error {
 	}
 	b.UserID = dbUserID
 
-	if b.Title == "" {
+	if b.Title == nil || *b.Title == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "Title is required"})
 	}
 	// Folders don't need URL, but regular bookmarks do
-	if !b.IsFolder && (b.URL == nil || *b.URL == "") {
+	if (b.IsFolder == nil || !*b.IsFolder) && (b.URL == nil || *b.URL == "") {
 		return c.Status(400).JSON(fiber.Map{"error": "URL is required for standard bookmarks"})
 	}
 
-	if b.Category == "" {
-		b.Category = "uncategorized"
+	if b.Category == nil || *b.Category == "" {
+		defaultCat := "uncategorized"
+		b.Category = &defaultCat
 	}
 
 	// Internal validation for virtual IDs to NULL (Postgres UUID requirement)
@@ -139,32 +140,29 @@ func UpdateBookmark(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	// Prepare dynamic update - handle virtual IDs
-	if b.ParentID != nil && (*b.ParentID == "" || *b.ParentID == "root") {
-		b.ParentID = nil
-	}
-
     query := `
         UPDATE bookmarks 
-        SET parent_id = COALESCE($1, parent_id), 
-            title = CASE WHEN $2 = '' THEN title ELSE $2 END, 
+        SET parent_id = CASE 
+                WHEN $1 = 'root' THEN NULL 
+                WHEN $1 IS NOT NULL THEN $1::uuid 
+                ELSE parent_id 
+            END, 
+            title = COALESCE($2, title), 
             url = COALESCE($3, url), 
-            category = CASE WHEN $4 = '' THEN category ELSE $4 END, 
-            sort_order = CASE WHEN $5 = -1 THEN sort_order ELSE $5 END,
+            category = COALESCE($4, category), 
+            sort_order = COALESCE($5, sort_order),
             updated_at = NOW()
         WHERE id = $6
+        RETURNING id, user_id, parent_id, title, url, category, icon_url, password_id, is_folder, sort_order, created_at
     `
-    // Use a special value -1 to indicate "no change" for sortOrder if desired,
-    // or just handle it if it's 0. For now, we'll assume the frontend always sends it if changed.
-    // To be safer, we can check b.SortOrder's existence if we used a pointer, 
-    // but CASE is a quick fix for now.
-    _, err = db.Exec(context.Background(), query, b.ParentID, b.Title, b.URL, b.Category, b.SortOrder, id)
+    err = db.QueryRow(context.Background(), query, b.ParentID, b.Title, b.URL, b.Category, b.SortOrder, id).
+        Scan(&b.ID, &b.UserID, &b.ParentID, &b.Title, &b.URL, &b.Category, &b.IconURL, &b.PasswordID, &b.IsFolder, &b.SortOrder, &b.CreatedAt)
 	if err != nil {
 		log.Printf("Update bookmark failed: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to update bookmark"})
 	}
 
-	return c.JSON(fiber.Map{"success": true})
+	return c.JSON(b)
 }
 
 func DeleteBookmark(c *fiber.Ctx) error {

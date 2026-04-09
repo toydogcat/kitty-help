@@ -7,7 +7,7 @@ type Snippet struct {
 	UserID       string    `json:"-"` // Internal only
 	ParentID     *string   `json:"parentId"`
 	LinkedNodeID *string   `json:"linkedNodeId"`
-	Name         string    `json:"name"`
+	Name         *string   `json:"name"`
 	Content      *string   `json:"content"`
 	IsFolder     bool      `json:"isFolder"`
 	SortOrder    *int      `json:"sortOrder"`

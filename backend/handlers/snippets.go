@@ -79,7 +79,7 @@ func CreateSnippet(c *fiber.Ctx) error {
 		s.ParentID = nil
 	}
 
-	if s.Name == "" {
+	if s.Name == nil || *s.Name == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "Name is required"})
 	}
 
@@ -121,10 +121,14 @@ func UpdateSnippet(c *fiber.Ctx) error {
 	// Support updating parentId (moving between folders) and sortOrder (manual positioning)
     query := `
         UPDATE snippets 
-        SET name = CASE WHEN $1 = '' THEN name ELSE $1 END, 
-            content = CASE WHEN $2 = '' THEN content ELSE $2 END, 
-            parent_id = COALESCE($3, parent_id), 
-            sort_order = CASE WHEN $4 = -1 THEN sort_order ELSE $4 END,
+        SET name = COALESCE($1, name), 
+            content = COALESCE($2, content), 
+            parent_id = CASE 
+                WHEN $3 = 'root' THEN NULL 
+                WHEN $3 IS NOT NULL THEN $3::uuid 
+                ELSE parent_id 
+            END, 
+            sort_order = COALESCE($4, sort_order),
             updated_at = NOW() 
         WHERE id = $5
         RETURNING id, user_id, parent_id, name, content, is_folder, sort_order, created_at
