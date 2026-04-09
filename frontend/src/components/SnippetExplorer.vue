@@ -407,8 +407,11 @@ const moveUp = async (item: any) => {
   const index = snippets.value.findIndex(s => s.id === item.id);
   if (index > 0) {
     const prev = snippets.value[index-1];
-    const oldOrder = (item.sortOrder !== undefined) ? item.sortOrder : index;
-    const newOrder = (prev.sortOrder !== undefined) ? prev.sortOrder : (index - 1);
+    const oldOrder = (item.sortOrder !== undefined && item.sortOrder !== null) ? item.sortOrder : index;
+    let newOrder = (prev.sortOrder !== undefined && prev.sortOrder !== null) ? prev.sortOrder : (index - 1);
+    
+    // Safety check to ensure distinct values
+    if (newOrder >= oldOrder) newOrder = oldOrder - 1;
     
     await db.transaction('rw', [db.snippets, db.sync_queue], async () => {
       await syncService.moveSnippet(item.id, newOrder);
@@ -421,8 +424,11 @@ const moveDown = async (item: any) => {
   const index = snippets.value.findIndex(s => s.id === item.id);
   if (index < snippets.value.length - 1) {
     const next = snippets.value[index+1];
-    const oldOrder = (item.sortOrder !== undefined) ? item.sortOrder : index;
-    const newOrder = (next.sortOrder !== undefined) ? next.sortOrder : (index + 1);
+    const oldOrder = (item.sortOrder !== undefined && item.sortOrder !== null) ? item.sortOrder : index;
+    let newOrder = (next.sortOrder !== undefined && next.sortOrder !== null) ? next.sortOrder : (index + 1);
+    
+    // Safety check to ensure distinct values
+    if (newOrder <= oldOrder) newOrder = oldOrder + 1;
     
     await db.transaction('rw', [db.snippets, db.sync_queue], async () => {
       await syncService.moveSnippet(item.id, newOrder);

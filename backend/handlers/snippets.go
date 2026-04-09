@@ -119,10 +119,18 @@ func UpdateSnippet(c *fiber.Ctx) error {
 	}
 
 	// Support updating parentId (moving between folders) and sortOrder (manual positioning)
-	query := `UPDATE snippets SET name = $1, content = $2, parent_id = $3, sort_order = $4, updated_at = NOW() 
-	          WHERE id = $5 RETURNING id, user_id, parent_id, name, content, is_folder, sort_order, created_at`
-	err = db.QueryRow(context.Background(), query, s.Name, s.Content, s.ParentID, s.SortOrder, id).
-		Scan(&s.ID, &s.UserID, &s.ParentID, &s.Name, &s.Content, &s.IsFolder, &s.SortOrder, &s.CreatedAt)
+    query := `
+        UPDATE snippets 
+        SET name = CASE WHEN $1 = '' THEN name ELSE $1 END, 
+            content = CASE WHEN $2 = '' THEN content ELSE $2 END, 
+            parent_id = COALESCE($3, parent_id), 
+            sort_order = CASE WHEN $4 = -1 THEN sort_order ELSE $4 END,
+            updated_at = NOW() 
+        WHERE id = $5
+        RETURNING id, user_id, parent_id, name, content, is_folder, sort_order, created_at
+    `
+    err = db.QueryRow(context.Background(), query, s.Name, s.Content, s.ParentID, s.SortOrder, id).
+        Scan(&s.ID, &s.UserID, &s.ParentID, &s.Name, &s.Content, &s.IsFolder, &s.SortOrder, &s.CreatedAt)
 	if err != nil {
 		log.Printf("Update snippet failed: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Update failed"})

@@ -279,6 +279,24 @@ func AddDeskItem(c *fiber.Ctx) error {
 		}
 	}
 
+	// UUID Validation for RefID (Case-insensitive regex)
+	uuidRegex := `(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`
+	checkQuery := "SELECT 1 WHERE $1::text ~ $2"
+	var valid int
+	_ = db.QueryRow(context.Background(), checkQuery, it.RefID, uuidRegex).Scan(&valid)
+	if valid != 1 {
+		log.Printf("⚠️ [Desk] Invalid RefID attempt: %s | User: %s", it.RefID, dbUserID)
+		return c.Status(400).JSON(fiber.Map{"error": "This item cannot be pinned to desk (not a database entity)"})
+	}
+
+	// Also validate ID if present
+	if it.ID != "" {
+		_ = db.QueryRow(context.Background(), checkQuery, it.ID, uuidRegex).Scan(&valid)
+		if valid != 1 {
+			it.ID = "" // Clear malformed client-side ID to let DB generate one
+		}
+	}
+
 	// Fix for empty shelfId
 	var sId interface{} = it.ShelfID
 	if it.ShelfID == nil || *it.ShelfID == "" || *it.ShelfID == "null" {
@@ -292,7 +310,7 @@ func AddDeskItem(c *fiber.Ctx) error {
             $2, 
             CASE WHEN $3 IS NULL OR $3 = '' OR $3 = 'null' THEN NULL ELSE $3::uuid END, 
             $4, 
-            $5::uuid, 
+            NULLIF($5, '')::uuid, 
             $6
         )
         ON CONFLICT (id) DO UPDATE SET

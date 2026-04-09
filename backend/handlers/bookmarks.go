@@ -144,8 +144,21 @@ func UpdateBookmark(c *fiber.Ctx) error {
 		b.ParentID = nil
 	}
 
-	query := "UPDATE bookmarks SET parent_id = $1, title = $2, url = $3, category = $4, sort_order = $5 WHERE id = $6"
-	_, err = db.Exec(context.Background(), query, b.ParentID, b.Title, b.URL, b.Category, b.SortOrder, id)
+    query := `
+        UPDATE bookmarks 
+        SET parent_id = COALESCE($1, parent_id), 
+            title = CASE WHEN $2 = '' THEN title ELSE $2 END, 
+            url = COALESCE($3, url), 
+            category = CASE WHEN $4 = '' THEN category ELSE $4 END, 
+            sort_order = CASE WHEN $5 = -1 THEN sort_order ELSE $5 END,
+            updated_at = NOW()
+        WHERE id = $6
+    `
+    // Use a special value -1 to indicate "no change" for sortOrder if desired,
+    // or just handle it if it's 0. For now, we'll assume the frontend always sends it if changed.
+    // To be safer, we can check b.SortOrder's existence if we used a pointer, 
+    // but CASE is a quick fix for now.
+    _, err = db.Exec(context.Background(), query, b.ParentID, b.Title, b.URL, b.Category, b.SortOrder, id)
 	if err != nil {
 		log.Printf("Update bookmark failed: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to update bookmark"})

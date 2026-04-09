@@ -69,8 +69,19 @@ export const syncService = reactive({
         this.requestSync();
     },
     async moveSnippet(id: string, sortOrder: number) {
+        // Defensive Merge: ensure we don't overwrite server data with empty fields during a move
+        const existing = await db.snippets.get(id);
+        const name = existing?.name || '';
+        const content = existing?.content || '';
+        
         await db.snippets.update(id, { sortOrder, syncStatus: 'pending' });
-        await db.sync_queue.add({ action: 'UPDATE', entityType: 'snippet', entityId: id, data: { sortOrder }, timestamp: Date.now() });
+        await db.sync_queue.add({ 
+            action: 'UPDATE', 
+            entityType: 'snippet', 
+            entityId: id, 
+            data: { name, content, sortOrder }, // Send core fields to repair potential corruption
+            timestamp: Date.now() 
+        });
         this.requestSync();
     },
 
@@ -120,8 +131,20 @@ export const syncService = reactive({
         this.requestSync();
     },
     async moveBookmark(id: string, sortOrder: number) {
+        // Defensive Merge: ensure we don't overwrite server data with empty fields during a move
+        const existing = await db.bookmarks.get(id);
+        const title = existing?.title || '';
+        const url = existing?.url || null;
+        const category = existing?.category || 'General';
+        
         await db.bookmarks.update(id, { sortOrder, syncStatus: 'pending' });
-        await db.sync_queue.add({ action: 'UPDATE', entityType: 'bookmark', entityId: id, data: { sortOrder }, timestamp: Date.now() });
+        await db.sync_queue.add({ 
+            action: 'UPDATE', 
+            entityType: 'bookmark', 
+            entityId: id, 
+            data: { title, url, category, sortOrder }, // Send core fields to repair potential corruption
+            timestamp: Date.now() 
+        });
         this.requestSync();
     },
 

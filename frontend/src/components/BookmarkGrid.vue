@@ -429,10 +429,13 @@ const moveUp = async (bm: Bookmark) => {
   const index = bookmarks.value.findIndex(b => b.id === bm.id);
   if (index > 0) {
     const prev = bookmarks.value[index-1];
-    const oldOrder = (bm.sortOrder !== undefined) ? bm.sortOrder : index;
-    const newOrder = (prev.sortOrder !== undefined) ? prev.sortOrder : (index - 1);
+    // If they have the same order or missing, treat as indices to force a distinct swap
+    const oldOrder = (bm.sortOrder !== undefined && bm.sortOrder !== null) ? bm.sortOrder : index;
+    let newOrder = (prev.sortOrder !== undefined && prev.sortOrder !== null) ? prev.sortOrder : (index - 1);
     
-    // Use transaction to prevent intermediate state flicker in LiveQuery
+    // Safety: prevent duplicate sort orders after move
+    if (newOrder >= oldOrder) newOrder = oldOrder - 1;
+    
     await db.transaction('rw', [db.bookmarks, db.sync_queue], async () => {
       await syncService.moveBookmark(bm.id, newOrder);
       await syncService.moveBookmark(prev.id, oldOrder);
@@ -444,8 +447,11 @@ const moveDown = async (bm: Bookmark) => {
   const index = bookmarks.value.findIndex(b => b.id === bm.id);
   if (index < bookmarks.value.length - 1) {
     const next = bookmarks.value[index+1];
-    const oldOrder = (bm.sortOrder !== undefined) ? bm.sortOrder : index;
-    const newOrder = (next.sortOrder !== undefined) ? next.sortOrder : (index + 1);
+    const oldOrder = (bm.sortOrder !== undefined && bm.sortOrder !== null) ? bm.sortOrder : index;
+    let newOrder = (next.sortOrder !== undefined && next.sortOrder !== null) ? next.sortOrder : (index + 1);
+    
+    // Safety: prevent duplicate sort orders after move
+    if (newOrder <= oldOrder) newOrder = oldOrder + 1;
     
     await db.transaction('rw', [db.bookmarks, db.sync_queue], async () => {
       await syncService.moveBookmark(bm.id, newOrder);
