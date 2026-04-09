@@ -199,9 +199,9 @@ func MoveRemarkItem(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid body"})
 	}
 
-	// Handle empty string as NULL for UUID column
+	// Handle empty string as NULL for UUID column - support virtual IDs
 	var cid interface{} = body.ContainerID
-	if body.ContainerID != nil && *body.ContainerID == "" {
+	if body.ContainerID != nil && (*body.ContainerID == "" || *body.ContainerID == "root" || *body.ContainerID == "staged" || *body.ContainerID == "null") {
 		cid = nil
 	}
 
@@ -242,18 +242,23 @@ func AddRemarkItem(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid body"})
 	}
 
+	// Handle virtual IDs for the container_id UUID column
 	var id string
+	var cid interface{} = body.ContainerId
+	if body.ContainerId == "" || body.ContainerId == "root" || body.ContainerId == "staged" || body.ContainerId == "null" {
+		cid = nil
+	}
+
 	query := `
 		INSERT INTO remark_items (id, user_id, container_id, log_id) 
 		VALUES (COALESCE(NULLIF($1, ''), gen_random_uuid()::text), $2, $3, $4)
 		ON CONFLICT (id) DO UPDATE SET 
 			container_id = EXCLUDED.container_id,
-			log_id = EXCLUDED.log_id,
-			updated_at = NOW()
+			log_id = EXCLUDED.log_id
 		RETURNING id
 	`
 	err := database.LocalDB.QueryRow(context.Background(), query, 
-		body.ID, user.ID, body.ContainerId, body.LogId).Scan(&id)
+		body.ID, user.ID, cid, body.LogId).Scan(&id)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

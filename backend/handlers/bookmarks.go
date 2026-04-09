@@ -90,11 +90,11 @@ func CreateBookmark(c *fiber.Ctx) error {
 		b.Category = "uncategorized"
 	}
 
-	// Internal validation for empty strings to NULL
-	if b.ParentID != nil && *b.ParentID == "" {
+	// Internal validation for virtual IDs to NULL (Postgres UUID requirement)
+	if b.ParentID != nil && (*b.ParentID == "" || *b.ParentID == "root") {
 		b.ParentID = nil
 	}
-	if b.PasswordID != nil && *b.PasswordID == "" {
+	if b.PasswordID != nil && (*b.PasswordID == "" || *b.PasswordID == "root") {
 		b.PasswordID = nil
 	}
 
@@ -130,8 +130,8 @@ func UpdateBookmark(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	// Prepare dynamic update
-	if b.ParentID != nil && *b.ParentID == "" {
+	// Prepare dynamic update - handle virtual IDs
+	if b.ParentID != nil && (*b.ParentID == "" || *b.ParentID == "root") {
 		b.ParentID = nil
 	}
 

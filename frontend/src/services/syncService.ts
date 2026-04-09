@@ -45,7 +45,7 @@ export const syncService = reactive({
             syncStatus: 'pending'
         };
         await db.snippets.add(newSnippet);
-        await db.sync_queue.add({ action: 'CREATE', entityType: 'snippet', entityId: id, data, timestamp: Date.now() });
+        await db.sync_queue.add({ action: 'CREATE', entityType: 'snippet', entityId: id, data: { ...data, id }, timestamp: Date.now() });
         this.requestSync();
         return newSnippet;
     },
@@ -87,7 +87,7 @@ export const syncService = reactive({
         const id = crypto.randomUUID();
         const newBookmark = { ...data, id, syncStatus: 'pending', updatedAt: new Date().toISOString() };
         await db.bookmarks.add(newBookmark);
-        await db.sync_queue.add({ action: 'CREATE', entityType: 'bookmark', entityId: id, data, timestamp: Date.now() });
+        await db.sync_queue.add({ action: 'CREATE', entityType: 'bookmark', entityId: id, data: { ...data, id }, timestamp: Date.now() });
         this.requestSync();
         return newBookmark;
     },
@@ -120,7 +120,7 @@ export const syncService = reactive({
     async createShelf(data: any) {
         const id = crypto.randomUUID();
         await db.shelves.add({ ...data, id, syncStatus: 'pending', updatedAt: new Date().toISOString() });
-        await db.sync_queue.add({ action: 'CREATE', entityType: 'shelf', entityId: id, data, timestamp: Date.now() });
+        await db.sync_queue.add({ action: 'CREATE', entityType: 'shelf', entityId: id, data: { ...data, id }, timestamp: Date.now() });
         this.requestSync();
         return { id };
     },
@@ -150,7 +150,7 @@ export const syncService = reactive({
     async addDeskItem(data: any) {
         const id = crypto.randomUUID();
         await db.deskItems.add({ ...data, id, shelfId: data.shelfId || 'null', syncStatus: 'pending', updatedAt: new Date().toISOString() });
-        await db.sync_queue.add({ action: 'CREATE', entityType: 'deskItem', entityId: id, data, timestamp: Date.now() });
+        await db.sync_queue.add({ action: 'CREATE', entityType: 'deskItem', entityId: id, data: { ...data, id }, timestamp: Date.now() });
         this.requestSync();
         return { id };
     },
@@ -221,7 +221,7 @@ export const syncService = reactive({
     async addBookNote(bookId: string, data: any) {
         const id = crypto.randomUUID();
         await db.bookNotes.add({ ...data, id, bookId, syncStatus: 'pending', updatedAt: new Date().toISOString() });
-        await db.sync_queue.add({ action: 'CREATE', entityType: 'bookNote', entityId: id, data: { ...data, bookId }, timestamp: Date.now() });
+        await db.sync_queue.add({ action: 'CREATE', entityType: 'bookNote', entityId: id, data: { ...data, id, bookId }, timestamp: Date.now() });
         this.requestSync();
         return { id };
     },
@@ -268,7 +268,7 @@ export const syncService = reactive({
     async createRemark(data: any) {
         const id = crypto.randomUUID();
         await db.remarks.add({ ...data, id, isPinned: false, syncStatus: 'pending', updatedAt: new Date().toISOString() });
-        await db.sync_queue.add({ action: 'CREATE', entityType: 'remark', entityId: id, data, timestamp: Date.now() });
+        await db.sync_queue.add({ action: 'CREATE', entityType: 'remark', entityId: id, data: { ...data, id }, timestamp: Date.now() });
         this.requestSync();
         return { id };
     },
@@ -292,7 +292,7 @@ export const syncService = reactive({
             syncStatus: 'pending', 
             updatedAt: new Date().toISOString() 
         });
-        await db.sync_queue.add({ action: 'CREATE', entityType: 'remarkItem', entityId: id, data, timestamp: Date.now() });
+        await db.sync_queue.add({ action: 'CREATE', entityType: 'remarkItem', entityId: id, data: { ...data, id }, timestamp: Date.now() });
         this.requestSync();
         return { id };
     },
