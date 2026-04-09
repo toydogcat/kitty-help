@@ -285,20 +285,27 @@ func AddDeskItem(c *fiber.Ctx) error {
 		sId = nil
 	}
 
-	query := `
-		INSERT INTO desk_items (id, user_id, shelf_id, type, ref_id, sort_order) 
-		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, NULLIF($3, '')::uuid, $4, $5::uuid, $6)
-		ON CONFLICT (id) DO UPDATE SET
-			shelf_id = EXCLUDED.shelf_id,
-			sort_order = EXCLUDED.sort_order,
-			updated_at = NOW()
-		RETURNING id, created_at
-	`
-	err = db.QueryRow(context.Background(), query, it.ID, dbUserID, sId, it.Type, it.RefID, it.SortOrder).Scan(&it.ID, &it.CreatedAt)
-	if err != nil {
-		log.Printf("AddDeskItem SQL error: %v", err)
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to add item to desk"})
-	}
+    query := `
+        INSERT INTO desk_items (id, user_id, shelf_id, type, ref_id, sort_order) 
+        VALUES (
+            COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), 
+            $2, 
+            CASE WHEN $3 IS NULL OR $3 = '' OR $3 = 'null' THEN NULL ELSE $3::uuid END, 
+            $4, 
+            $5::uuid, 
+            $6
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            shelf_id = EXCLUDED.shelf_id,
+            sort_order = EXCLUDED.sort_order,
+            updated_at = NOW()
+        RETURNING id, created_at
+    `
+    err = db.QueryRow(context.Background(), query, it.ID, dbUserID, sId, it.Type, it.RefID, it.SortOrder).Scan(&it.ID, &it.CreatedAt)
+    if err != nil {
+        log.Printf("AddDeskItem SQL error: %v (ID: %s, RefID: %s, ShelfID: %v)", err, it.ID, it.RefID, sId)
+        return c.Status(500).JSON(fiber.Map{"error": "Failed to add item to desk"})
+    }
 	it.UserID = dbUserID
 	return c.JSON(it)
 }
@@ -319,8 +326,13 @@ func UpdateDeskItem(c *fiber.Ctx) error {
 		sId = nil
 	}
 
-	query := "UPDATE desk_items SET shelf_id = NULLIF($1, '')::uuid, sort_order = $2 WHERE id = $3::uuid"
-	_, err = db.Exec(context.Background(), query, sId, it.SortOrder, id)
+    query := `
+        UPDATE desk_items 
+        SET shelf_id = CASE WHEN $1 IS NULL OR $1 = '' OR $1 = 'null' THEN NULL ELSE $1::uuid END, 
+            sort_order = $2 
+        WHERE id = $3::uuid
+    `
+    _, err = db.Exec(context.Background(), query, sId, it.SortOrder, id)
 	if err != nil {
 		log.Printf("UpdateDeskItem error: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Update failed"})

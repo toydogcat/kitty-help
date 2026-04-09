@@ -586,7 +586,15 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 </template>
 
 <style scoped>
-.bookcase-v2 { display: flex; height: 100vh; background: #0a0c10; color: #a0a8b1; font-family: 'Outfit', sans-serif;}
+.bookcase-v2 { 
+  display: flex; 
+  height: calc(100vh - 240px); /* Account for dashboard header + tabs */
+  min-height: 600px;
+  background: #0a0c10; 
+  color: #a0a8b1; 
+  font-family: 'Outfit', sans-serif;
+  border-radius: 0 0 24px 24px;
+}
 .detach-btn:hover { background: #ff5757; color: #fff; }
 
 /* 🚀 Sidebar Collapse & Responsive Logic */
@@ -616,6 +624,38 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
 }
+
+.sidebar-header { padding: 1.25rem; display: flex; gap: 0.5rem; border-bottom: 1px solid #111; }
+.sidebar-header input { flex: 1; background: #000; border: 1px solid #1a1e23; padding: 0.6rem; border-radius: 6px; color: #fff; font-size: 0.8rem; outline: none; }
+.add-btn { background: #d97706; border: none; color: #fff; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; font-weight: 900; }
+
+.folder-list { flex: 1; overflow-y: auto; padding-bottom: 5rem; }
+.folder-group { margin-bottom: 1px; }
+.folder-header { padding: 0.8rem 1.25rem; display: flex; align-items: center; gap: 0.8rem; background: #050505; cursor: pointer; transition: 0.2s; border-left: 3px solid transparent; }
+.folder-header:hover { background: #0a0a0a; border-left-color: #fbbf24; }
+.fold-arrow { font-size: 0.6rem; opacity: 0.4; transition: 0.3s; }
+.folder-name { flex: 1; font-weight: 800; font-size: 0.75rem; letter-spacing: 0.5px; text-transform: uppercase; color: #fff; }
+.count { font-size: 0.65rem; background: #111; padding: 2px 8px; border-radius: 10px; opacity: 0.5; }
+
+.book-item { padding: 0.75rem 1.25rem 0.75rem 3rem; display: flex; align-items: center; gap: 1rem; cursor: pointer; position: relative; transition: 0.2s; border-bottom: 1px solid #080808; }
+.book-item:hover { background: #0a0c10; }
+.book-item.active { background: #1a1e23; border-left: 3px solid #fbbf24; }
+.book-item.is-dragging { opacity: 0.4; }
+.item-icon { font-size: 1.1rem; filter: grayscale(1); opacity: 0.3; }
+.active .item-icon { filter: none; opacity: 1; }
+.item-info { flex: 1; overflow: hidden; text-align: left;}
+.item-title { font-size: 0.85rem; font-weight: 600; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.active .item-title { color: #fff; }
+.item-meta { font-size: 0.65rem; opacity: 0.4; text-transform: uppercase; letter-spacing: 0.5px; }
+
+.sort-actions { display: none; flex-direction: column; opacity: 0.5; transition: 0.2s; }
+.book-item:hover .sort-actions { display: flex; }
+.sort-actions button { background: none; border: none; color: #fff; cursor: pointer; font-size: 0.9rem; padding: 0 4px; }
+.sort-actions button:hover { color: #fbbf24; opacity: 1; }
+
+.new-folder-area { padding: 1.25rem; }
+.new-folder-area input { width: 100%; background: transparent; border: 1px dashed #222; padding: 0.6rem; border-radius: 6px; font-size: 0.7rem; color: #444; outline: none; transition: 0.2s; }
+.new-folder-area input:focus { border-color: #555; color: #888; }
 .sidebar.collapsed {
   width: 0;
   border-right: none;
@@ -625,10 +665,10 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 
 @media (max-width: 1024px) {
   .sidebar {
-    position: fixed;
-    z-index: 100;
-    height: 100vh;
-    box-shadow: 20px 0 50px rgba(0,0,0,0.5);
+    position: absolute;
+    z-index: 1000;
+    height: 100%;
+    box-shadow: 20px 0 50px rgba(0,0,0,0.8);
   }
   .sidebar.collapsed {
     transform: translateX(-100%);

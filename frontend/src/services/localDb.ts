@@ -115,8 +115,8 @@ export class EverSyncDatabase extends Dexie {
     constructor() {
         super('EverSyncDB');
         this.version(5).stores({
-            snippets: 'id, parentId, name, syncStatus',
-            bookmarks: 'id, parentId, title, url, syncStatus',
+            snippets: 'id, parentId, name, sortOrder, syncStatus',
+            bookmarks: 'id, parentId, title, url, sortOrder, syncStatus',
             shelves: 'id, name, sortOrder, syncStatus',
             deskItems: 'id, refId, shelfId, sortOrder, syncStatus',
             bookcase: 'id, storeId, title, folder, sortOrder, syncStatus',
