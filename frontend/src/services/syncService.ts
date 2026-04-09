@@ -321,19 +321,27 @@ export const syncService = reactive({
     async handleIdTransition(table: any, oldId: string, res: any) {
         console.log(`[Sync Debug] Transitioning ID for ${table.name}. Response:`, res);
         
-        // 嘗試從各種可能的欄位中提取 ID
-        const newId = res.id || res.ID || res._id || (res.data && (res.data.id || res.data._id));
-        
-        if (!newId) {
-            console.warn(`[Sync Warning] No new ID found in response for ${table.name}. Retaining old ID.`);
-            // 如果沒新 ID，至少更新狀態為已同步
+        // 嘗試從各種可能的欄位中提取 ID (支援大小寫與不同格式)
+        const newIdRaw = res.id || res.ID || res._id || (res.data && (res.data.id || res.data._id));
+        if (!newIdRaw) {
+            console.warn(`[Sync Warning] No new ID found in response for ${table.name}.`);
             await table.update(oldId, { syncStatus: 'synced', updatedAt: new Date().toISOString() });
             return;
         }
 
-        if (newId === oldId) {
+        const newId = String(newIdRaw).toLowerCase();
+        const oldIdNormalized = String(oldId).toLowerCase();
+        
+        if (newId === oldIdNormalized) {
             await table.update(oldId, { syncStatus: 'synced', updatedAt: new Date().toISOString() });
             return;
+        }
+
+        // --- 核心修復：更新同步隊列中的待處理動作 ---
+        // 如果隊列中有後續動作（如剛創建就馬上修改或刪除），舊 ID 必須換成新 ID
+        const affectedActions = await db.sync_queue.where('entityId').equals(oldId).modify({ entityId: newId });
+        if (affectedActions > 0) {
+            console.log(`[Sync Debug] Updated ${affectedActions} pending actions in queue from ${oldId} to ${newId}`);
         }
 
         const oldRecord = await table.get(oldId);
@@ -347,6 +355,9 @@ export const syncService = reactive({
                 updatedAt: new Date().toISOString()
             });
             console.log(`[Sync Debug] ${table.name} ID transitioned: ${oldId} -> ${newId}`);
+        } else {
+            // 如果本地找不到舊記錄（可能剛被手動刪除），我們還是要確保新 ID 被同步刪除（如果有 DELETE 動作在隊列裡）
+            console.log(`[Sync Info] Old record ${oldId} not found locally, transition skipped but queue updated.`);
         }
     },
 
