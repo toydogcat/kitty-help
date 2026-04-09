@@ -18,6 +18,7 @@ type BookcaseItem struct {
 	Category  string    `json:"category"`
 	Notes     string    `json:"notes"`
 	Folder    string    `json:"folder"`
+	SortOrder int       `json:"sortOrder"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -32,7 +33,7 @@ func GetBookcase(c *fiber.Ctx) error {
 	}
 
 	rows, err := database.LocalDB.Query(context.Background(), 
-		"SELECT id, user_id, store_id, title, category, notes, folder, created_at, updated_at FROM bookcase WHERE user_id = $1 ORDER BY updated_at DESC", 
+		"SELECT id, user_id, store_id, title, category, notes, folder, sort_order, created_at, updated_at FROM bookcase WHERE user_id = $1 ORDER BY sort_order ASC, created_at DESC", 
 		userId)
 	if err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
@@ -42,7 +43,7 @@ func GetBookcase(c *fiber.Ctx) error {
 	items := []BookcaseItem{}
 	for rows.Next() {
 		var it BookcaseItem
-		err := rows.Scan(&it.ID, &it.UserID, &it.StoreID, &it.Title, &it.Category, &it.Notes, &it.Folder, &it.CreatedAt, &it.UpdatedAt)
+		err := rows.Scan(&it.ID, &it.UserID, &it.StoreID, &it.Title, &it.Category, &it.Notes, &it.Folder, &it.SortOrder, &it.CreatedAt, &it.UpdatedAt)
 		if err != nil {
 			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -224,9 +225,18 @@ func AddBookNote(c *fiber.Ctx) error {
 	if req.NoteType == "" { req.NoteType = "markdown" }
 
 	var id string
-	err := database.LocalDB.QueryRow(context.Background(),
-		"INSERT INTO bookcase_notes (book_id, title, content, note_type) VALUES ($1, $2, $3, $4) RETURNING id",
-		bookID, req.Title, req.Content, req.NoteType).Scan(&id)
+	query := `
+		INSERT INTO bookcase_notes (id, book_id, title, content, note_type) 
+		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5)
+		ON CONFLICT (id) DO UPDATE SET 
+			title = EXCLUDED.title,
+			content = EXCLUDED.content,
+			note_type = EXCLUDED.note_type,
+			updated_at = NOW()
+		RETURNING id
+	`
+	err := database.LocalDB.QueryRow(context.Background(), query,
+		"", bookID, req.Title, req.Content, req.NoteType).Scan(&id)
 	
 	if err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
@@ -281,6 +291,30 @@ func UpdateBookFolder(c *fiber.Ctx) error {
 	_, err := database.LocalDB.Exec(context.Background(),
 		"UPDATE bookcase SET folder = $1, updated_at = now() WHERE id = $2 AND user_id = $3",
 		req.Folder, bookID, userId)
+	
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"status": "success"})
+}
+
+func UpdateBookSortOrder(c *fiber.Ctx) error {
+	userClaims := c.Locals("user").(*Claims)
+	
+	var userId string
+	_ = database.LocalDB.QueryRow(context.Background(), "SELECT id FROM users WHERE email = $1", userClaims.Email).Scan(&userId)
+	
+	bookID := c.Params("id")
+	var req struct {
+		SortOrder int `json:"sortOrder"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	_, err := database.LocalDB.Exec(context.Background(),
+		"UPDATE bookcase SET sort_order = $1, updated_at = now() WHERE id = $2 AND user_id = $3",
+		req.SortOrder, bookID, userId)
 	
 	if err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})

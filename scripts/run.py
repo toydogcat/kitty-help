@@ -254,6 +254,7 @@ def main():
     parser.add_argument('-c', '--catch', action='store_true', help='Catch Tunnel URL and update .env')
     parser.add_argument('-b', '--build', action='store_true', help='Build Frontend (npm run build)')
     parser.add_argument('-p', '--deploy', action='store_true', help='Deploy to Firebase Hosting')
+    parser.add_argument('-pp', '--preview', action='store_true', help='Deploy to Firebase Hosting Preview Channel')
     parser.add_argument('-e', '--export', action='store_true', help='Backup/Export Database to SQL')
     parser.add_argument('-i', '--import-db', action='store_true', help='Restore/Import Database from SQL')
     parser.add_argument('-f', '--fix', type=str, help='Purify EPUB file (remove res:/// and scripts)')
@@ -318,10 +319,23 @@ def main():
         catch_tunnel_url()
 
     if args.build or run_all:
+        # Step 3: Ensure .env files are synced to frontend
+        for env_name in [ENV_FILE, ENV_PROD_FILE]:
+            src = env_name
+            dst = os.path.join("frontend", env_name)
+            if os.path.exists(src):
+                shutil.copy2(src, dst)
+                print(f"{Colors.OKCYAN}🚀 Synced {src} -> {dst} (Prep for Build){Colors.ENDC}")
+        
         run_command("cd frontend && npm run build", "3/4: Building Frontend assets...")
 
-    if args.deploy or run_all:
+    if (args.deploy or run_all) and not args.preview:
         run_command("cd frontend && firebase deploy --only hosting", "4/4: Deploying to Firebase...")
+
+    if args.preview:
+        # Use a timestamp-based channel or a fixed name like 'eversync'
+        channel_id = "eversync-poc"
+        run_command(f"cd frontend && npx firebase hosting:channel:deploy {channel_id}", "4/4: Deploying to Preview Channel...")
 
     end_time = time.time()
     print(f"\n{Colors.OKGREEN}{Colors.BOLD}✅ [SUCCESS]{Colors.ENDC} Completed in {int(end_time - start_time)}s\n")

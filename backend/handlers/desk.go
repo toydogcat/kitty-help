@@ -54,9 +54,19 @@ func CreateShelf(c *fiber.Ctx) error {
 		}
 	}
 
-	query := "INSERT INTO desk_shelves (user_id, name, color, sort_order) VALUES ($1, $2, $3, $4) RETURNING id, created_at"
-	err = db.QueryRow(context.Background(), query, dbUserID, s.Name, s.Color, s.SortOrder).Scan(&s.ID, &s.CreatedAt)
+	query := `
+		INSERT INTO desk_shelves (id, user_id, name, color, sort_order) 
+		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5)
+		ON CONFLICT (id) DO UPDATE SET
+			name = EXCLUDED.name,
+			color = EXCLUDED.color,
+			sort_order = EXCLUDED.sort_order,
+			updated_at = NOW()
+		RETURNING id, created_at
+	`
+	err = db.QueryRow(context.Background(), query, s.ID, dbUserID, s.Name, s.Color, s.SortOrder).Scan(&s.ID, &s.CreatedAt)
 	if err != nil {
+		log.Printf("CreateShelf error: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to create shelf"})
 	}
 	s.UserID = dbUserID
@@ -269,18 +279,54 @@ func AddDeskItem(c *fiber.Ctx) error {
 		}
 	}
 
+	// UUID Validation for RefID (Case-insensitive regex)
+	uuidRegex := `(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`
+	checkQuery := "SELECT 1 WHERE $1::text ~ $2"
+	var valid int
+	_ = db.QueryRow(context.Background(), checkQuery, it.RefID, uuidRegex).Scan(&valid)
+	if valid != 1 {
+		log.Printf("⚠️ [Desk] Invalid RefID attempt: %s | User: %s", it.RefID, dbUserID)
+		return c.Status(400).JSON(fiber.Map{"error": "This item cannot be pinned to desk (not a database entity)"})
+	}
+
+	// Also validate ID if present
+	if it.ID != "" {
+		_ = db.QueryRow(context.Background(), checkQuery, it.ID, uuidRegex).Scan(&valid)
+		if valid != 1 {
+			it.ID = "" // Clear malformed client-side ID to let DB generate one
+		}
+	}
+
 	// Fix for empty shelfId
 	var sId interface{} = it.ShelfID
 	if it.ShelfID == nil || *it.ShelfID == "" || *it.ShelfID == "null" {
 		sId = nil
 	}
 
-	query := "INSERT INTO desk_items (user_id, shelf_id, type, ref_id, sort_order) VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at"
-	err = db.QueryRow(context.Background(), query, dbUserID, sId, it.Type, it.RefID, it.SortOrder).Scan(&it.ID, &it.CreatedAt)
-	if err != nil {
-		log.Printf("AddDeskItem SQL error: %v", err)
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to add item to desk"})
-	}
+    query := `
+        INSERT INTO desk_items (id, user_id, shelf_id, type, ref_id, sort_order) 
+        VALUES (
+            COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), 
+            $2, 
+            CASE WHEN $3::text IS NULL OR $3::text = '' OR $3::text = 'null' THEN NULL ELSE $3::uuid END, 
+            $4, 
+            NULLIF($5, '')::uuid, 
+            $6
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            shelf_id = EXCLUDED.shelf_id,
+            sort_order = EXCLUDED.sort_order,
+            updated_at = NOW()
+        RETURNING id, created_at
+    `
+    err = db.QueryRow(context.Background(), query, it.ID, dbUserID, sId, it.Type, it.RefID, it.SortOrder).Scan(&it.ID, &it.CreatedAt)
+    if err != nil {
+        log.Printf("❌ [AddDeskItem] SQL Error: %v | ID: %s | RefID: %s | User: %s", err, it.ID, it.RefID, dbUserID)
+        return c.Status(500).JSON(fiber.Map{
+            "error": "Failed to add item to desk",
+            "details": err.Error(),
+        })
+    }
 	it.UserID = dbUserID
 	return c.JSON(it)
 }
@@ -301,8 +347,14 @@ func UpdateDeskItem(c *fiber.Ctx) error {
 		sId = nil
 	}
 
-	query := "UPDATE desk_items SET shelf_id = $1, sort_order = $2 WHERE id = $3"
-	_, err = db.Exec(context.Background(), query, sId, it.SortOrder, id)
+    query := `
+        UPDATE desk_items 
+        SET shelf_id = CASE WHEN $1::text IS NULL OR $1::text = '' OR $1::text = 'null' THEN NULL ELSE $1::uuid END, 
+            sort_order = $2,
+            updated_at = NOW()
+        WHERE id = $3::uuid
+    `
+    _, err = db.Exec(context.Background(), query, sId, it.SortOrder, id)
 	if err != nil {
 		log.Printf("UpdateDeskItem error: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Update failed"})

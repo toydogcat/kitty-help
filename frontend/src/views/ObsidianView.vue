@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue';
 import { apiService } from '../services/api';
+import { syncService } from '../services/syncService';
 import { marked } from 'marked';
 
 const currentPath = ref('');
@@ -97,8 +98,16 @@ const openFile = async (file: any) => {
   fetchingContent.value = true;
   markdownContent.value = '';
   try {
-    const text = await apiService.getObsidianFileContent(file.path);
-    let content = typeof text === 'string' ? text : JSON.stringify(text, null, 2);
+    const cacheKey = `obsidian:${file.path}`;
+    let text = await syncService.getAICache(cacheKey);
+
+    if (!text) {
+        const res = await apiService.getObsidianFileContent(file.path);
+        text = typeof res === 'string' ? res : JSON.stringify(res, null, 2);
+        await syncService.setAICache(cacheKey, text, 3);
+    }
+
+    let content = text;
 
     // 1. Resolve Obsidian Wikilinks [[Note Name]]
     // For now, we just highlight them. Real navigation would require a map.

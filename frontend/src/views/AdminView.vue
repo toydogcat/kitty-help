@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue';
 import AdminDashboard from '../components/AdminDashboard.vue';
 import { apiService } from '../services/api';
-import axios from 'axios';
+import { syncService } from '../services/syncService';
 
 const props = defineProps<{ 
   deviceId: string;
@@ -29,11 +29,11 @@ const bots = ref({
 const fetchBotData = async () => {
   try {
     const [reqs, users] = await Promise.all([
-      axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/bot/requests`),
-      axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/bot/users`)
+      apiService.getBotRequests(),
+      apiService.getBotUsers()
     ]);
-    pendingRequests.value = reqs.data;
-    authorizedUsers.value = users.data;
+    pendingRequests.value = reqs;
+    authorizedUsers.value = users;
   } catch (err) {
     console.error('Failed to fetch bot data:', err);
   }
@@ -44,14 +44,14 @@ const selectedRoles = ref<Record<string, string>>({});
 const handleBotApprove = async (id: string) => {
   const role = selectedRoles.value[id] || 'client';
   try {
-    await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/bot/approve`, { id, role });
+    await apiService.approveBotUser(id, role);
     await fetchBotData();
   } catch (err) { alert('Approval failed'); }
 };
 
 const handleBotReject = async (id: string) => {
   try {
-    await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/bot/reject`, { id });
+    await apiService.rejectBotUser(id);
     await fetchBotData();
   } catch (err) { alert('Rejection failed'); }
 };
@@ -59,7 +59,7 @@ const handleBotReject = async (id: string) => {
 const handleDeleteBotUser = async (id: string) => {
   if (!confirm('Revoke account link? This will clear platform IDs from the user profile.')) return;
   try {
-    await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/bot/users/delete`, { id });
+    await apiService.deleteBotUser(id);
     await fetchBotData();
   } catch (err) { alert('Revoke failed'); }
 };
@@ -67,12 +67,12 @@ const handleDeleteBotUser = async (id: string) => {
 onMounted(async () => {
   try {
     const [bullRes, settings] = await Promise.all([
-      apiService.getBulletin(),
-      axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/settings`),
+      syncService.getBulletin(),
+      apiService.getSettings(),
       fetchBotData()
     ]);
     bulletinMessage.value = bullRes.message;
-    visitorMode.value = settings.data.visitor_mode === 'true';
+    visitorMode.value = settings.visitor_mode === 'true';
   } catch (err) {
     console.error('Failed to load admin data:', err);
   } finally {
@@ -83,10 +83,7 @@ onMounted(async () => {
 const toggleVisitorMode = async () => {
   try {
     const newVal = !visitorMode.value;
-    await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/settings`, {
-      key: 'visitor_mode',
-      value: String(newVal)
-    });
+    await apiService.updateSettings('visitor_mode', String(newVal));
     visitorMode.value = newVal;
   } catch (err) {
     alert('Failed to toggle visitor mode.');
@@ -97,7 +94,7 @@ const saveBulletin = async () => {
   if (!bulletinMessage.value.trim()) return;
   saving.value = true;
   try {
-    await apiService.updateBulletin(bulletinMessage.value, props.adminEmail, props.deviceId);
+    await syncService.updateBulletin(bulletinMessage.value, props.adminEmail, props.deviceId);
     alert('Bulletin updated successfully! 📢');
   } catch (err) {
     alert('Failed to update bulletin. Please check permissions.');

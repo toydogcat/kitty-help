@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
 import { apiService } from '../services/api';
+import { syncService } from '../services/syncService';
 import { marked } from 'marked';
 
 const props = defineProps<{
@@ -48,7 +49,7 @@ const handleSave = async () => {
   if (!props.item) return;
   saving.value = true;
   try {
-    await apiService.updateStorehouseItem(props.item.id, {
+    await syncService.updateStorehouseItem(props.item.id, {
       title: editingTitle.value,
       notes: editingNotes.value
     });

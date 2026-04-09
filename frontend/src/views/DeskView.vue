@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, onUnmounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { liveQuery } from 'dexie';
+import { db } from '../services/localDb';
+import { syncService } from '../services/syncService';
 import { apiService } from '../services/api';
 import UnifiedRemarkModal from '../components/UnifiedRemarkModal.vue';
 import { usePin } from '../composables/usePin';
@@ -26,6 +29,7 @@ const draggingItem = ref<any>(null);
 const draggingShelf = ref<any>(null); // Track shelf reordering
 const dragOverShelfId = ref<string | null | 'desktop'>(null);
 const draggingShelfOverId = ref<string | null>(null); // For visual feedback on shelf reordering
+const isSorting = ref(false);
 
 // Modals
 const showAddShelfModal = ref(false);
@@ -94,40 +98,66 @@ const verifyTOTP = async () => {
   }
 };
 
-onMounted(() => {
-  const shelf = route.query.shelfId as string;
-  if (shelf) activeShelfId.value = shelf;
-  fetchData();
-});
+
+
+let shelvesSub: any = null;
+let itemsSub: any = null;
 
 const fetchData = async () => {
   loading.value = true;
   try {
-    const [sData, iData] = await Promise.all([
-      apiService.getShelves(),
-      apiService.getDeskItems(activeShelfId.value || 'null')
-    ]);
-    shelves.value = sData;
-    desktopItems.value = iData;
+    syncService.refreshShelves().catch(() => {});
+    syncService.refreshDeskItems(activeShelfId.value || 'null').catch(() => {});
   } catch (err) {
-    console.error("Failed to load desk data:", err);
+    console.error("Desk background sync error");
   } finally {
     loading.value = false;
   }
 };
 
+onMounted(() => {
+  const shelf = route.query.shelfId as string;
+  if (shelf) activeShelfId.value = shelf;
+
+  shelvesSub = liveQuery(() => db.shelves.orderBy('sortOrder').toArray()).subscribe(val => {
+     shelves.value = val;
+  });
+
+  itemsSub = liveQuery(() => 
+     db.deskItems.where('shelfId').equals(activeShelfId.value || 'null').sortBy('sortOrder')
+  ).subscribe(val => {
+     desktopItems.value = val;
+     loading.value = false;
+  });
+
+  fetchData();
+});
+
+onUnmounted(() => {
+  if (shelvesSub) shelvesSub.unsubscribe();
+  if (itemsSub) itemsSub.unsubscribe();
+});
+
+watch(activeShelfId, (newId) => {
+  if (itemsSub) itemsSub.unsubscribe();
+  itemsSub = liveQuery(() => 
+     db.deskItems.where('shelfId').equals(newId || 'null').sortBy('sortOrder')
+  ).subscribe(val => {
+     desktopItems.value = val;
+  });
+  syncService.refreshDeskItems(newId || 'null').catch(() => {});
+});
+
 const switchShelf = async (id: string | null) => {
   activeShelfId.value = id;
-  await fetchData();
 };
 
 const handleAddShelf = async () => {
   if (!newShelfName.value) return;
   try {
-    await apiService.createShelf({ name: newShelfName.value, sortOrder: shelves.value.length });
+    await syncService.createShelf({ name: newShelfName.value, sortOrder: shelves.value.length });
     newShelfName.value = '';
     showAddShelfModal.value = false;
-    await fetchData();
   } catch (err) {
     alert("Failed to create shelf");
   }
@@ -142,9 +172,8 @@ const openRenameModal = (shelf: any) => {
 const handleRenameShelf = async () => {
   if (!renamingShelfId.value || !newShelfName.value) return;
   try {
-    await apiService.updateShelf(renamingShelfId.value, { name: newShelfName.value });
+    await syncService.updateShelf(renamingShelfId.value, { name: newShelfName.value });
     showRenameModal.value = false;
-    await fetchData();
   } catch (err) {
     alert("Rename failed");
   }
@@ -152,8 +181,9 @@ const handleRenameShelf = async () => {
 
 const duplicateShelf = async (id: string) => {
   try {
-    await apiService.duplicateShelf(id);
-    await fetchData();
+    const s = shelves.value.find(x => x.id === id);
+    if (!s) return;
+    await syncService.createShelf({ name: `${s.name} (Copy)`, sortOrder: shelves.value.length });
   } catch (err) {
     alert("Duplicate failed");
   }
@@ -162,9 +192,8 @@ const duplicateShelf = async (id: string) => {
 const deleteShelf = async (id: string) => {
   if (!confirm("Delete this shelf? Items will be moved to desktop.")) return;
   try {
-    await apiService.deleteShelf(id);
+    await syncService.deleteShelf(id);
     if (activeShelfId.value === id) activeShelfId.value = null;
-    await fetchData();
   } catch (err) {
     alert("Delete failed");
   }
@@ -172,7 +201,7 @@ const deleteShelf = async (id: string) => {
 
 const onDragStart = (item: any) => {
   draggingItem.value = item;
-  draggingShelf.value = null; // Ensure we are not shelf-dragging
+  draggingShelf.value = null;
 };
 
 const onShelfDragStart = (shelf: any) => {
@@ -190,30 +219,21 @@ const onDragOverShelf = (id: string | null | 'desktop') => {
 
 const onShelfDrop = async (targetId: string | null) => {
   if (!draggingShelf.value || draggingShelf.value.id === targetId) return;
-  
   const oldIndex = shelves.value.findIndex(s => s.id === draggingShelf.value.id);
   const newIndex = shelves.value.findIndex(s => s.id === targetId);
-  
   if (oldIndex === -1 || newIndex === -1) return;
   
-  // Optimistic UI Update
   const newShelves = [...shelves.value];
   const [removed] = newShelves.splice(oldIndex, 1);
   newShelves.splice(newIndex, 0, removed);
-  shelves.value = newShelves;
-
-  try {
-    // Sync all orders to backend - include name and color to avoid clearing them
-    await Promise.all(newShelves.map((s, idx) => 
-      apiService.updateShelf(s.id, { name: s.name, color: s.color, sortOrder: idx })
-    ));
-  } catch (err) {
-    console.error("Reorder failed:", err);
-    fetchData(); // Rollback
-  } finally {
-    draggingShelf.value = null;
-    draggingShelfOverId.value = null;
+  
+  // EverSync sequential updates (temporary)
+  for (let i = 0; i < newShelves.length; i++) {
+    await syncService.updateShelf(newShelves[i].id, { sortOrder: i });
   }
+  
+  draggingShelf.value = null;
+  draggingShelfOverId.value = null;
 };
 
 const onDropOnShelf = async (shelfId: string | null) => {
@@ -223,10 +243,17 @@ const onDropOnShelf = async (shelfId: string | null) => {
   }
   if (!draggingItem.value) return;
   try {
-    await apiService.updateDeskItem(draggingItem.value.id, { shelfId });
+    // When moving between shelves, we default to the end (sortOrder = desktopItems.length)
+    // Actually, it's better to find the max sortOrder in the target shelf
+    const targetItems = await db.deskItems.where('shelfId').equals(shelfId || 'null').toArray();
+    const maxSort = targetItems.reduce((max, it) => Math.max(max, it.sortOrder || 0), -1);
+    
+    await syncService.updateDeskItem(draggingItem.value.id, { 
+      shelfId,
+      sortOrder: maxSort + 1
+    });
     draggingItem.value = null;
     dragOverShelfId.value = null;
-    await fetchData();
   } catch (err) {
     console.error("Move failed:", err);
   } finally {
@@ -234,16 +261,56 @@ const onDropOnShelf = async (shelfId: string | null) => {
   }
 };
 
+const moveUp = async (item: any) => {
+  if (isSorting.value) return;
+  const index = desktopItems.value.findIndex(it => it.id === item.id);
+  if (index <= 0) return;
+
+  try {
+    isSorting.value = true;
+    const items = [...desktopItems.value];
+    // Swap in local view
+    [items[index - 1], items[index]] = [items[index], items[index - 1]];
+    
+    // Update all sortOrders in this context to ensure no collisions
+    const updates = items.map((it, i) => syncService.moveDeskItem(it.id, i));
+    await Promise.all(updates);
+  } catch (err) {
+    console.error("Move up failed:", err);
+  } finally {
+    isSorting.value = false;
+  }
+};
+
+const moveDown = async (item: any) => {
+  if (isSorting.value) return;
+  const index = desktopItems.value.findIndex(it => it.id === item.id);
+  if (index < 0 || index >= desktopItems.value.length - 1) return;
+
+  try {
+    isSorting.value = true;
+    const items = [...desktopItems.value];
+    // Swap in local view
+    [items[index], items[index + 1]] = [items[index + 1], items[index]];
+    
+    // Update all sortOrders in this context to ensure no collisions
+    const updates = items.map((it, i) => syncService.moveDeskItem(it.id, i));
+    await Promise.all(updates);
+  } catch (err) {
+    console.error("Move down failed:", err);
+  } finally {
+    isSorting.value = false;
+  }
+};
+
 const removeItem = async (id: string, type: string = '') => {
   const performDelete = async () => {
     try {
       await unpinFromDesk(id);
-      await fetchData();
     } catch (err) {
       alert("Remove failed");
     }
   };
-
   if (type === 'password') {
     handleSensitiveAction(performDelete);
   } else {
@@ -271,8 +338,6 @@ const getThumbnail = (item: any, large = false) => {
   return null;
 };
 
-// Helper removed because it is now handled inside UnifiedRemarkModal component
-
 const openOriginal = async (item: any) => {
   const performOpen = async () => {
     if (item.type === 'bookmark' && item.url) {
@@ -297,9 +362,25 @@ const openOriginal = async (item: any) => {
     if (item.type === 'remark') {
       modalLoading.value = true;
       try {
-        const data = await apiService.getRemarks();
-        const container = data.containers?.find((c: any) => c.id === item.refId);
-        remarkDetails.value = container || null;
+        const container = await db.remarks.get(item.refId);
+        if (container) {
+            const localItems = await db.remarkItems.where('containerId').equals(item.refId).toArray();
+            const allItems = [...(container.items || [])];
+            localItems.forEach(li => {
+                if (!allItems.find(ai => ai.id === li.id)) {
+                    allItems.push(li);
+                }
+            });
+            remarkDetails.value = { ...container, items: allItems };
+        } else {
+            // Fallback sync if not found
+            const data = await syncService.refreshRemarks();
+            const c = data.containers?.find((x: any) => x.id === item.refId);
+            if (c) {
+                const items = data.items?.filter((x: any) => x.containerId === item.refId) || [];
+                remarkDetails.value = { ...c, items };
+            }
+        }
       } catch (err) {
         console.error("Failed to load remark details:", err);
       } finally {
@@ -308,11 +389,17 @@ const openOriginal = async (item: any) => {
     } else if (item.type === 'book') {
       modalLoading.value = true;
       try {
-        const books = await apiService.getBookcase();
-        const b = books.find((x: any) => x.id === item.refId);
+        const b = await db.bookcase.get(item.refId);
         if (b) {
           editBuffer.value.content = b.notes || '';
           editBuffer.value.title = b.title;
+        } else {
+           const remoteBooks = await syncService.refreshBookcase();
+           const rb = remoteBooks.find((x: any) => x.id === item.refId);
+           if (rb) {
+              editBuffer.value.content = rb.notes || '';
+              editBuffer.value.title = rb.title;
+           }
         }
       } catch (err) {
         console.error("Failed to load book details:", err);
@@ -334,31 +421,28 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
   saving.value = true;
   try {
     if (editingItem.value.type === 'snippet') {
-      await apiService.updateSnippet(editingItem.value.refId, {
+      await syncService.updateSnippet(editingItem.value.refId, {
         name: updatedData.title,
         content: updatedData.content
       });
     } else if (editingItem.value.type === 'media') {
-      await apiService.updateStorehouseItem(editingItem.value.refId, {
+      await syncService.updateStorehouseItem(editingItem.value.refId, {
         title: updatedData.title,
         notes: updatedData.content
       });
     } else if (editingItem.value.type === 'bookmark') {
-      await apiService.updateBookmark(editingItem.value.refId, {
+      await syncService.updateBookmark(editingItem.value.refId, {
         title: updatedData.title
       });
     } else if (editingItem.value.type === 'remark') {
-      await apiService.updateRemark(editingItem.value.refId, {
+      await syncService.updateRemark(editingItem.value.refId, {
         name: updatedData.title,
-        content: updatedData.content,
-        isPinned: remarkDetails.value?.isPinned || false
+        content: updatedData.content
       });
     } else if (editingItem.value.type === 'book') {
-      await apiService.updateBookNotes(editingItem.value.refId, updatedData.content);
+      await syncService.updateBookNote(editingItem.value.refId, { content: updatedData.content });
     }
-    
     showEditModal.value = false;
-    await fetchData(); 
   } catch (err) {
     alert("Save failed");
   } finally {
@@ -467,7 +551,13 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
               <span class="badge" :class="it.type">{{ it.type.toUpperCase() }}</span>
             </div>
           </div>
-          <button @click.stop="removeItem(it.id, it.type)" class="remove-btn" title="Unlink from desk">×</button>
+          
+          <div class="item-actions" @click.stop v-if="!isSorting">
+            <button @click="moveUp(it)" class="action-btn up" title="Move Up">▴</button>
+            <button @click="moveDown(it)" class="action-btn down" title="Move Down">▾</button>
+            <button @click="removeItem(it.id, it.type)" class="action-btn remove" title="Unlink from desk">×</button>
+          </div>
+          <div class="item-actions sorting" v-else>...</div>
         </div>
       </div>
     </div>
@@ -562,9 +652,15 @@ const saveItemEdit = async (updatedData: { title: string, content: string }) => 
 .badge.password { background: #f1c40f; color: #000; }
 .badge.snippet { background: #f1c40f; color: #000; }
 
-.remove-btn { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 50%; width: 24px; height: 24px; opacity: 0; transition: all 0.2s; display: flex; align-items: center; justify-content: center; z-index: 5; }
-.desk-tile:hover .remove-btn { opacity: 1; }
-.remove-btn:hover { background: #e74c3c; border-color: #e74c3c; transform: scale(1.1); }
+.item-actions { position: absolute; top: 12px; right: 12px; display: flex; gap: 4px; opacity: 0; transition: all 0.2s; z-index: 5; }
+.desk-tile:hover .item-actions { opacity: 1; }
+.item-actions.sorting { opacity: 1; color: var(--primary-color); font-size: 0.7rem; font-weight: bold; background: rgba(0,0,0,0.5); padding: 2px 8px; border-radius: 10px; }
+
+.action-btn { background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 6px; width: 26px; height: 26px; transition: all 0.2s; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.9rem; border: none; }
+.action-btn:hover { background: var(--primary-color); transform: scale(1.1); }
+.action-btn.remove:hover { background: #e74c3c; }
+
+.remove-btn { display: none; }
 
 .shelves-rail { 
   background: rgba(13, 17, 23, 0.85); 

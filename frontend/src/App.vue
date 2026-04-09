@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import Navbar from './components/Navbar.vue';
 import TwoFactorAuthModal from './components/TwoFactorAuthModal.vue';
+import { syncService } from './services/syncService';
 
 // Initialize theme
 useTheme();
@@ -248,6 +249,13 @@ const isTobyUI = computed(() => {
   const role = (userRole.value || '').toLowerCase();
   return role === 'toby' || isAdminUI.value;
 });
+
+const toggleSyncMode = () => {
+  const newMode = syncService.mode === 'local' ? 'cloud' : 'local';
+  syncService.setMode(newMode);
+  // 切換模式後自動重新載入當前頁面以確保數據源更新
+  window.location.reload();
+};
 </script>
 
 <template>
@@ -258,6 +266,12 @@ const isTobyUI = computed(() => {
         <p>Cross-device Auxiliary Communication (PG Edition)</p>
       </div>
       <div v-if="adminUser" class="admin-auth-info">
+        <!-- 📡 Sync Mode Toggle -->
+        <div class="sync-switcher" @click="toggleSyncMode" :class="syncService.mode">
+          <span class="switcher-icon">{{ syncService.mode === 'cloud' ? '📡' : '🛡️' }}</span>
+          <span class="switcher-label">{{ syncService.mode === 'cloud' ? 'Cloud' : 'Local' }}</span>
+        </div>
+        
         <span class="badge admin-badge">{{ (userRole || 'USER').toUpperCase() }}</span>
         <span class="email">{{ adminUser?.email || userName }}</span>
         <button @click="logout" class="logout-btn">Logout</button>
@@ -446,11 +460,53 @@ header p {
 .admin-auth-info {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 1.2rem;
   background: rgba(var(--primary-rgb), 0.05);
-  padding: 0.5rem 1rem;
-  border-radius: 12px;
+  padding: 0.5rem 1.2rem;
+  border-radius: 14px;
+  border: 1px solid rgba(var(--primary-rgb), 0.1);
+  backdrop-filter: blur(10px);
 }
+
+.sync-switcher {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s;
+  user-select: none;
+}
+
+.sync-switcher.cloud {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.2);
+}
+
+.sync-switcher.local {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.sync-switcher:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.2);
+}
+
+.switcher-icon { font-size: 0.9rem; }
+.switcher-label { 
+  font-size: 0.75rem; 
+  font-weight: 800; 
+  text-transform: uppercase; 
+  letter-spacing: 0.5px;
+}
+
+.sync-switcher.cloud .switcher-label { color: #60a5fa; }
+.sync-switcher.local .switcher-label { color: #34d399; }
 
 .admin-badge {
   background: var(--primary-color);

@@ -11,6 +11,7 @@ type DeskShelf struct {
 	Color     string    `json:"color"` // 可選顏色方便記憶
 	SortOrder int       `json:"sortOrder"`
 	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type DeskItem struct {
@@ -21,4 +22,5 @@ type DeskItem struct {
 	RefID     string    `json:"refId"`   // 指向原始資料 ID
 	SortOrder int       `json:"sortOrder"`
 	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }

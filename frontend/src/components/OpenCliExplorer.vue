@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { apiService } from '../services/api';
+import { syncService } from '../services/syncService';
 import { marked } from 'marked';
 
 const args = ref('hackernews top');
@@ -94,20 +95,24 @@ const readerError = ref<string | null>(null);
 const runReader = async () => {
     if (!readerUrl.value) return;
     
+    // Check Cache
+    const cacheKey = `reader:${readerUrl.value}`;
+    const cached = await syncService.getAICache(cacheKey);
+    if (cached) {
+        readerResult.value = cached;
+        return;
+    }
+
     readerLoading.value = true;
     readerError.value = null;
     readerResult.value = '';
     
     try {
         const cmd = `web read --url "${readerUrl.value}" --content -f md --strategy public`;
-
-        console.log("Executing Reader Command:", cmd);
-        
         const res = await apiService.runOpenCLI(cmd);
-        console.log("Reader Response:", res);
-        
         if (res.status === 'success') {
             readerResult.value = res.stdout;
+            await syncService.setAICache(cacheKey, res.stdout, 3);
         } else {
             readerError.value = res.error || 'Failed to read URL';
         }
@@ -172,10 +177,23 @@ const runCommand = async (customArgs?: string) => {
   let finalArgs = (customArgs || args.value).trim();
   if (!finalArgs) return;
 
-  // Auto-append -f json if it's a known exploration command and no format specified
+  // Check Cache
+  const cacheKey = `cmd:${finalArgs}`;
+  const cached = await syncService.getAICache(cacheKey);
+  if (cached) {
+      console.log("Using cached command result");
+      try {
+          const parsed = JSON.parse(cached);
+          result.value = parsed;
+          rawOutput.value = cached;
+      } catch {
+          result.value = cached;
+          rawOutput.value = cached;
+      }
+      return;
+  }
+
   if (!finalArgs.includes('-f ') && !finalArgs.includes('--format') && !finalArgs.includes('--help') && !finalArgs.includes('-h')) {
-    // Basic whitelist: if command starts with something other than 'opencli', assume it's a plugin cmd
-    // Or just append it if it looks like a news/list command
     finalArgs += ' -f json';
   }
   
@@ -188,13 +206,11 @@ const runCommand = async (customArgs?: string) => {
     const res = await apiService.runOpenCLI(finalArgs);
     if (res.status === 'success') {
       rawOutput.value = res.stdout;
+      await syncService.setAICache(cacheKey, res.stdout, 3);
       try {
-        // Try to parse JSON from stdout
         const parsed = JSON.parse(res.stdout);
-        // Ensure it's what we want (an array or object)
         result.value = parsed;
       } catch {
-        // Fallback to raw text
         result.value = res.stdout || res.stderr;
       }
     } else {

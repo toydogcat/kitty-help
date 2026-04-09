@@ -79,13 +79,23 @@ func CreateSnippet(c *fiber.Ctx) error {
 		s.ParentID = nil
 	}
 
-	if s.Name == "" {
+	if s.Name == nil || *s.Name == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "Name is required"})
 	}
 
-	// Insert into Local PG
-	query := "INSERT INTO snippets (user_id, parent_id, name, content, is_folder, sort_order) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at"
-	err := database.LocalDB.QueryRow(context.Background(), query, s.UserID, s.ParentID, s.Name, s.Content, s.IsFolder, s.SortOrder).Scan(&s.ID, &s.CreatedAt)
+	// Insert into Local PG with UPSERT support for EverSync
+	query := `
+		INSERT INTO snippets (id, user_id, parent_id, name, content, is_folder, sort_order) 
+		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (id) DO UPDATE SET
+			name = EXCLUDED.name,
+			content = EXCLUDED.content,
+			parent_id = EXCLUDED.parent_id,
+			sort_order = EXCLUDED.sort_order
+		RETURNING id, created_at
+	`
+	err := database.LocalDB.QueryRow(context.Background(), query, 
+		s.ID, s.UserID, s.ParentID, s.Name, s.Content, s.IsFolder, s.SortOrder).Scan(&s.ID, &s.CreatedAt)
 	if err != nil {
 		log.Printf("Insert snippet failed: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to create snippet"})
@@ -95,15 +105,36 @@ func CreateSnippet(c *fiber.Ctx) error {
 }
 
 func UpdateSnippet(c *fiber.Ctx) error {
+	db, _, err := getBestDB(c)
+	if err != nil { return c.Status(503).JSON(fiber.Map{"error": err.Error()}) }
+
 	id := c.Params("id")
 	var s models.Snippet
 	if err := c.BodyParser(&s); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
+	if s.ParentID != nil && (*s.ParentID == "root" || *s.ParentID == "") {
+		s.ParentID = nil
+	}
+
 	// Support updating parentId (moving between folders) and sortOrder (manual positioning)
-	query := "UPDATE snippets SET name = $1, content = $2, parent_id = $3, sort_order = $4 WHERE id = $5 RETURNING id, user_id, parent_id, name, content, is_folder, sort_order, created_at"
-	err := database.LocalDB.QueryRow(context.Background(), query, s.Name, s.Content, s.ParentID, s.SortOrder, id).Scan(&s.ID, &s.UserID, &s.ParentID, &s.Name, &s.Content, &s.IsFolder, &s.SortOrder, &s.CreatedAt)
+    query := `
+        UPDATE snippets 
+        SET name = COALESCE($1, name), 
+            content = COALESCE($2, content), 
+            parent_id = CASE 
+                WHEN $3 = 'root' THEN NULL 
+                WHEN $3 IS NOT NULL THEN $3::uuid 
+                ELSE parent_id 
+            END, 
+            sort_order = COALESCE($4, sort_order),
+            updated_at = NOW() 
+        WHERE id = $5
+        RETURNING id, user_id, parent_id, name, content, is_folder, sort_order, created_at
+    `
+    err = db.QueryRow(context.Background(), query, s.Name, s.Content, s.ParentID, s.SortOrder, id).
+        Scan(&s.ID, &s.UserID, &s.ParentID, &s.Name, &s.Content, &s.IsFolder, &s.SortOrder, &s.CreatedAt)
 	if err != nil {
 		log.Printf("Update snippet failed: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Update failed"})

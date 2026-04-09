@@ -12,6 +12,7 @@ type ImpressionNode struct {
 	Content         string    `json:"content"`
 	NodeType        string    `json:"nodeType"`
 	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
 	ImageURL        string    `json:"imageUrl,omitempty"`
 	FileID          *string   `json:"fileId,omitempty"`
 	SourcePlatform  *string   `json:"sourcePlatform,omitempty"`
@@ -26,6 +27,7 @@ type ImpressionEdge struct {
 	Label     string    `json:"label"`
 	KGName    string    `json:"kgName"`
 	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type GraphResponse struct {

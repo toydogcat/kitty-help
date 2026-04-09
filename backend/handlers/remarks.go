@@ -95,6 +95,7 @@ func CreateRemark(c *fiber.Ctx) error {
 	user := c.Locals("user").(*Claims)
 	if user.ID == "" { return c.Status(401).JSON(fiber.Map{"error": "Unauthorized"}) }
 	var body struct {
+		ID      string `json:"id"`
 		Name    string `json:"name"`
 		Content string `json:"content"`
 	}
@@ -103,14 +104,22 @@ func CreateRemark(c *fiber.Ctx) error {
 	}
 
 	var id string
-	err := database.LocalDB.QueryRow(context.Background(), 
-		"INSERT INTO remark_containers (user_id, name, content) VALUES ($1, $2, $3) RETURNING id", 
-		user.ID, body.Name, body.Content).Scan(&id)
+	query := `
+		INSERT INTO remark_containers (id, user_id, name, content) 
+		VALUES (COALESCE(NULLIF($1, ''), gen_random_uuid()::text), $2, $3, $4)
+		ON CONFLICT (id) DO UPDATE SET 
+			name = EXCLUDED.name, 
+			content = EXCLUDED.content,
+			updated_at = NOW()
+		RETURNING id
+	`
+	err := database.LocalDB.QueryRow(context.Background(), query, 
+		body.ID, user.ID, body.Name, body.Content).Scan(&id)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	return c.JSON(fiber.Map{"id": id, "status": "created"})
+	return c.JSON(fiber.Map{"id": id, "status": "synced"})
 }
 
 func UpdateRemark(c *fiber.Ctx) error {
@@ -190,9 +199,9 @@ func MoveRemarkItem(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid body"})
 	}
 
-	// Handle empty string as NULL for UUID column
+	// Handle empty string as NULL for UUID column - support virtual IDs
 	var cid interface{} = body.ContainerID
-	if body.ContainerID != nil && *body.ContainerID == "" {
+	if body.ContainerID != nil && (*body.ContainerID == "" || *body.ContainerID == "root" || *body.ContainerID == "staged" || *body.ContainerID == "null") {
 		cid = nil
 	}
 
@@ -225,6 +234,7 @@ func AddRemarkItem(c *fiber.Ctx) error {
 	user := c.Locals("user").(*Claims)
 	if user.ID == "" { return c.Status(401).JSON(fiber.Map{"error": "Unauthorized"}) }
 	var body struct {
+		ID          string `json:"id"`
 		ContainerId string `json:"containerId"`
 		LogId       string `json:"logId"`
 	}
@@ -232,11 +242,26 @@ func AddRemarkItem(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid body"})
 	}
 
-	_, err := database.LocalDB.Exec(context.Background(), 
-		"INSERT INTO remark_items (user_id, container_id, log_id) VALUES ($1, $2, $3)", 
-		user.ID, body.ContainerId, body.LogId)
+	// Handle virtual IDs for the container_id UUID column
+	var id string
+	var cid interface{} = body.ContainerId
+	if body.ContainerId == "" || body.ContainerId == "root" || body.ContainerId == "staged" || body.ContainerId == "null" {
+		cid = nil
+	}
+
+	query := `
+		INSERT INTO remark_items (id, user_id, container_id, log_id) 
+		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4)
+		ON CONFLICT (id) DO UPDATE SET 
+			container_id = EXCLUDED.container_id,
+			log_id = EXCLUDED.log_id
+		RETURNING id
+	`
+	err := database.LocalDB.QueryRow(context.Background(), query, 
+		body.ID, user.ID, cid, body.LogId).Scan(&id)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	return c.JSON(fiber.Map{"status": "added"})
+
+	return c.JSON(fiber.Map{"id": id, "status": "synced"})
 }

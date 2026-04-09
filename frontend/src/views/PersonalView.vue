@@ -116,7 +116,7 @@ onMounted(() => {
       </div>
 
       <!-- Unified Explorer Area -->
-      <div class="explorer-body">
+      <div class="explorer-body" :class="{ 'no-padding': activeTab === 'bookcase' }">
         <Transition name="fade-slide" mode="out-in">
           <div :key="activeTab" class="unified-content">
             <BookmarkGrid 
@@ -251,6 +251,14 @@ onMounted(() => {
   overflow: hidden;
   position: relative;
   padding: 2rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.explorer-body.no-padding {
+  padding: 0;
+  border: none;
+  background: transparent;
 }
 
 .unified-content {

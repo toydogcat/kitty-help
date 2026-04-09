@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch, nextTick, onUnmounted } from 'vue';
+import { liveQuery } from 'dexie';
+import { db } from '../services/localDb';
 import { apiService } from '../services/api';
+import { syncService } from '../services/syncService';
 import { marked } from 'marked';
 import { usePin } from '../composables/usePin';
 
@@ -23,8 +26,17 @@ const viewMode = ref<'preview' | 'mixed' | 'notes'>('mixed');
 const searchTerm = ref(''); 
 const newFolderName = ref('');
 const customFolders = ref<string[]>([]);
-const dragOverFolder = ref<string | null>(null);
-const collapsedFolders = ref<Set<string>>(new Set());
+const dropTargetId = ref<string | null>(null);
+const dropPosition = ref<'before' | 'after' | 'inside' | null>(null);
+const draggedItem = ref<any>(null);
+const collapsedFolders = ref<string[]>([]);
+const isSorting = ref(false);
+const isSidebarCollapsed = ref(window.innerWidth < 1024);
+
+// Handle Responsive Auto-collapse
+const handleResize = () => {
+  if (window.innerWidth < 1024) isSidebarCollapsed.value = true;
+};
 
 // EPUB Reader State
 const epubRendition = ref<any>(null);
@@ -34,17 +46,42 @@ const isEpubLoading = ref(false);
 const epubError = ref<string | null>(null);
 let observer: MutationObserver | null = null;
 
+let bookcaseSub: any = null;
+let notesSub: any = null;
+
 const fetchBookcase = async () => {
   isLoading.value = true;
   try {
-    const data = await apiService.getBookcase();
-    books.value = data || [];
     const saved = localStorage.getItem('kb_custom_folders');
     if (saved) customFolders.value = JSON.parse(saved);
-    books.value.forEach(b => { if (b.folder && !customFolders.value.includes(b.folder)) customFolders.value.push(b.folder); });
-    if (books.value.length > 0 && !activeBook.value) selectBook(books.value[0]);
-  } catch (e) { console.error('Sync fail:', e); } finally { isLoading.value = false; }
+    await syncService.refreshBookcase();
+  } catch (e) {
+    console.error('Bookcase background sync failed');
+  } finally {
+    isLoading.value = false;
+  }
 };
+
+onMounted(() => {
+  window.addEventListener('resize', handleResize);
+  bookcaseSub = liveQuery(() => db.bookcase.toArray()).subscribe(val => {
+     books.value = val;
+     if (books.value.length > 0 && !activeBook.value) selectBook(books.value[0]);
+  });
+  
+  fetchBookcase();
+  if (!document.getElementById('jszip-js')) {
+    const j = document.createElement('script'); j.id = 'jszip-js'; j.src = 'https://unpkg.com/jszip/dist/jszip.min.js'; j.async = true; document.head.appendChild(j);
+    const s = document.createElement('script'); s.id = 'epub-js'; s.src = 'https://unpkg.com/epubjs/dist/epub.min.js'; s.async = true; document.head.appendChild(s);
+  }
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize);
+  if (bookcaseSub) bookcaseSub.unsubscribe();
+  if (notesSub) notesSub.unsubscribe();
+  cleanupEpub();
+});
 
 const selectBook = async (book: any) => {
   cleanupEpub();
@@ -53,16 +90,22 @@ const selectBook = async (book: any) => {
   bookNotes.value = [];
   epubError.value = null;
   
-  try {
-    bookNotes.value = await apiService.getBookNotes(book.id);
-    if (bookNotes.value.length > 0) activeNote.value = { ...bookNotes.value[0] };
-    else createNewNote();
+  if (notesSub) notesSub.unsubscribe();
+  notesSub = liveQuery(() => db.bookNotes.where('bookId').equals(book.id).toArray()).subscribe(val => {
+     bookNotes.value = val;
+     if (bookNotes.value.length > 0 && !activeNote.value) {
+        activeNote.value = { ...bookNotes.value[0] };
+     } else if (bookNotes.value.length === 0) {
+        createNewNote();
+     }
+  });
+
+  syncService.refreshBookNotes(book.id).catch(() => {});
     
-    if (isEPUB(activeBook.value) && viewMode.value !== 'notes') {
-      isEpubLoading.value = true;
-      nextTick(() => initEpubReader());
-    }
-  } catch (e) { console.error('Selection break:', e); }
+  if (isEPUB(activeBook.value) && viewMode.value !== 'notes') {
+    isEpubLoading.value = true;
+    nextTick(() => initEpubReader());
+  }
 };
 
 const cleanupEpub = () => {
@@ -166,6 +209,30 @@ const initEpubReader = async () => {
   }
 };
 
+// --- Computed Helpers ---
+const activeBookIsEpub = computed(() => isEPUB(activeBook.value));
+const activeBookIsPdf = computed(() => activeBook.value?.title?.toLowerCase().endsWith('.pdf') ?? false);
+const activeBookFileUrl = computed(() => getFileUrl(activeBook.value));
+const renderedMarkdown = computed(() => marked(activeNote.value?.content || ''));
+
+const sortedBooks = computed(() => 
+  [...books.value].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+);
+
+const folders = computed(() => {
+  const groups: Record<string, any[]> = { 'Uncategorized': [] };
+  customFolders.value.forEach(f => { if (!groups[f]) groups[f] = []; });
+  
+  const term = searchTerm.value.toLowerCase();
+  sortedBooks.value.forEach(book => {
+    if (term && !book.title?.toLowerCase().includes(term)) return;
+    const f = book.folder || 'Uncategorized';
+    if (!groups[f]) groups[f] = []; 
+    groups[f].push(book);
+  });
+  return groups;
+});
+
 const createNewNote = () => {
   activeNote.value = { id: 'temp-' + Date.now(), title: 'Volume Abstract', content: '', noteType: 'both' };
 };
@@ -182,102 +249,290 @@ const saveCurrentNote = async () => {
   if (!activeBook.value || !activeNote.value) return;
   isSaving.value = true;
   try {
-    const payload = { title: activeNote.value.title, content: activeNote.value.content, 
-                     noteType: activeNote.value.noteType === 'txt' ? 'txt' : 'markdown' };
+    const payload = { 
+      title: activeNote.value.title, 
+      content: activeNote.value.content, 
+      noteType: activeNote.value.noteType === 'txt' ? 'txt' : 'markdown' 
+    };
     if (activeNote.value.id.startsWith('temp-')) {
-      const res = await apiService.addBookNote(activeBook.value.id, payload);
-      activeNote.value.id = res.id;
-    } else { await apiService.updateBookNote(activeNote.value.id, payload); }
-    bookNotes.value = await apiService.getBookNotes(activeBook.value.id);
-  } catch (e) { alert('Commit fail'); } finally { isSaving.value = false; }
+      await syncService.addBookNote(activeBook.value.id, payload);
+    } else { 
+      await syncService.updateBookNote(activeNote.value.id, payload); 
+    }
+  } catch (e) { 
+    console.error('Save failed', e);
+  } finally { 
+    isSaving.value = false; 
+  }
 };
+
+let autoSaveTimer: any = null;
+watch(() => activeNote.value?.content, () => {
+  if (!activeNote.value || activeNote.value.id.startsWith('temp-')) return;
+  if (autoSaveTimer) clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => {
+    saveCurrentNote();
+  }, 2000);
+});
 
 const deleteNote = async (id: string) => {
   if (id.startsWith('temp-')) { activeNote.value = null; return; }
   if (!confirm('Eliminate data?')) return;
   try {
-    await apiService.removeBookNote(id);
-    bookNotes.value = await apiService.getBookNotes(activeBook.value.id);
-    if (bookNotes.value.length > 0) activeNote.value = { ...bookNotes.value[0] };
-    else createNewNote();
+    await syncService.removeBookNote(id);
   } catch (e) { alert('Operation aborted'); }
 };
 
 const removeBookStatus = async (id: string) => {
   if (!confirm('Detach?')) return;
-  try { await apiService.removeBook(id); activeBook.value = null; fetchBookcase(); } catch (e) { alert('Operation fail'); }
+  try { 
+    await syncService.removeBook(id); 
+    const remaining = books.value.filter(b => b.id !== id);
+    if (remaining.length > 0) {
+      selectBook(remaining[0]);
+    } else {
+      activeBook.value = null; 
+    }
+  } catch (e) { alert('Operation fail'); }
 };
 
 const importBook = async (res: any) => {
   try {
-    await apiService.addBookToBookcase({ storeId: res.id, title: res.title || res.caption || 'Source', category: res.mediaType?.toUpperCase() || 'VOLUME' });
-    showAddModal.value = false; fetchBookcase();
+    await syncService.addBookToBookcase({ 
+      storeId: res.id, 
+      title: res.title || res.caption || 'Source', 
+      category: res.mediaType?.toUpperCase() || 'VOLUME' 
+    });
+    showAddModal.value = false;
   } catch (e) { alert('Import error'); }
 };
 
-const folders = computed(() => {
-  const groups: Record<string, any[]> = { 'Uncategorized': [] };
-  customFolders.value.forEach(f => { if (!groups[f]) groups[f] = []; });
-  books.value.forEach(book => {
-    if (searchTerm.value && !book.title?.toLowerCase().includes(searchTerm.value.toLowerCase())) return;
-    const f = book.folder || 'Uncategorized';
-    if (!groups[f]) groups[f] = []; groups[f].push(book);
-  });
-  return groups;
-});
 
-const onDragStart = (event: DragEvent, bookId: string) => {
-  if (event.dataTransfer) { event.dataTransfer.setData('bookId', bookId); event.dataTransfer.effectAllowed = 'move'; }
-};
-
-const onDropIntoFolder = async (event: DragEvent, folderName: string) => {
-  event.preventDefault(); dragOverFolder.value = null;
-  const bookId = event.dataTransfer?.getData('bookId');
-  if (!bookId) return;
-  const targetFolder = folderName === 'Uncategorized' ? '' : folderName;
-  try { await apiService.updateBookFolder(bookId, targetFolder); await fetchBookcase(); } catch (e) { fetchBookcase(); }
-};
-
-const getFileUrl = (book: any) => { if (!book || !book.storeId) return ''; return `${import.meta.env.VITE_API_URL}/api/storehouse/file/${book.storeId}`; };
-const isEPUB = (book: any) => { if (!book) return false; return (book.title || '').toLowerCase().endsWith('.epub'); };
-
-onMounted(() => {
-  fetchBookcase();
-  if (!document.getElementById('jszip-js')) {
-    const j = document.createElement('script'); j.id = 'jszip-js'; j.src = 'https://unpkg.com/jszip/dist/jszip.min.js'; j.async = true; document.head.appendChild(j);
-    const s = document.createElement('script'); s.id = 'epub-js'; s.src = 'https://unpkg.com/epubjs/dist/epub.min.js'; s.async = true; document.head.appendChild(s);
+const moveUp = async (book: any, folderBooks: any[]) => {
+  if (isSorting.value) return;
+  const index = folderBooks.findIndex(b => b.id === book.id);
+  if (index <= 0) return;
+  
+  try {
+    isSorting.value = true;
+    const siblings = [...folderBooks];
+    // 記憶體中交換位置
+    [siblings[index - 1], siblings[index]] = [siblings[index], siblings[index - 1]];
+    
+    // 全量更新此資料夾內的所有書籍 sortOrder
+    const updates = siblings.map((b, i) => syncService.moveBook(b.id, i));
+    await Promise.all(updates);
+  } catch (err) {
+    console.error("Move up failed:", err);
+  } finally {
+    isSorting.value = false;
   }
-});
+};
 
-onUnmounted(() => { cleanupEpub(); });
+const moveDown = async (book: any, folderBooks: any[]) => {
+  if (isSorting.value) return;
+  const index = folderBooks.findIndex(b => b.id === book.id);
+  if (index < 0 || index >= folderBooks.length - 1) return;
+  
+  try {
+    isSorting.value = true;
+    const siblings = [...folderBooks];
+    // 記憶體中交換位置
+    [siblings[index], siblings[index + 1]] = [siblings[index + 1], siblings[index]];
+    
+    // 全量更新此資料夾內的所有書籍 sortOrder
+    const updates = siblings.map((b, i) => syncService.moveBook(b.id, i));
+    await Promise.all(updates);
+  } catch (err) {
+    console.error("Move down failed:", err);
+  } finally {
+    isSorting.value = false;
+  }
+};
+
+const addFolder = () => {
+  const name = newFolderName.value.trim();
+  if (!name || name === 'Uncategorized' || customFolders.value.includes(name)) return;
+  customFolders.value.push(name);
+  newFolderName.value = '';
+};
+
+const toggleFolder = (name: string) => {
+  const idx = collapsedFolders.value.indexOf(name);
+  if (idx >= 0) {
+    collapsedFolders.value.splice(idx, 1);
+  } else {
+    collapsedFolders.value.push(name);
+  }
+};
+
+const onDragStart = (item: any) => {
+  draggedItem.value = item;
+};
+
+const handleDragOver = (event: DragEvent, target: any, explicitPosition?: 'inside') => {
+  event.preventDefault();
+  dropTargetId.value = target.id || target; 
+  
+  if (explicitPosition) {
+    dropPosition.value = explicitPosition;
+  } else {
+    const targetElement = event.currentTarget as HTMLElement | null;
+    if (targetElement) {
+      const rect = targetElement.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      dropPosition.value = event.clientY < mid ? 'before' : 'after';
+    }
+  }
+};
+
+const handleDragLeave = () => {
+    dropTargetId.value = null;
+    dropPosition.value = null;
+};
+
+const handleReorder = async (data: { targetBook: any, position: 'before' | 'after' | 'inside' | null }) => {
+    if (!draggedItem.value || !data.position || data.position === 'inside') return;
+    const target = data.targetBook;
+    if (draggedItem.value.id === target.id) return;
+
+    try {
+        isLoading.value = true;
+        const folder = target.folder || '';
+        const siblings = [...books.value]
+            .filter(b => (b.folder || '') === folder && b.id !== draggedItem.value.id)
+            .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+        
+        const targetIdx = siblings.findIndex(b => b.id === target.id);
+        const insertIdx = data.position === 'before' ? targetIdx : targetIdx + 1;
+
+        // Create a clean version of the dragged book to avoid Vue proxy issues in the array
+        const cleanDragged = { ...draggedItem.value, folder: folder };
+        siblings.splice(insertIdx, 0, cleanDragged);
+
+        const updates = [];
+        for (let i = 0; i < siblings.length; i++) {
+            updates.push(syncService.moveBook(siblings[i].id, i));
+            // Also ensure the folder is updated if moved between folders via reorder
+            if ((siblings[i].folder || '') !== folder) {
+                updates.push(syncService.updateBookFolder(siblings[i].id, folder));
+            }
+        }
+
+        await Promise.all(updates);
+    } catch (err) {
+        console.error("Book reorder failed:", err);
+    } finally {
+        isLoading.value = false;
+        dropTargetId.value = null;
+        dropPosition.value = null;
+        draggedItem.value = null;
+    }
+};
+
+const handleFolderDrop = async (folderName: string) => {
+  const folder = folderName === 'Uncategorized' ? '' : folderName;
+  if (!draggedItem.value) return;
+  
+  try { 
+    await syncService.updateBookFolder(draggedItem.value.id, folder); 
+  } catch (e) { 
+    console.error("Folder update failed", e);
+  } finally {
+    dropTargetId.value = null;
+    dropPosition.value = null;
+    draggedItem.value = null;
+  }
+};
+
+let searchTimer: any = null;
+const searchAvailableBooks = () => {
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = setTimeout(async () => {
+    availableResources.value = await apiService.getAvailableBooks(searchQuery.value);
+  }, 400);
+};
+
+const getFileUrl = (book: any) => { 
+  if (!book || !book.storeId) return ''; 
+  // 🚀 Device-Specific Preview Refinement: 
+  // Appending the title + extension helps iPad/ChromeOS recognize previewable content
+  const baseUrl = apiService.getAbsoluteUrl(`/api/storehouse/file/${book.storeId}`);
+  let safeTitle = encodeURIComponent(book.title || 'document').replace(/%20/g, '+');
+  
+  // Force extension if missing from title to satisfy strict MIME detection
+  if (isEPUB(book) && !safeTitle.toLowerCase().endsWith('.epub')) safeTitle += '.epub';
+  else if (!isEPUB(book) && !safeTitle.toLowerCase().endsWith('.pdf')) safeTitle += '.pdf';
+
+  let url = `${baseUrl}/${safeTitle}`;
+  if (book.source === 'local') {
+    url += (url.includes('?') ? '&' : '?') + 'platform=local';
+  }
+  return url;
+};
+const isEPUB = (book: any) => { if (!book) return false; return (book.title || '').toLowerCase().endsWith('.epub'); };
 
 watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSON.stringify(newVal)); }, { deep: true });
 </script>
 
 <template>
-  <div class="bookcase-v2">
-    <aside class="sidebar">
-      <div class="sidebar-header"><input v-model="searchTerm" placeholder="Filter Intel..." /><button @click="showAddModal = true" class="add-btn">+</button></div>
+  <div class="bookcase-v2" :class="{ 'sb-collapsed': isSidebarCollapsed }">
+    <aside class="sidebar" :class="{ collapsed: isSidebarCollapsed }">
+      <div class="sidebar-header">
+        <input v-model="searchTerm" placeholder="Filter Intel..." />
+        <button @click="showAddModal = true" class="add-btn">+</button>
+      </div>
       <div class="folder-list">
         <div v-for="(folderBooks, folderName) in folders" :key="folderName" class="folder-group" 
-             :class="{ 'drop-target': dragOverFolder === folderName }" @dragover.prevent="dragOverFolder = String(folderName)" @dragleave="dragOverFolder = null" @drop="onDropIntoFolder($event, String(folderName))">
-          <div class="folder-header" @click="collapsedFolders.has(String(folderName)) ? collapsedFolders.delete(String(folderName)) : collapsedFolders.add(String(folderName))">
-            <span class="fold-arrow">{{ collapsedFolders.has(String(folderName)) ? '▶' : '▼' }}</span>
+             :class="{ 'drop-over': dropTargetId === String(folderName) && dropPosition === 'inside' }" 
+             @dragover.prevent="handleDragOver($event, String(folderName), 'inside')" 
+             @dragleave="handleDragLeave" 
+             @drop="handleFolderDrop(String(folderName))">
+          <div class="folder-header" @click="toggleFolder(String(folderName))">
+            <span class="fold-arrow">{{ collapsedFolders.includes(String(folderName)) ? '▶' : '▼' }}</span>
             <span class="folder-name">{{ folderName }}</span>
             <span class="count">{{ folderBooks.length }}</span>
           </div>
-          <div v-show="!collapsedFolders.has(String(folderName))" class="folder-content">
-            <div v-for="book in folderBooks" :key="book.id" class="book-item" :class="{ active: activeBook?.id === book.id }" draggable="true" @dragstart="onDragStart($event, book.id)" @click="selectBook(book)">
-              <div class="item-icon">🔖</div><div class="item-info"><div class="item-title">{{ book.title }}</div><div class="item-meta">{{ book.category }}</div></div>
+          <div v-show="!collapsedFolders.includes(String(folderName))" class="folder-content">
+            <div 
+              v-for="book in folderBooks" 
+              :key="book.id" 
+              class="book-item" 
+              :class="{ 
+                active: activeBook?.id === book.id,
+                'drop-before': dropTargetId === book.id && dropPosition === 'before',
+                'drop-after': dropTargetId === book.id && dropPosition === 'after',
+                'is-dragging': draggedItem?.id === book.id
+              }" 
+              draggable="true" 
+              @dragstart="onDragStart(book)" 
+              @dragover.prevent="handleDragOver($event, book)" 
+              @dragleave="handleDragLeave"
+              @drop="handleReorder({ targetBook: book, position: dropPosition })"
+              @click="selectBook(book)"
+            >
+              <div class="item-icon">🔖</div>
+              <div class="item-info">
+                <div class="item-title">{{ book.title }}</div>
+                <div class="item-meta">{{ book.category }}</div>
+              </div>
+              <div class="sort-actions" @click.stop v-if="!isSorting">
+                <button @click="moveUp(book, folderBooks)">▴</button>
+                <button @click="moveDown(book, folderBooks)">▾</button>
+              </div>
+              <div class="sort-actions loading" v-else>...</div>
             </div>
           </div>
         </div>
-        <div class="new-folder-area"><input v-model="newFolderName" placeholder="+ Cluster" @keyup.enter="customFolders.push(newFolderName); newFolderName=''" /></div>
+        <div class="new-folder-area"><input v-model="newFolderName" placeholder="+ Cluster" @keyup.enter="addFolder" /></div>
       </div>
     </aside>
 
     <main v-if="activeBook" class="workspace">
       <header class="ws-header">
+        <button class="toggle-sidebar-btn" @click="isSidebarCollapsed = !isSidebarCollapsed">
+          {{ isSidebarCollapsed ? '📂' : '⬅️' }}
+        </button>
         <div class="active-book-info"><h2>{{ activeBook.title }}</h2><span class="badge">{{ activeBook.category }}</span></div>
         <div class="tabs-nav">
           <button @click="viewMode = 'preview'" :class="{ active: viewMode === 'preview' }">📖 READ</button>
@@ -289,8 +544,8 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 
       <div class="ws-body" :class="'mode-' + viewMode">
         <div v-if="viewMode !== 'notes'" class="preview-pane">
-          <iframe v-if="activeBook.title?.toLowerCase().endsWith('.pdf')" :src="getFileUrl(activeBook)" class="pdf-frame"></iframe>
-          <div v-else-if="isEPUB(activeBook)" class="epub-reader">
+          <iframe v-if="activeBookIsPdf && activeBookFileUrl" :src="activeBookFileUrl" class="pdf-frame"></iframe>
+          <div v-else-if="activeBookIsEpub" class="epub-reader">
              <div ref="epubViewerRef" class="epub-canvas"></div>
              <div v-if="isEpubLoading" class="loader"><div class="spin"></div></div>
              <div v-if="epubError" class="overlay error"><span>{{ epubError }}</span><button @click="selectBook(activeBook)">RETRY</button></div>
@@ -318,7 +573,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
             </div>
             <div class="ed-body" :class="'v-' + activeNote.noteType">
               <textarea v-if="activeNote.noteType !== 'md'" v-model="activeNote.content" placeholder="Data entry..." />
-              <div v-if="activeNote.noteType !== 'txt'" class="markdown-body" v-html="marked(activeNote.content || '')" />
+              <div v-if="activeNote.noteType !== 'txt'" class="markdown-body" v-html="renderedMarkdown" />
             </div>
           </div>
         </div>
@@ -330,7 +585,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
       <div class="modal">
         <header>INTEL REPOSITORY</header>
         <div class="m-content">
-          <input v-model="searchQuery" placeholder="Filter Sources..." @input="apiService.getAvailableBooks(searchQuery).then(r => availableResources = r)" />
+          <input v-model="searchQuery" placeholder="Filter Sources..." @input="searchAvailableBooks" />
           <div class="items">
             <div v-for="res in availableResources" :key="res.id" @click="importBook(res)"><span>[{{ res.mediaType }}]</span>{{ res.title || res.caption }}</div>
           </div>
@@ -341,25 +596,195 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 </template>
 
 <style scoped>
-.bookcase-v2 { display: flex; height: 100vh; background: #0a0c10; color: #a0a8b1; font-family: 'Outfit', sans-serif;}
-.sidebar { width: 280px; background: #000; border-right: 1px solid #1a1e23; display: flex; flex-direction: column; }
-.sidebar-header { padding: 1.25rem; display: flex; gap: 0.5rem; }
-.sidebar-header input { flex:1; padding: 0.5rem; background: #11151a; border: 1px solid #222; border-radius: 4px; color: #fff; font-size: 0.8rem; }
-.add-btn { width: 34px; background: #d97706; border: none; color: #fff; border-radius: 4px; cursor: pointer; font-weight: bold; }
-.folder-list { flex: 1; overflow-y: auto; padding: 0.5rem; }
-.folder-header { padding: 0.75rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; border-radius: 6px; font-weight: 700; color: #e2e8f0; font-size: 0.85rem; }
-.folder-header:hover { background: #11151a; }
-.count { margin-left: auto; font-size: 0.7rem; color: #fbbf24; background: #fbbf2411; padding: 2px 6px; border-radius: 4px; }
-.book-item { padding: 0.65rem 0.65rem 0.65rem 1.5rem; display: flex; gap: 0.6rem; cursor: pointer; border-radius: 6px; margin-bottom: 2px; }
-.book-item.active { background: #d977061a; border: 1px solid #d9770633; color: #fff; }
-.item-title { font-size: 0.8rem; text-align: left; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
-.item-meta { font-size: 0.6rem; opacity: 0.4; }
-.workspace { flex: 1; display: flex; flex-direction: column; }
-.ws-header { height: 64px; padding: 0 1.25rem; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #1a1e23; background: #000; }
-.badge { font-size: 0.6rem; background: #fbbf2422; color: #fbbf24; padding: 2px 6px; border-radius: 4px; font-weight: 800; }
-.tabs-nav { display: flex; gap: 4px; background: #11151a; padding: 4px; border-radius: 8px; }
-.tabs-nav button { padding: 0.4rem 1rem; border: none; background: transparent; color: #666; font-size: 0.75rem; font-weight: 700; border-radius: 6px; cursor: pointer; transition: all 0.2s; }
-.tabs-nav button.active { background: #d97706; color: #fff; }
+.bookcase-v2 { 
+  display: flex; 
+  height: calc(100vh - 240px); /* Account for dashboard header + tabs */
+  min-height: 600px;
+  background: #0a0c10; 
+  color: #a0a8b1; 
+  font-family: 'Outfit', sans-serif;
+  border-radius: 0 0 24px 24px;
+}
+.detach-btn:hover { background: #ff5757; color: #fff; }
+
+/* 🚀 Sidebar Collapse & Responsive Logic */
+.toggle-sidebar-btn {
+  background: #1a1e23;
+  border: 1px solid #334155;
+  color: #fff;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+.toggle-sidebar-btn:hover { background: #334155; border-color: #fbbf24; }
+
+.sidebar { 
+  width: 280px; 
+  background: #000; 
+  border-right: 1px solid #1a1e23; 
+  display: flex; 
+  flex-direction: column; 
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.sidebar-header { padding: 1.25rem; display: flex; gap: 0.5rem; border-bottom: 1px solid #111; }
+.sidebar-header input { flex: 1; background: #000; border: 1px solid #1a1e23; padding: 0.6rem; border-radius: 6px; color: #fff; font-size: 0.8rem; outline: none; }
+.add-btn { background: #d97706; border: none; color: #fff; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; font-weight: 900; }
+
+.folder-list { flex: 1; overflow-y: auto; padding-bottom: 5rem; }
+.folder-group { margin-bottom: 1px; }
+.folder-header { padding: 0.8rem 1.25rem; display: flex; align-items: center; gap: 0.8rem; background: #050505; cursor: pointer; transition: 0.2s; border-left: 3px solid transparent; }
+.folder-header:hover { background: #0a0a0a; border-left-color: #fbbf24; }
+.fold-arrow { font-size: 0.6rem; opacity: 0.4; transition: 0.3s; }
+.folder-name { flex: 1; font-weight: 800; font-size: 0.75rem; letter-spacing: 0.5px; text-transform: uppercase; color: #fff; }
+.count { font-size: 0.65rem; background: #111; padding: 2px 8px; border-radius: 10px; opacity: 0.5; }
+
+.book-item { padding: 0.75rem 1.25rem 0.75rem 3rem; display: flex; align-items: center; gap: 1rem; cursor: pointer; position: relative; transition: 0.2s; border-bottom: 1px solid #080808; }
+.book-item:hover { background: #0a0c10; }
+.book-item.active { background: #1a1e23; border-left: 3px solid #fbbf24; }
+.book-item.is-dragging { opacity: 0.4; }
+.item-icon { font-size: 1.1rem; filter: grayscale(1); opacity: 0.3; }
+.active .item-icon { filter: none; opacity: 1; }
+.item-info { flex: 1; overflow: hidden; text-align: left;}
+.item-title { font-size: 0.85rem; font-weight: 600; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.active .item-title { color: #fff; }
+.item-meta { font-size: 0.65rem; opacity: 0.4; text-transform: uppercase; letter-spacing: 0.5px; }
+
+.sort-actions { display: none; flex-direction: column; opacity: 0.5; transition: 0.2s; }
+.book-item:hover .sort-actions { display: flex; }
+.sort-actions button { background: none; border: none; color: #fff; cursor: pointer; font-size: 0.9rem; padding: 0 4px; }
+.sort-actions button:hover { color: #fbbf24; opacity: 1; }
+
+.new-folder-area { padding: 1.25rem; }
+.new-folder-area input { width: 100%; background: transparent; border: 1px dashed #222; padding: 0.6rem; border-radius: 6px; font-size: 0.7rem; color: #444; outline: none; transition: 0.2s; }
+.new-folder-area input:focus { border-color: #555; color: #888; }
+.sidebar.collapsed {
+  width: 0;
+  border-right: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 1024px) {
+  .sidebar {
+    position: absolute;
+    z-index: 1000;
+    height: 100%;
+    box-shadow: 20px 0 50px rgba(0,0,0,0.8);
+  }
+  .sidebar.collapsed {
+    transform: translateX(-100%);
+    width: 280px; /* Keep width for animation but hide via transform */
+  }
+  .preview-pane { flex: 1 !important; } /* Balance PDF on tablets */
+  .notes-pane { min-width: 320px !important; }
+}
+
+@media (max-width: 768px) {
+  .ws-body.mode-mixed { flex-direction: column; }
+  .preview-pane { height: 50vh; flex: none !important; border-bottom: 2px solid #1a1e23; border-right: none; }
+  .notes-pane { flex: 1; min-width: 0 !important; }
+  .active-book-info h2 { font-size: 0.9rem; }
+  .tabs-nav button { padding: 0.4rem 0.6rem; font-size: 0.65rem; }
+}
+
+/* 🛠️ Workspace Layout Expansion Fix */
+.workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #000;
+  position: relative;
+}
+
+.ws-header {
+  height: 72px;
+  padding: 0 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #050505;
+  border-bottom: 1px solid #1a1e23;
+  gap: 1.5rem;
+  flex-shrink: 0;
+}
+
+.active-book-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.active-book-info h2 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+
+.badge {
+  background: #1e293b;
+  color: #94a3b8;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tabs-nav {
+  display: flex;
+  gap: 4px;
+  background: #111;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid #222;
+}
+
+.tabs-nav button {
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #555;
+  cursor: pointer;
+  transition: 0.2s;
+  white-space: nowrap;
+}
+
+.tabs-nav button.active {
+  background: #d97706;
+  color: #fff;
+}
+
+.detach-btn {
+  background: transparent;
+  border: 1px solid #222;
+  color: #555;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
 .ws-body { flex: 1; display: flex; overflow: hidden; }
 .preview-pane { flex: 1.4; position: relative; background: #121519; border-right: 1px solid #1a1e23; overflow: hidden; }
 .pdf-frame { width: 100%; height: 100%; border: none; background: #1a1e23; }
@@ -368,13 +793,28 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 :deep(.epub-canvas iframe) { width: 100% !important; height: 100% !important; border: none !important; }
 .reader-controls { position: absolute; bottom: 2rem; left: 50%; transform: translateX(-50%); display: flex; gap: 1rem; z-index: 1000; }
 .nav-btn { background: #d97706DD; backdrop-filter: blur(8px); color: #fff; border: 1px solid #fbbf2444; padding: 0.6rem 1.25rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; font-weight: 900; }
-.notes-pane { flex: 1; display: flex; flex-direction: column; background: #0a0c10; }
-.note-tabs { display: flex; padding: 0.6rem 1rem 0; border-bottom: 1px solid #1a1e23; overflow-x: auto; gap: 4px; }
-.note-tab { padding: 0.5rem 1.25rem; font-size: 0.8rem; background: #11151a; border-radius: 6px 6px 0 0; cursor: pointer; color: #666; }
+.notes-pane { flex: 1; display: flex; flex-direction: column; background: #0a0c10; min-width: 400px; }
+.note-tabs { display: flex; padding: 0.6rem 1rem 0; border-bottom: 1px solid #1a1e23; overflow-x: auto; gap: 4px; scrollbar-width: none; }
+.note-tabs::-webkit-scrollbar { display: none; }
+.note-tab { padding: 0.5rem 1.25rem; font-size: 0.8rem; background: #11151a; border-radius: 6px 6px 0 0; cursor: pointer; color: #666; white-space: nowrap; }
 .note-tab.active { background: #1a1e23; color: #fbbf24; }
-.ed-toolbar { padding: 1rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1a1e23; }
-.title-in { flex: 1; background: transparent; border: none; color: #fff; font-size: 1.1rem; font-weight: 700; outline: none; }
-.commit-btn { padding: 0.4rem 1rem; background: #d97706; border: none; color: #fff; border-radius: 4px; font-size: 0.75rem; font-weight: 900; cursor: pointer; }
+.new-btn { background: transparent; border: 1px dashed #333; color: #555; font-size: 0.7rem; padding: 0 0.8rem; border-radius: 4px; margin-bottom: 4px; cursor: pointer; white-space: nowrap; }
+.new-btn:hover { color: #fff; border-color: #555; }
+
+.ed-toolbar { padding: 1rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1a1e23; gap: 1rem; }
+.title-in { flex: 1; background: transparent; border: none; color: #fff; font-size: 1.1rem; font-weight: 700; outline: none; overflow: hidden; text-overflow: ellipsis; }
+.actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+.cycle-btn, .commit-btn, .pin-btn, .del-btn { 
+  padding: 0.4rem 0.8rem; font-size: 0.75rem; font-weight: 900; cursor: pointer; border-radius: 4px; border: none; white-space: nowrap; height: 32px; display: flex; align-items: center; justify-content: center;
+}
+.cycle-btn { background: #11151a; color: #666; border: 1px solid #222; }
+.cycle-btn:hover { color: #fff; border-color: #444; }
+.commit-btn { background: #d97706; color: #fff; }
+.commit-btn:hover { filter: brightness(1.1); }
+.pin-btn { background: #11151a; border: 1px solid #222; }
+.del-btn { background: #11151a; border: 1px solid #222; }
+.del-btn:hover { background: #ff5757; color: #fff; border-color: #ff5757; }
+
 .ed-body { flex: 1; display: flex; overflow: hidden; }
 .ed-body textarea { flex: 1; background: transparent; border: none; padding: 1.5rem; color: #cbd5e1; font-family: monospace; font-size: 0.95rem; line-height: 1.7; resize: none; outline: none; border-right: 1px solid #1a1e23; }
 .markdown-body { flex: 1; padding: 1.5rem; overflow-y: auto; text-align: left; }

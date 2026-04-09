@@ -128,7 +128,7 @@ export const apiService = {
     const response = await axios.post(`${API_BASE}/snippets`, data);
     return response.data;
   },
-  async updateSnippet(id: string, data: { name: string; content?: string; parentId?: string | null; sortOrder?: number }) {
+  async updateSnippet(id: string, data: { name?: string; content?: string; parentId?: string | null; sortOrder?: number }) {
     const response = await axios.put(`${API_BASE}/snippets/${id}`, data);
     return response.data;
   },
@@ -248,6 +248,8 @@ export const apiService = {
     category?: string;
     parentId?: string | null;
     sortOrder?: number;
+    iconUrl?: string;
+    passwordId?: string | null;
   }) {
     const res = await axios.put(`${API_BASE}/bookmarks/${id}`, data);
     return res.data;
@@ -523,6 +525,10 @@ export const apiService = {
     const res = await axios.put(`${API_BASE}/bookcase/${id}/folder`, { folder });
     return res.data;
   },
+  async updateBookSortOrder(id: string, sortOrder: number) {
+    const res = await axios.put(`${API_BASE}/bookcase/${id}/sort-order`, { sortOrder });
+    return res.data;
+  },
   // Bookcase Notes (One book, multiple notes)
   async getBookNotes(bookId: string) {
     const res = await axios.get(`${API_BASE}/bookcase/${bookId}/notes`);
@@ -538,6 +544,38 @@ export const apiService = {
   },
   async removeBookNote(noteId: string) {
     const res = await axios.delete(`${API_BASE}/bookcase/notes/${noteId}`);
+    return res.data;
+  },
+
+  // 🤖 Bot Management
+  async getBotRequests() {
+    const res = await axios.get(`${API_BASE}/bot/requests`);
+    return res.data;
+  },
+  async getBotUsers() {
+    const res = await axios.get(`${API_BASE}/bot/users`);
+    return res.data;
+  },
+  async approveBotUser(id: string, role: string) {
+    const res = await axios.post(`${API_BASE}/bot/approve`, { id, role });
+    return res.data;
+  },
+  async rejectBotUser(id: string) {
+    const res = await axios.post(`${API_BASE}/bot/reject`, { id });
+    return res.data;
+  },
+  async deleteBotUser(id: string) {
+    const res = await axios.post(`${API_BASE}/bot/users/delete`, { id });
+    return res.data;
+  },
+
+  // ⚙️ System Settings
+  async getSettings() {
+    const res = await axios.get(`${API_BASE}/settings`);
+    return res.data;
+  },
+  async updateSettings(key: string, value: string) {
+    const res = await axios.post(`${API_BASE}/settings`, { key, value });
     return res.data;
   }
 };

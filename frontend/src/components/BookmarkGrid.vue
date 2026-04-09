@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, computed } from 'vue';
+import { ref, onMounted, watch, computed, onUnmounted } from 'vue';
+import { liveQuery } from 'dexie';
+import { db } from '../services/localDb';
 import { apiService } from '../services/api';
+import { syncService } from '../services/syncService';
 import { usePin } from '../composables/usePin';
 import BookmarkTreeNode from './BookmarkTreeNode.vue';
 
@@ -35,7 +38,6 @@ const vaultPasswords = ref<any[]>([]);
 const showAddModal = ref(false);
 const editingId = ref<string | null>(null);
 const pinnedIds = ref<Set<string>>(new Set());
-const loading = ref(false);
 const currentFolderId = ref<string | 'root'>(savedFolder);
 const breadcrumbs = ref<{id: string, title: string}[]>(savedPath ? JSON.parse(savedPath) : []);
 
@@ -62,21 +64,48 @@ const isDropOverRoot = ref(false);
 
 const categories = ['General', 'Work', 'Social', 'Dev', 'Entertainment', 'Tools'];
 
+let bookmarksSub: any = null;
+let allBookmarksSub: any = null;
+
 const fetchBookmarks = async () => {
-  loading.value = true;
-  try {
-    const res = await apiService.getBookmarks(currentFolderId.value === 'root' ? undefined : currentFolderId.value);
-    bookmarks.value = res;
-    
-    // FETCH ALL RECURSIVELY for tree
-    const allRes = await apiService.getBookmarks(undefined, true);
-    allBookmarks.value = allRes;
-  } catch (err) {
-    console.error("Failed to fetch bookmarks:", err);
-  } finally {
-    loading.value = false;
-  }
+    // 🏠 EverSync: Manual triggers not strictly needed but good for forced refresh
+    syncService.refreshBookmarks(currentFolderId.value === 'root' ? 'root' : currentFolderId.value).catch(() => {});
+    syncService.refreshBookmarks('root', true).catch(() => {});
 };
+
+onMounted(() => {
+  // 🛰️ Live Reactive Queries
+  bookmarksSub = liveQuery(() => 
+    db.bookmarks.where('parentId').equals(currentFolderId.value).sortBy('sortOrder')
+  ).subscribe(val => {
+    bookmarks.value = val as any;
+  });
+
+  allBookmarksSub = liveQuery(() => 
+    db.bookmarks.toArray()
+  ).subscribe(val => {
+    allBookmarks.value = val as any;
+  });
+
+  fetchBookmarks();
+  fetchVault();
+});
+
+onUnmounted(() => {
+  if (bookmarksSub) bookmarksSub.unsubscribe();
+  if (allBookmarksSub) allBookmarksSub.unsubscribe();
+});
+
+// Watch currentFolderId and RE-SUBSCRIBE since the query depends on it
+watch(currentFolderId, (newId) => {
+  if (bookmarksSub) bookmarksSub.unsubscribe();
+  bookmarksSub = liveQuery(() => 
+    db.bookmarks.where('parentId').equals(newId).sortBy('sortOrder')
+  ).subscribe(val => {
+    bookmarks.value = val as any;
+  });
+  fetchBookmarks();
+});
 
 const treeData = computed(() => {
   const map: any = {};
@@ -87,7 +116,7 @@ const treeData = computed(() => {
   
   items.forEach(b => map[b.id] = b);
   items.forEach(b => {
-    if (b.parentId && map[b.parentId]) {
+    if (b.parentId && b.parentId !== 'root' && map[b.parentId]) {
       map[b.parentId].children.push(b);
     } else {
       roots.push(b);
@@ -186,10 +215,17 @@ const handleDrop = async (targetId: string | 'root') => {
   }
 
   try {
-    await apiService.updateBookmark(draggedItem.value.id, {
-      ...draggedItem.value,
-      parentId: tId
-    });
+    const cleanData = {
+      title: draggedItem.value.title,
+      url: draggedItem.value.url,
+      category: draggedItem.value.category,
+      isFolder: draggedItem.value.isFolder,
+      passwordId: draggedItem.value.passwordId,
+      parentId: tId,
+      sortOrder: draggedItem.value.sortOrder
+    };
+
+    await syncService.updateBookmark(draggedItem.value.id, cleanData);
     fetchBookmarks();
   } catch (err) {
     console.error("Move failed:", err);
@@ -206,24 +242,50 @@ const handleReorder = async (data: { targetNode: Bookmark, position: 'before' | 
     if (draggedItem.value.id === target.id) return;
 
     try {
-        // 1. Get siblings
         const parentId = target.parentId;
         const siblings = allBookmarks.value
             .filter(b => b.parentId === parentId && b.id !== draggedItem.value.id)
             .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 
-        // 2. Insert dragged item
         const targetIdx = siblings.findIndex(b => b.id === target.id);
         const insertIdx = data.position === 'before' ? targetIdx : targetIdx + 1;
-        siblings.splice(insertIdx, 0, { ...draggedItem.value, parentId }); // Update parent if moving across levels too
+        
+        // Sanitize: strip children and other extra fields
+        const cleanDragged = { 
+            id: draggedItem.value.id,
+            title: draggedItem.value.title,
+            url: draggedItem.value.url,
+            category: draggedItem.value.category,
+            isFolder: draggedItem.value.isFolder,
+            parentId: parentId,
+            passwordId: draggedItem.value.passwordId
+        };
+        
+        siblings.splice(insertIdx, 0, cleanDragged as any);
 
-        // 3. Update all siblings' sort order
-        const updates = siblings.map((node, i) => {
-            return apiService.updateBookmark(node.id, { ...node, sortOrder: i });
-        });
+        const updates = [];
+        for (let i = 0; i < siblings.length; i++) {
+            const node = siblings[i];
+            // Only update if sortOrder actually changed OR it's the moved item
+            if (node.sortOrder !== i || node.id === cleanDragged.id) {
+                // Ensure we only send necessary fields and NO children
+                const updateData = {
+                    title: node.title,
+                    url: node.url,
+                    category: node.category,
+                    isFolder: node.isFolder,
+                    parentId: node.parentId,
+                    sortOrder: i,
+                    passwordId: (node as any).passwordId
+                };
+                updates.push(syncService.updateBookmark(node.id, updateData));
+            }
+        }
 
-        await Promise.all(updates);
-        fetchBookmarks();
+        if (updates.length > 0) {
+            await Promise.all(updates);
+            fetchBookmarks();
+        }
     } catch (err) {
         console.error("Reorder failed:", err);
     } finally {
@@ -232,7 +294,7 @@ const handleReorder = async (data: { targetNode: Bookmark, position: 'before' | 
 };
 
 const fetchVault = async () => {
-  if (!props.userId) return;
+  if (!props.userId || !props.hasSecurityTrust) return;
   try {
     const res = await apiService.getPasswords();
     vaultPasswords.value = res;
@@ -281,9 +343,9 @@ const saveBookmark = async () => {
     };
 
     if (editingId.value) {
-      await apiService.updateBookmark(editingId.value, payload);
+      await syncService.updateBookmark(editingId.value, payload);
     } else {
-      await apiService.addBookmark(payload);
+      await syncService.addBookmark({ ...payload, parentId: payload.parentId || 'root' });
     }
     showAddModal.value = false;
     fetchBookmarks();
@@ -343,7 +405,7 @@ const confirmDelete = async (bookmark: Bookmark) => {
 
   if (confirm(`Are you sure you want to delete "${bookmark.title}"?`)) {
     try {
-      await apiService.deleteBookmark(bookmark.id);
+      await syncService.deleteBookmark(bookmark.id);
       fetchBookmarks();
     } catch (err) {
       console.error("Delete failed:", err);
@@ -363,14 +425,44 @@ const addToDesk = async (bookmark: Bookmark) => {
   }
 };
 
-onMounted(() => {
-  fetchBookmarks();
-  fetchVault();
-});
+const moveUp = async (bm: Bookmark) => {
+  const index = bookmarks.value.findIndex(b => b.id === bm.id);
+  if (index > 0) {
+    const prev = bookmarks.value[index-1];
+    // If they have the same order or missing, treat as indices to force a distinct swap
+    const oldOrder = (bm.sortOrder !== undefined && bm.sortOrder !== null) ? bm.sortOrder : index;
+    let newOrder = (prev.sortOrder !== undefined && prev.sortOrder !== null) ? prev.sortOrder : (index - 1);
+    
+    // Safety: prevent duplicate sort orders after move
+    if (newOrder >= oldOrder) newOrder = oldOrder - 1;
+    
+    await syncService.moveBookmark(bm.id, newOrder);
+    await syncService.moveBookmark(prev.id, oldOrder);
+  }
+};
+
+const moveDown = async (bm: Bookmark) => {
+  const index = bookmarks.value.findIndex(b => b.id === bm.id);
+  if (index < bookmarks.value.length - 1) {
+    const next = bookmarks.value[index+1];
+    const oldOrder = (bm.sortOrder !== undefined && bm.sortOrder !== null) ? bm.sortOrder : index;
+    let newOrder = (next.sortOrder !== undefined && next.sortOrder !== null) ? next.sortOrder : (index + 1);
+    
+    // Safety: prevent duplicate sort orders after move
+    if (newOrder <= oldOrder) newOrder = oldOrder + 1;
+    
+    await syncService.moveBookmark(bm.id, newOrder);
+    await syncService.moveBookmark(next.id, oldOrder);
+  }
+};
 
 watch(() => props.userId, () => {
   fetchBookmarks();
   fetchVault();
+});
+
+watch(() => props.hasSecurityTrust, (newVal) => {
+  if (newVal) fetchVault();
 });
 </script>
 
@@ -480,6 +572,10 @@ export default {
               <span v-else class="default-icon">🔗</span>
             </div>
             <div class="header-right">
+              <div class="sort-actions">
+                <button @click.stop="moveUp(bm)" title="Move Up">▴</button>
+                <button @click.stop="moveDown(bm)" title="Move Down">▾</button>
+              </div>
               <span v-if="bm.passwordId" class="lock-indicator" :class="{ unlocked: hasSecurityTrust }">
                 {{ hasSecurityTrust ? '🔓' : '🔒' }}
               </span>
@@ -731,6 +827,37 @@ export default {
   background: rgba(var(--primary-rgb), 0.2);
   color: var(--primary-color);
   border-radius: 10px;
+}
+
+.sort-actions {
+  display: none;
+  flex-direction: column;
+  gap: 0;
+  margin-right: 8px;
+  background: rgba(0,0,0,0.3);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.bookmark-card:hover .sort-actions {
+  display: flex;
+}
+
+.sort-actions button {
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 1rem;
+  line-height: 1;
+  transition: all 0.2s;
+  opacity: 0.5;
+}
+
+.sort-actions button:hover {
+  opacity: 1;
+  color: var(--primary-color);
 }
 
 .card-body {

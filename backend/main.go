@@ -65,22 +65,20 @@ func main() {
 		WriteTimeout: 120 * time.Second,
 	})
 
-	// Dynamic & Intelligent CORS Control
-	allowedOrigins := "https://kitty-help.web.app, http://localhost:5173, http://localhost:4173"
-	if extra := os.Getenv("ALLOWED_ORIGINS"); extra != "" {
-		allowedOrigins += ", " + extra
-	}
-
+	// 🛡️ [Dynamic CORS] Support Cloudflare Tunnels and Firebase Hosting
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: allowedOrigins,
-		// 🛡️ [Security Booster] Automatically trust all Cloudflare Tunnels (trycloudflare.com)
+		AllowOrigins: "https://kitty-help.web.app, https://kitty-help.firebaseapp.com, http://localhost:5173",
 		AllowOriginsFunc: func(origin string) bool {
-			return strings.HasSuffix(origin, ".trycloudflare.com")
+			return strings.HasSuffix(origin, ".trycloudflare.com") || 
+				   strings.HasSuffix(origin, ".web.app") || 
+				   strings.HasSuffix(origin, ".firebaseapp.com") ||
+				   origin == "https://kitty-help.web.app"
 		},
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
-		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, X-Refresh-Token, cf-skip-browser-warning, ngrok-skip-browser-warning",
+		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, X-Refresh-Token, cf-skip-browser-warning, ngrok-skip-browser-warning, X-Requested-With",
 		ExposeHeaders:    "X-Refresh-Token, Content-Disposition",
 		AllowCredentials: true,
+		MaxAge:           3600,
 	}))
 
 	app.Use(logger.New())
@@ -168,6 +166,7 @@ func main() {
 	protected.Delete("/bookcase/:id", handlers.RemoveBook)
 	protected.Get("/bookcase/available", handlers.GetAvailableBooks)
 	protected.Put("/bookcase/:id/folder", handlers.UpdateBookFolder)
+	protected.Put("/bookcase/:id/sort-order", handlers.UpdateBookSortOrder)
 	
 	// Bookcase Notes (One book, multiple notes)
 	protected.Get("/bookcase/:id/notes", handlers.GetBookNotes)

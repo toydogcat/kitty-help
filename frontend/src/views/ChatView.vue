@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, defineAsyncComponent } from 'vue';
+import { ref, onMounted, onUnmounted, computed, defineAsyncComponent } from 'vue';
 import { apiService, socket } from '../services/api';
+import { syncService } from '../services/syncService';
+import { db } from '../services/localDb';
+import { liveQuery } from 'dexie';
 const UnifiedRemarkModal = defineAsyncComponent(() => import('../components/UnifiedRemarkModal.vue'));
 import { usePin } from '../composables/usePin';
 import { marked } from 'marked';
@@ -76,7 +79,6 @@ const sendBotMessage = async () => {
     botForm.value.files.forEach(f => formData.append('files', f));
     formData.append('selectedFiles', Array.from(selectedLocalFiles.value).join(','));
 
-    // Note: Make sure apiService.sendBotMessageMulti exists or use apiService.sendBotMessage with updated logic
     await apiService.sendBotMessageMulti(formData);
     
     botForm.value.content = '';
@@ -107,18 +109,8 @@ const getStorehouseUrl = (mediaId: string, platform?: string) => {
 const fetchRecentMessages = async () => {
   loading.value = true;
   try {
-    const results = await Promise.all([
-      apiService.getChatLogs(filters.value.platform, filters.value.q, filters.value.startDate, filters.value.endDate),
-      apiService.getRemarks()
-    ]);
-    
-    recentMessages.value = results[0].slice(0, filters.value.limit);
-    const remarkData = results[1];
-    remarkContainers.value = remarkData.containers || [];
-    
-    remarkData.containers?.forEach((c: any) => { 
-      if (!remarkEditModes.value[c.id]) remarkEditModes.value[c.id] = 'preview'; 
-    });
+    const results = await apiService.getChatLogs(filters.value.platform, filters.value.q, filters.value.startDate, filters.value.endDate);
+    recentMessages.value = results.slice(0, filters.value.limit);
   } catch (err) { 
     console.error("Fetch failed:", err); 
   } finally { 
@@ -126,10 +118,28 @@ const fetchRecentMessages = async () => {
   }
 };
 
+let remarksObservable: any = null;
+
 onMounted(() => {
   fetchRecentMessages();
   fetchLocalUploads();
   socket.on('messagesUpdate', fetchRecentMessages);
+
+  // Sync Remarks with offline DB
+  syncService.refreshRemarks();
+  remarksObservable = liveQuery(() => db.remarks.toArray()).subscribe({
+    next: (data) => {
+      remarkContainers.value = data;
+      data.forEach(c => {
+         if (!remarkEditModes.value[c.id]) remarkEditModes.value[c.id] = 'preview';
+      });
+    }
+  });
+});
+
+onUnmounted(() => {
+  if (remarksObservable) remarksObservable.unsubscribe();
+  socket.off('messagesUpdate', fetchRecentMessages);
 });
 
 // Drag & Drop
@@ -145,27 +155,60 @@ const handleDropOnRemark = async (e: DragEvent, containerId: string) => {
   const payload = JSON.parse(raw);
   if (payload.type === 'media') {
     try {
-      await apiService.addRemarkItem({ containerId, logId: payload.data.id });
-      await fetchRecentMessages();
+      await syncService.addRemarkItem({ 
+        containerId, 
+        logId: payload.data.id,
+        log: payload.data 
+      });
     } catch (err) { alert("Failed to add to remark"); }
   }
 };
 
-const openRemarkModal = (c: any) => {
+const openRemarkModal = async (c: any) => {
   editingRemark.value = c;
-  remarkModalDetails.value = c; // Set details here
+  // Fetch detailed items from localDb
+  const localItems = await db.remarkItems.where('containerId').equals(c.id).toArray();
+  
+  // Mix synced items (from c.items) and local items
+  // This ensures that even if localDb.remarkItems is slow or missing some, 
+  // we show what we have in the container record.
+  const allItems = [...(c.items || [])];
+  localItems.forEach(li => {
+      if (!allItems.find(ai => ai.id === li.id)) {
+          allItems.push(li);
+      }
+  });
+
+  remarkModalDetails.value = { ...c, items: allItems };
   remarkEditBuffer.value = { title: c.name, content: c.content || '' };
   showRemarkModal.value = true;
+};
+
+const handleSaveRemark = async (data: any) => {
+    try {
+        if (editingRemark.value) {
+            await syncService.updateRemark(editingRemark.value.id, {
+                name: data.title,
+                content: data.content
+            });
+        } else {
+            await syncService.createRemark({
+                name: data.title,
+                content: data.content
+            });
+        }
+        showRemarkModal.value = false;
+    } catch (err) {
+        alert("Save failed");
+    }
 };
 
 const pinnedRemarks = computed(() => remarkContainers.value.filter(c => c.isPinned));
 const otherRemarks = computed(() => remarkContainers.value.filter(c => !c.isPinned));
 
-// --- Missing Interaction Functions ---
 const togglePin = async (c: any) => {
   try {
     await toggleRemarkSidebarPin(c.id, c.isPinned);
-    await fetchRecentMessages();
   } catch (err) { alert("Pin toggle failed"); }
 };
 
@@ -179,22 +222,16 @@ const addToDesk = async (c: any) => {
 const deleteRemark = async (id: string) => {
   if (!confirm("Delete this group?")) return;
   try {
-    await apiService.deleteRemark(id);
-    await fetchRecentMessages();
+    await syncService.deleteRemark(id);
   } catch (err) { alert("Delete failed"); }
 };
 
 const copyRemark = (c: any) => {
   const text = (c.content || "") + "\n\n--- Items ---\n" + 
-               (c.items || []).map((i: any) => `[${i.log.platform}] ${i.log.senderName}: ${i.log.content}`).join("\n");
+               (c.items || []).map((i: any) => `[${i.log?.platform}] ${i.log?.senderName}: ${i.log?.content}`).join("\n");
   navigator.clipboard.writeText(text);
   alert("Copied to clipboard!");
 };
-
-// Satisfy strict TS: read the functions
-if (false as boolean) {
-  console.log(togglePin, addToDesk, deleteRemark, copyRemark);
-}
 
 const formatSize = (bytes: number) => {
   if (bytes === 0) return '0 B';
@@ -347,7 +384,12 @@ const formatSize = (bytes: number) => {
                @drop="handleDropOnRemark($event, c.id)" @dragover.prevent @click="openRemarkModal(c)">
             <div class="r-top">
               <span class="r-title">{{ c.name }}</span>
-              <span class="r-pin">📌</span>
+              <div class="r-actions" @click.stop>
+                <button @click="togglePin(c)" title="Unpin">📌</button>
+                <button @click="addToDesk(c)" title="Add to Desk">🖥️</button>
+                <button @click="copyRemark(c)" title="Copy MD">📋</button>
+                <button @click="deleteRemark(c.id)" class="del" title="Delete">🗑️</button>
+              </div>
             </div>
             <div class="r-preview" v-html="marked.parse(c.content || '...')"></div>
             <footer class="r-foot">🔗 {{ c.items?.length || 0 }} items</footer>
@@ -358,6 +400,12 @@ const formatSize = (bytes: number) => {
                @drop="handleDropOnRemark($event, c.id)" @dragover.prevent @click="openRemarkModal(c)">
             <div class="r-top">
               <span class="r-title">{{ c.name }}</span>
+              <div class="r-actions" @click.stop>
+                <button @click="togglePin(c)" title="Pin">📍</button>
+                <button @click="addToDesk(c)" title="Add to Desk">🖥️</button>
+                <button @click="copyRemark(c)" title="Copy MD">📋</button>
+                <button @click="deleteRemark(c.id)" class="del" title="Delete">🗑️</button>
+              </div>
             </div>
             <div class="r-preview" v-html="marked.parse(c.content || '...')"></div>
             <footer class="r-foot">🔗 {{ c.items?.length || 0 }} items</footer>
@@ -372,7 +420,7 @@ const formatSize = (bytes: number) => {
       :item="{ ...editingRemark, type: 'remark' }"
       :details="remarkModalDetails"
       @close="showRemarkModal = false" 
-      @save="fetchRecentMessages"
+      @save="handleSaveRemark"
     />
     <Teleport to="body">
       <div v-if="zoomedImageUrl" class="zoom-portal" @click="zoomedImageUrl = ''">
@@ -517,7 +565,14 @@ textarea.glow-input { min-height: 60px; resize: none; }
   border: 1px solid rgba(255,255,255,0.04); margin-bottom: 0.8rem; cursor: pointer;
 }
 .remark-box:hover { border-color: #6366f1; background: rgba(99,102,241,0.03); }
-.r-title { font-weight: 800; font-size: 0.9rem; color: #fff; }
+.r-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
+.r-title { font-weight: 800; font-size: 0.9rem; color: #fff; flex: 1; }
+.r-actions { display: flex; gap: 0.3rem; opacity: 0; transition: 0.2s; }
+.remark-box:hover .r-actions { opacity: 1; }
+.r-actions button { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.7rem; transition: 0.2s; }
+.r-actions button:hover { background: rgba(99,102,241,0.2); border-color: #6366f1; }
+.r-actions button.del:hover { background: rgba(231,76,60,0.2); border-color: #e74c3c; }
+
 .r-preview { font-size: 0.75rem; opacity: 0.4; margin-top: 0.4rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .r-foot { font-size: 0.55rem; font-weight: 800; color: #6366f1; margin-top: 0.6rem; }
 
