@@ -456,7 +456,7 @@ const searchAvailableBooks = () => {
 const getFileUrl = (book: any) => { 
   if (!book || !book.storeId) return ''; 
   // 修正 Chromebook 下載問題：網址末端附加書名與 .pdf 擴展名，誘導瀏覽器使用內建預覽器
-  const baseUrl = `${import.meta.env.VITE_API_URL}/api/storehouse/file/${book.storeId}`;
+  const baseUrl = apiService.getAbsoluteUrl(`/api/storehouse/file/${book.storeId}`);
   const safeTitle = encodeURIComponent(book.title || 'document').replace(/%20/g, '+');
   return `${baseUrl}/${safeTitle}`;
 };

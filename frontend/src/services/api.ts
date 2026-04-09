@@ -543,6 +543,38 @@ export const apiService = {
   async removeBookNote(noteId: string) {
     const res = await axios.delete(`${API_BASE}/bookcase/notes/${noteId}`);
     return res.data;
+  },
+
+  // 🤖 Bot Management
+  async getBotRequests() {
+    const res = await axios.get(`${API_BASE}/bot/requests`);
+    return res.data;
+  },
+  async getBotUsers() {
+    const res = await axios.get(`${API_BASE}/bot/users`);
+    return res.data;
+  },
+  async approveBotUser(id: string, role: string) {
+    const res = await axios.post(`${API_BASE}/bot/approve`, { id, role });
+    return res.data;
+  },
+  async rejectBotUser(id: string) {
+    const res = await axios.post(`${API_BASE}/bot/reject`, { id });
+    return res.data;
+  },
+  async deleteBotUser(id: string) {
+    const res = await axios.post(`${API_BASE}/bot/users/delete`, { id });
+    return res.data;
+  },
+
+  // ⚙️ System Settings
+  async getSettings() {
+    const res = await axios.get(`${API_BASE}/settings`);
+    return res.data;
+  },
+  async updateSettings(key: string, value: string) {
+    const res = await axios.post(`${API_BASE}/settings`, { key, value });
+    return res.data;
   }
 };
 
