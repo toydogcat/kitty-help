@@ -306,7 +306,11 @@ func IndexStorehouseItem(c *fiber.Ctx) error {
 }
 
 func GetFileProxy(c *fiber.Ctx) error {
-	fileID := c.Params("*")
+	fullPath := c.Params("*")
+	// 🚀 Chromebook 修復：提取 ID 部分，忽略後方的隨機書名（僅用於欺騙瀏覽器）
+	parts := strings.Split(fullPath, "/")
+	fileID := parts[0]
+	
 	platform := c.Query("platform", "telegram")
 	width := c.QueryInt("w", 0)
 
