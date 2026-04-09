@@ -307,9 +307,19 @@ func IndexStorehouseItem(c *fiber.Ctx) error {
 
 func GetFileProxy(c *fiber.Ctx) error {
 	fullPath := c.Params("*")
-	// 🚀 Chromebook 修復：提取 ID 部分，忽略後方的隨機書名（僅用於欺騙瀏覽器）
+	// 🚀 Path Intelligence: Support subdirectories (fileID) + trailing fake filename (Chromebook fix)
 	parts := strings.Split(fullPath, "/")
-	fileID := parts[0]
+	fileID := ""
+	fakeFileName := ""
+
+	if len(parts) > 1 {
+		// Join all segments except the last one as the real fileID
+		fileID = strings.Join(parts[:len(parts)-1], "/")
+		fakeFileName = parts[len(parts)-1]
+	} else {
+		fileID = parts[0]
+		fakeFileName = "document"
+	}
 	
 	platform := c.Query("platform", "telegram")
 	width := c.QueryInt("w", 0)
@@ -395,10 +405,10 @@ func GetFileProxy(c *fiber.Ctx) error {
 	}
 
 	if c.Query("download") == "1" {
-		c.Set("Content-Disposition", "attachment")
+		c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", fakeFileName))
 	} else {
-		// Allow inline preview for PDFs/Images
-		c.Set("Content-Disposition", "inline")
+		// 🛠️ Enhanced iPad/ChromeOS Preview Support: Add filename to inline disposition
+		c.Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", fakeFileName))
 	}
 
 	c.Set("Content-Type", contentType)

@@ -455,10 +455,20 @@ const searchAvailableBooks = () => {
 
 const getFileUrl = (book: any) => { 
   if (!book || !book.storeId) return ''; 
-  // 修正 Chromebook 下載問題：網址末端附加書名與 .pdf 擴展名，誘導瀏覽器使用內建預覽器
+  // 🚀 Device-Specific Preview Refinement: 
+  // Appending the title + extension helps iPad/ChromeOS recognize previewable content
   const baseUrl = apiService.getAbsoluteUrl(`/api/storehouse/file/${book.storeId}`);
-  const safeTitle = encodeURIComponent(book.title || 'document').replace(/%20/g, '+');
-  return `${baseUrl}/${safeTitle}`;
+  let safeTitle = encodeURIComponent(book.title || 'document').replace(/%20/g, '+');
+  
+  // Force extension if missing from title to satisfy strict MIME detection
+  if (isEPUB(book) && !safeTitle.toLowerCase().endsWith('.epub')) safeTitle += '.epub';
+  else if (!isEPUB(book) && !safeTitle.toLowerCase().endsWith('.pdf')) safeTitle += '.pdf';
+
+  let url = `${baseUrl}/${safeTitle}`;
+  if (book.source === 'local') {
+    url += (url.includes('?') ? '&' : '?') + 'platform=local';
+  }
+  return url;
 };
 const isEPUB = (book: any) => { if (!book) return false; return (book.title || '').toLowerCase().endsWith('.epub'); };
 
