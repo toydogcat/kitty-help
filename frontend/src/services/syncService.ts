@@ -28,8 +28,12 @@ export const syncService = reactive({
     async refreshSnippets(parentId: string | null = null, all: boolean = false) {
         try {
             const remoteItems = await apiService.getSnippets(parentId, all);
+            const pendingDeletes = await db.sync_queue.where({ entityType: 'snippet', action: 'DELETE' }).toArray();
+            const deletedIds = new Set(pendingDeletes.map(a => a.entityId));
+
             await db.transaction('rw', db.snippets, async () => {
                 for (const item of remoteItems) {
+                    if (deletedIds.has(item.id)) continue;
                     await db.snippets.put({
                         ...item,
                         parentId: item.parentId || 'root',
@@ -86,9 +90,17 @@ export const syncService = reactive({
     },
 
     async deleteSnippet(id: string) {
+        const item = await db.snippets.get(id);
+        const isGhost = item && (!item.name || item.name.trim() === '');
+        
         await db.snippets.delete(id);
         await db.sync_queue.add({ action: 'DELETE', entityType: 'snippet', entityId: id, data: null, timestamp: Date.now() });
-        this.requestSync();
+        
+        if (isGhost) {
+            this.syncNow();
+        } else {
+            this.requestSync();
+        }
     },
 
     // --- Bookmarks Methods ---
@@ -103,8 +115,12 @@ export const syncService = reactive({
 
     async refreshBookmarks(parentId?: string | 'root', all: boolean = false) {
         const remoteItems = await apiService.getBookmarks(parentId, all);
+        const pendingDeletes = await db.sync_queue.where({ entityType: 'bookmark', action: 'DELETE' }).toArray();
+        const deletedIds = new Set(pendingDeletes.map(a => a.entityId));
+
         await db.transaction('rw', db.bookmarks, async () => {
             for (const item of remoteItems) {
+                if (deletedIds.has(item.id)) continue;
                 await db.bookmarks.put({ 
                     ...item, 
                     parentId: item.parentId || 'root',
@@ -149,9 +165,17 @@ export const syncService = reactive({
     },
 
     async deleteBookmark(id: string) {
+        const item = await db.bookmarks.get(id);
+        const isGhost = item && (!item.title || item.title.trim() === '');
+
         await db.bookmarks.delete(id);
         await db.sync_queue.add({ action: 'DELETE', entityType: 'bookmark', entityId: id, data: null, timestamp: Date.now() });
-        this.requestSync();
+
+        if (isGhost) {
+            this.syncNow();
+        } else {
+            this.requestSync();
+        }
     },
 
     // --- Desk Methods ---
@@ -164,8 +188,12 @@ export const syncService = reactive({
     },
     async refreshShelves() {
         const remote = await apiService.getShelves();
+        const pendingDeletes = await db.sync_queue.where({ entityType: 'shelf', action: 'DELETE' }).toArray();
+        const deletedIds = new Set(pendingDeletes.map(a => a.entityId));
+
         await db.transaction('rw', db.shelves, async () => {
             for (const s of remote) {
+                if (deletedIds.has(s.id)) continue;
                 await db.shelves.put({ ...s, syncStatus: 'synced', updatedAt: new Date().toISOString() });
             }
         });
@@ -199,8 +227,12 @@ export const syncService = reactive({
     },
     async refreshDeskItems(shelfId: string = 'null') {
         const remote = await apiService.getDeskItems(shelfId === 'null' ? undefined : shelfId);
+        const pendingDeletes = await db.sync_queue.where({ entityType: 'deskItem', action: 'DELETE' }).toArray();
+        const deletedIds = new Set(pendingDeletes.map(a => a.entityId));
+
         await db.transaction('rw', db.deskItems, async () => {
             for (const item of remote) {
+                if (deletedIds.has(item.id)) continue;
                 await db.deskItems.put({ ...item, shelfId: item.shelfId || 'null', syncStatus: 'synced', updatedAt: new Date().toISOString() });
             }
         });
@@ -241,8 +273,12 @@ export const syncService = reactive({
     },
     async refreshBookcase() {
         const remote = await apiService.getBookcase();
+        const pendingDeletes = await db.sync_queue.where({ entityType: 'book', action: 'DELETE' }).toArray();
+        const deletedIds = new Set(pendingDeletes.map(a => a.entityId));
+
         await db.transaction('rw', db.bookcase, async () => {
             for (const b of remote) {
+                if (deletedIds.has(b.id)) continue;
                 await db.bookcase.put({ ...b, syncStatus: 'synced', updatedAt: new Date().toISOString() });
             }
         });
