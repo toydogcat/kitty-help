@@ -402,6 +402,28 @@ const addToDesk = async (item: any) => {
     alert("Pinning failed");
   }
 };
+
+const moveUp = async (item: any) => {
+  const index = snippets.value.findIndex(s => s.id === item.id);
+  if (index > 0) {
+    const prev = snippets.value[index-1];
+    const oldOrder = item.sortOrder || index;
+    const newOrder = prev.sortOrder || (index - 1);
+    await syncService.moveSnippet(item.id, newOrder);
+    await syncService.moveSnippet(prev.id, oldOrder);
+  }
+};
+
+const moveDown = async (item: any) => {
+  const index = snippets.value.findIndex(s => s.id === item.id);
+  if (index < snippets.value.length - 1) {
+    const next = snippets.value[index+1];
+    const oldOrder = item.sortOrder || index;
+    const newOrder = next.sortOrder || (index + 1);
+    await syncService.moveSnippet(item.id, newOrder);
+    await syncService.moveSnippet(next.id, oldOrder);
+  }
+};
 </script>
 
 <template>
@@ -452,15 +474,20 @@ const addToDesk = async (item: any) => {
       <div v-if="loading" class="mini-loader">Loading snippets...</div>
       
       <div v-else class="explorer-body custom-scrollbar">
-        <div v-if="pathStack.length > 0" @click="goBack" class="item-row back">
-          📁 .. (Back)
+        <div v-if="pathStack.length > 0" @click="goBack" class="back-card card">
+          <span class="back-icon">⤴️</span>
+          <div class="back-text">
+            <strong>Back</strong>
+            <span>Return to parent folder</span>
+          </div>
         </div>
         
         <div 
           v-for="item in snippets" 
           :key="item.id" 
-          class="item-row" 
+          class="snippet-card card" 
           :class="{ 
+            'is-folder': item.isFolder,
             'is-dragging': draggedItem?.id === item.id,
             'is-drop-target': dropTargetId === item.id,
             'drop-before': dropTargetId === item.id && dropPosition === 'before',
@@ -475,27 +502,39 @@ const addToDesk = async (item: any) => {
           @dragend="handleDragEnd"
           @click="item.isFolder ? enterFolder(item) : openEditModal(item)"
         >
-          <div v-if="item.isFolder" class="item-content folder">
-            <div class="folder-link">
-              📁 <strong>{{ item.name }}</strong>
+          <div class="card-bg-glow"></div>
+          
+          <div class="card-header">
+            <div class="type-icon">
+              {{ item.isFolder ? '📁' : '📄' }}
             </div>
-          </div>
-          <div v-else class="item-content snippet">
-            <div class="snippet-info">
-              <span class="snippet-name">
-                📄 {{ item.name }}
-                <span v-if="item.syncStatus === 'pending'" class="sync-badge" title="Pending Sync">⏳</span>
-                <span v-if="item.syncStatus === 'error'" class="sync-badge error" title="Sync Failed">⚠️</span>
-              </span>
-              <p v-if="item.content" class="snippet-preview">{{ item.content.substring(0, 80) }}...</p>
+            <div class="header-right">
+              <div class="sort-actions">
+                <button @click.stop="moveUp(item)" title="Move Up">▴</button>
+                <button @click.stop="moveDown(item)" title="Move Down">▾</button>
+              </div>
+              <span v-if="item.syncStatus === 'pending'" class="sync-badge">⏳</span>
+              <span v-if="item.syncStatus === 'error'" class="sync-badge error">⚠️ Sync Error</span>
             </div>
           </div>
 
-          <div class="item-actions">
-            <button @click.stop="addToDesk(item)" class="pin-small" title="Add to Desk">📌</button>
-            <button v-if="!item.isFolder" @click.stop="copyText(item.content)" class="copy-small">📋 Copy</button>
-            <button @click.stop="openEditModal(item)" class="edit-small">✎</button>
-            <button @click.stop="deleteItem(item.id)" class="del-small">✕</button>
+          <div class="card-body">
+            <h4 class="snippet-title" :title="item.name">{{ item.name }}</h4>
+            <p v-if="!item.isFolder && item.content" class="snippet-preview">
+              {{ item.content.substring(0, 120) }}{{ item.content.length > 120 ? '...' : '' }}
+            </p>
+            <p v-else-if="item.isFolder" class="folder-hint">Click to open collection</p>
+          </div>
+
+          <div class="card-actions">
+            <template v-if="!item.isFolder">
+               <button @click.stop="copyText(item.content)" class="action-btn copy">📋 Copy</button>
+            </template>
+            <div class="tool-group">
+              <button @click.stop="addToDesk(item)" class="icon-btn pin" :class="{ pinned: pinnedIds.has(item.id) }" title="Pin to Desk">📌</button>
+              <button @click.stop="openEditModal(item)" class="icon-btn edit" title="Edit Content">✎</button>
+              <button @click.stop="deleteItem(item.id)" class="icon-btn delete" title="Delete Content">✕</button>
+            </div>
           </div>
         </div>
       </div>
@@ -571,34 +610,101 @@ const addToDesk = async (item: any) => {
 .header-actions { display: flex; gap: 0.8rem; }
 .add-btn { background: var(--primary-color); color: white; border: none; padding: 0.5rem 1.5rem; border-radius: 10px; font-weight: 800; cursor: pointer; }
 
-.explorer-body { flex: 1; padding: 1rem; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; }
-.item-row { display: flex; align-items: center; padding: 1rem; border-radius: 12px; background: rgba(255,255,255,0.03); border: 1px solid transparent; cursor: pointer; transition: all 0.2s; position: relative; }
-.item-row:hover { background: rgba(255,255,255,0.06); border-color: var(--primary-color); transform: translateX(5px); }
-
-.item-row.drop-inside {
-  background: rgba(var(--primary-rgb),0.2) !important;
-  border: 1px dashed var(--primary-color);
+.explorer-body {
+  flex: 1;
+  padding: 1.5rem;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+  align-content: start;
 }
 
-.item-row.drop-before {
-  border-top: 4px solid var(--primary-color);
+.snippet-card {
+  height: min-content;
+  min-height: 180px;
+  padding: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 20px;
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
 }
 
-.item-row.drop-after {
-  border-bottom: 4px solid var(--primary-color);
+.snippet-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--primary-color);
+  transform: translateY(-5px);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.4);
 }
 
-.item-content { flex: 1; }
-.snippet-name { font-weight: 700; color: #fff; }
-.snippet-preview { font-size: 0.8rem; opacity: 0.5; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 500px; }
+.back-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.2rem;
+  background: rgba(var(--primary-rgb), 0.1);
+  border: 1px dashed rgba(var(--primary-rgb), 0.3);
+  border-radius: 20px;
+  cursor: pointer;
+  height: 100%;
+}
+.back-card:hover { background: rgba(var(--primary-rgb), 0.2); border-color: var(--primary-color); }
+.back-icon { font-size: 1.5rem; }
+.back-text strong { display: block; color: var(--primary-color); }
+.back-text span { font-size: 0.75rem; opacity: 0.5; }
 
-.item-actions { display: flex; gap: 6px; opacity: 0; transition: opacity 0.2s; }
-.item-row:hover .item-actions { opacity: 1; }
-.item-actions button { background: rgba(255,255,255,0.1); border: none; border-radius: 6px; padding: 4px 10px; color: #fff; font-size: 0.75rem; cursor: pointer; }
-.item-actions button:hover { background: var(--primary-color); }
+.snippet-card.drop-inside {
+  background: rgba(var(--primary-rgb), 0.2);
+  border: 2px dashed var(--primary-color);
+  transform: scale(1.02);
+}
 
-.sync-badge { font-size: 0.8rem; margin-left: 0.5rem; opacity: 0.8; }
-.sync-badge.error { color: #ff5555; opacity: 1; }
+.snippet-card.drop-before { border-top: 4px solid var(--primary-color); }
+.snippet-card.drop-after { border-bottom: 4px solid var(--primary-color); }
+
+.card-bg-glow {
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle at center, rgba(var(--primary-rgb), 0.15) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+.snippet-card:hover .card-bg-glow { opacity: 1; }
+
+.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.type-icon { width: 36px; height: 36px; background: rgba(255,255,255,0.05); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+.header-right { display: flex; align-items: center; gap: 0.5rem; }
+
+.sort-actions { display: none; flex-direction: column; gap: 0; background: rgba(0,0,0,0.4); border-radius: 8px; padding: 2px; }
+.snippet-card:hover .sort-actions { display: flex; }
+.sort-actions button { background: none; border: none; color: #fff; cursor: pointer; padding: 0 6px; font-size: 1.1rem; line-height: 1; opacity: 0.5; transition: 0.2s; }
+.sort-actions button:hover { opacity: 1; color: var(--primary-color); }
+
+.card-body { flex: 1; margin-bottom: 1rem; }
+.snippet-title { font-size: 1.05rem; font-weight: 800; color: #fff; margin: 0 0 0.5rem 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.snippet-preview { font-size: 0.85rem; opacity: 0.5; line-height: 1.5; height: 3em; overflow: hidden; }
+.folder-hint { font-size: 0.75rem; color: var(--primary-color); font-weight: 600; }
+
+.card-actions { display: flex; justify-content: space-between; align-items: center; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05); }
+.action-btn { background: var(--primary-color); color: #fff; border: none; padding: 0.4rem 1rem; border-radius: 8px; font-weight: 700; font-size: 0.8rem; cursor: pointer; }
+.tool-group { display: flex; gap: 6px; }
+.icon-btn { background: rgba(255,255,255,0.05); border: none; width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; font-size: 0.9rem; }
+.icon-btn:hover { background: rgba(255,255,255,0.15); }
+.icon-btn.delete:hover { background: #e74c3c; }
+
+.sync-badge { font-size: 0.7rem; color: #fbbf24; background: rgba(251, 191, 36, 0.1); padding: 2px 6px; border-radius: 4px; }
+.sync-badge.error { color: #ff5555; background: rgba(255, 85, 85, 0.1); }
 
 /* Unified Controls Styling */
 .unified-controls { display: flex; align-items: center; gap: 1rem; }

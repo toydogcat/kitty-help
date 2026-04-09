@@ -68,6 +68,11 @@ export const syncService = reactive({
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'snippet', entityId: id, data, timestamp: Date.now() });
         this.requestSync();
     },
+    async moveSnippet(id: string, sortOrder: number) {
+        await db.snippets.update(id, { sortOrder, syncStatus: 'pending' });
+        await db.sync_queue.add({ action: 'UPDATE', entityType: 'snippet', entityId: id, data: { sortOrder }, timestamp: Date.now() });
+        this.requestSync();
+    },
 
     async deleteSnippet(id: string) {
         await db.snippets.delete(id);
@@ -112,6 +117,11 @@ export const syncService = reactive({
     async updateBookmark(id: string, data: any) {
         await db.bookmarks.update(id, { ...data, syncStatus: 'pending' });
         await db.sync_queue.add({ action: 'UPDATE', entityType: 'bookmark', entityId: id, data, timestamp: Date.now() });
+        this.requestSync();
+    },
+    async moveBookmark(id: string, sortOrder: number) {
+        await db.bookmarks.update(id, { sortOrder, syncStatus: 'pending' });
+        await db.sync_queue.add({ action: 'UPDATE', entityType: 'bookmark', entityId: id, data: { sortOrder }, timestamp: Date.now() });
         this.requestSync();
     },
 

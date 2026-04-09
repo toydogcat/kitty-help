@@ -1,0 +1,21 @@
+{
+  "name": "Kitty-Help Master Suite",
+  "short_name": "KittyHelp",
+  "description": "Cross-device Auxiliary Communication (PG Edition)",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0c10",
+  "theme_color": "#d97706",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1864/1864509.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1864/1864509.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

@@ -31,6 +31,12 @@ const dropPosition = ref<'before' | 'after' | 'inside' | null>(null);
 const draggedItem = ref<any>(null);
 const collapsedFolders = ref<string[]>([]);
 const isSorting = ref(false);
+const isSidebarCollapsed = ref(window.innerWidth < 1024);
+
+// Handle Responsive Auto-collapse
+const handleResize = () => {
+  if (window.innerWidth < 1024) isSidebarCollapsed.value = true;
+};
 
 // EPUB Reader State
 const epubRendition = ref<any>(null);
@@ -57,6 +63,7 @@ const fetchBookcase = async () => {
 };
 
 onMounted(() => {
+  window.addEventListener('resize', handleResize);
   bookcaseSub = liveQuery(() => db.bookcase.toArray()).subscribe(val => {
      books.value = val;
      if (books.value.length > 0 && !activeBook.value) selectBook(books.value[0]);
@@ -70,6 +77,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  window.removeEventListener('resize', handleResize);
   if (bookcaseSub) bookcaseSub.unsubscribe();
   if (notesSub) notesSub.unsubscribe();
   cleanupEpub();
@@ -458,9 +466,12 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 </script>
 
 <template>
-  <div class="bookcase-v2">
-    <aside class="sidebar">
-      <div class="sidebar-header"><input v-model="searchTerm" placeholder="Filter Intel..." /><button @click="showAddModal = true" class="add-btn">+</button></div>
+  <div class="bookcase-v2" :class="{ 'sb-collapsed': isSidebarCollapsed }">
+    <aside class="sidebar" :class="{ collapsed: isSidebarCollapsed }">
+      <div class="sidebar-header">
+        <input v-model="searchTerm" placeholder="Filter Intel..." />
+        <button @click="showAddModal = true" class="add-btn">+</button>
+      </div>
       <div class="folder-list">
         <div v-for="(folderBooks, folderName) in folders" :key="folderName" class="folder-group" 
              :class="{ 'drop-over': dropTargetId === String(folderName) && dropPosition === 'inside' }" 
@@ -509,6 +520,9 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 
     <main v-if="activeBook" class="workspace">
       <header class="ws-header">
+        <button class="toggle-sidebar-btn" @click="isSidebarCollapsed = !isSidebarCollapsed">
+          {{ isSidebarCollapsed ? '📂' : '⬅️' }}
+        </button>
         <div class="active-book-info"><h2>{{ activeBook.title }}</h2><span class="badge">{{ activeBook.category }}</span></div>
         <div class="tabs-nav">
           <button @click="viewMode = 'preview'" :class="{ active: viewMode === 'preview' }">📖 READ</button>
@@ -573,36 +587,64 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 
 <style scoped>
 .bookcase-v2 { display: flex; height: 100vh; background: #0a0c10; color: #a0a8b1; font-family: 'Outfit', sans-serif;}
-.sidebar { width: 280px; background: #000; border-right: 1px solid #1a1e23; display: flex; flex-direction: column; }
-.sidebar-header { padding: 1.25rem; display: flex; gap: 0.5rem; }
-.sidebar-header input { flex:1; padding: 0.5rem; background: #11151a; border: 1px solid #222; border-radius: 4px; color: #fff; font-size: 0.8rem; }
-.add-btn { width: 34px; background: #d97706; border: none; color: #fff; border-radius: 4px; cursor: pointer; font-weight: bold; }
-.folder-list { flex: 1; overflow-y: auto; padding: 0.5rem; }
-.folder-header { padding: 0.75rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; border-radius: 6px; font-weight: 700; color: #e2e8f0; font-size: 0.85rem; }
-.folder-header:hover { background: #11151a; }
-.count { margin-left: auto; font-size: 0.7rem; color: #fbbf24; background: #fbbf2411; padding: 2px 6px; border-radius: 4px; }
-.book-item { padding: 0.65rem 0.65rem 0.65rem 1.5rem; display: flex; gap: 0.6rem; cursor: pointer; border-radius: 6px; margin-bottom: 2px; transition: all 0.2s; position: relative; }
-.book-item.active { background: #d977061a; border: 1px solid #d9770633; color: #fff; }
-.book-item.is-dragging { opacity: 0.4; background: #222; }
-.book-item.drop-before { border-top: 2px solid #fbbf24; }
-.book-item.drop-after { border-bottom: 2px solid #fbbf24; }
-.folder-group.drop-over { background: rgba(217, 119, 6, 0.1); }
-.item-title { font-size: 0.8rem; text-align: left; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
-.item-meta { font-size: 0.6rem; opacity: 0.4; }
-.sort-actions { display: none; flex-direction: column; gap: 0; margin-left: auto; }
-.book-item:hover .sort-actions { display: flex; }
-.sort-actions button { background: transparent; border: none; color: #555; cursor: pointer; padding: 0 4px; font-size: 0.9rem; line-height: 1; }
-.sort-actions button:hover { color: #fbbf24; }
-.workspace { flex: 1; display: flex; flex-direction: column; }
-.active-book-info { display: flex; align-items: center; gap: 0.8rem; overflow: hidden; flex: 1; }
-.active-book-info h2 { font-size: 1.1rem; color: #fff; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ws-header { height: 64px; padding: 0 1.25rem; display: flex; align-items: center; gap: 1.5rem; justify-content: space-between; border-bottom: 1px solid #1a1e23; background: #000; }
-.badge { font-size: 0.6rem; background: #fbbf2422; color: #fbbf24; padding: 2px 6px; border-radius: 4px; font-weight: 800; flex-shrink: 0; }
-.tabs-nav { display: flex; gap: 4px; background: #11151a; padding: 4px; border-radius: 8px; flex-shrink: 0; }
-.tabs-nav button { padding: 0.4rem 1rem; border: none; background: transparent; color: #666; font-size: 0.75rem; font-weight: 700; border-radius: 6px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
-.tabs-nav button.active { background: #d97706; color: #fff; }
-.detach-btn { background: rgba(255, 87, 87, 0.1); border: 1px solid rgba(255, 87, 87, 0.2); color: #ff5757; padding: 0.4rem; border-radius: 6px; cursor: pointer; flex-shrink: 0; transition: all 0.2s; }
 .detach-btn:hover { background: #ff5757; color: #fff; }
+
+/* 🚀 Sidebar Collapse & Responsive Logic */
+.toggle-sidebar-btn {
+  background: #1a1e23;
+  border: 1px solid #334155;
+  color: #fff;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+.toggle-sidebar-btn:hover { background: #334155; border-color: #fbbf24; }
+
+.sidebar { 
+  width: 280px; 
+  background: #000; 
+  border-right: 1px solid #1a1e23; 
+  display: flex; 
+  flex-direction: column; 
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+.sidebar.collapsed {
+  width: 0;
+  border-right: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 1024px) {
+  .sidebar {
+    position: fixed;
+    z-index: 100;
+    height: 100vh;
+    box-shadow: 20px 0 50px rgba(0,0,0,0.5);
+  }
+  .sidebar.collapsed {
+    transform: translateX(-100%);
+    width: 280px; /* Keep width for animation but hide via transform */
+  }
+  .preview-pane { flex: 1 !important; } /* Balance PDF on tablets */
+  .notes-pane { min-width: 320px !important; }
+}
+
+@media (max-width: 768px) {
+  .ws-body.mode-mixed { flex-direction: column; }
+  .preview-pane { height: 50vh; flex: none !important; border-bottom: 2px solid #1a1e23; border-right: none; }
+  .notes-pane { flex: 1; min-width: 0 !important; }
+  .active-book-info h2 { font-size: 0.9rem; }
+  .tabs-nav button { padding: 0.4rem 0.6rem; font-size: 0.65rem; }
+}
 
 .ws-body { flex: 1; display: flex; overflow: hidden; }
 .preview-pane { flex: 1.4; position: relative; background: #121519; border-right: 1px solid #1a1e23; overflow: hidden; }

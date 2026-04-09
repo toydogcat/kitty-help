@@ -287,7 +287,7 @@ func AddDeskItem(c *fiber.Ctx) error {
 
 	query := `
 		INSERT INTO desk_items (id, user_id, shelf_id, type, ref_id, sort_order) 
-		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6)
+		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, NULLIF($3, '')::uuid, $4, $5::uuid, $6)
 		ON CONFLICT (id) DO UPDATE SET
 			shelf_id = EXCLUDED.shelf_id,
 			sort_order = EXCLUDED.sort_order,
@@ -319,7 +319,7 @@ func UpdateDeskItem(c *fiber.Ctx) error {
 		sId = nil
 	}
 
-	query := "UPDATE desk_items SET shelf_id = $1, sort_order = $2 WHERE id = $3"
+	query := "UPDATE desk_items SET shelf_id = NULLIF($1, '')::uuid, sort_order = $2 WHERE id = $3::uuid"
 	_, err = db.Exec(context.Background(), query, sId, it.SortOrder, id)
 	if err != nil {
 		log.Printf("UpdateDeskItem error: %v", err)

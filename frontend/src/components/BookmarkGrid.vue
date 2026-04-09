@@ -425,6 +425,28 @@ const addToDesk = async (bookmark: Bookmark) => {
   }
 };
 
+const moveUp = async (bm: Bookmark) => {
+  const index = bookmarks.value.findIndex(b => b.id === bm.id);
+  if (index > 0) {
+    const prev = bookmarks.value[index-1];
+    const oldOrder = bm.sortOrder || index;
+    const newOrder = prev.sortOrder || (index - 1);
+    await syncService.moveBookmark(bm.id, newOrder);
+    await syncService.moveBookmark(prev.id, oldOrder);
+  }
+};
+
+const moveDown = async (bm: Bookmark) => {
+  const index = bookmarks.value.findIndex(b => b.id === bm.id);
+  if (index < bookmarks.value.length - 1) {
+    const next = bookmarks.value[index+1];
+    const oldOrder = bm.sortOrder || index;
+    const newOrder = next.sortOrder || (index + 1);
+    await syncService.moveBookmark(bm.id, newOrder);
+    await syncService.moveBookmark(next.id, oldOrder);
+  }
+};
+
 watch(() => props.userId, () => {
   fetchBookmarks();
   fetchVault();
@@ -541,6 +563,10 @@ export default {
               <span v-else class="default-icon">🔗</span>
             </div>
             <div class="header-right">
+              <div class="sort-actions">
+                <button @click.stop="moveUp(bm)" title="Move Up">▴</button>
+                <button @click.stop="moveDown(bm)" title="Move Down">▾</button>
+              </div>
               <span v-if="bm.passwordId" class="lock-indicator" :class="{ unlocked: hasSecurityTrust }">
                 {{ hasSecurityTrust ? '🔓' : '🔒' }}
               </span>
@@ -792,6 +818,37 @@ export default {
   background: rgba(var(--primary-rgb), 0.2);
   color: var(--primary-color);
   border-radius: 10px;
+}
+
+.sort-actions {
+  display: none;
+  flex-direction: column;
+  gap: 0;
+  margin-right: 8px;
+  background: rgba(0,0,0,0.3);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.bookmark-card:hover .sort-actions {
+  display: flex;
+}
+
+.sort-actions button {
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 1rem;
+  line-height: 1;
+  transition: all 0.2s;
+  opacity: 0.5;
+}
+
+.sort-actions button:hover {
+  opacity: 1;
+  color: var(--primary-color);
 }
 
 .card-body {
