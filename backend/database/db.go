@@ -270,7 +270,8 @@ func EnsureTables() {
 			content TEXT,
 			node_type TEXT DEFAULT 'general', -- person, place, event, etc.
 			desk_shelf_id UUID REFERENCES desk_shelves(id) ON DELETE SET NULL,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS impression_edges (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -278,7 +279,8 @@ func EnsureTables() {
 			source_id UUID REFERENCES impression_nodes(id) ON DELETE CASCADE,
 			target_id UUID REFERENCES impression_nodes(id) ON DELETE CASCADE,
 			label TEXT,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS impression_temp (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -294,7 +296,8 @@ func EnsureTables() {
 			name TEXT NOT NULL,
 			color TEXT,
 			sort_order INT DEFAULT 0,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS desk_items (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -303,7 +306,8 @@ func EnsureTables() {
 			type TEXT NOT NULL,    -- 'bookmark', 'snippet', 'media'
 			ref_id UUID NOT NULL,   -- Points to actual record ID
 			sort_order INT DEFAULT 0,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS chat_logs (
 			id SERIAL PRIMARY KEY,
@@ -425,6 +429,10 @@ func EnsureTables() {
 			`ALTER TABLE snippets ADD COLUMN IF NOT EXISTS is_folder BOOLEAN DEFAULT false`,
 			`ALTER TABLE snippets ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0`,
 			`ALTER TABLE snippets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
+			`ALTER TABLE desk_shelves ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
+			`ALTER TABLE desk_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
+			`ALTER TABLE impression_nodes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
+			`ALTER TABLE impression_edges ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
 		}
 		for _, m := range migrations {
 			LocalDB.Exec(ctx, m)
