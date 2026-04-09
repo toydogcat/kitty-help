@@ -2,7 +2,6 @@
 import { ref, onMounted } from 'vue';
 import AdminDashboard from '../components/AdminDashboard.vue';
 import { apiService } from '../services/api';
-import axios from 'axios';
 
 const props = defineProps<{ 
   deviceId: string;
