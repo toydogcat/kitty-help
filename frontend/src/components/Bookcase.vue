@@ -305,15 +305,17 @@ const moveUp = async (book: any, folderBooks: any[]) => {
   const index = folderBooks.findIndex(b => b.id === book.id);
   if (index <= 0) return;
   
-  const prevBook = folderBooks[index - 1];
   try {
     isSorting.value = true;
-    const bOrder = book.sortOrder ?? 0;
-    const pOrder = prevBook.sortOrder ?? 0;
-    await Promise.all([
-      syncService.moveBook(book.id, pOrder),
-      syncService.moveBook(prevBook.id, bOrder)
-    ]);
+    const siblings = [...folderBooks];
+    // 記憶體中交換位置
+    [siblings[index - 1], siblings[index]] = [siblings[index], siblings[index - 1]];
+    
+    // 全量更新此資料夾內的所有書籍 sortOrder
+    const updates = siblings.map((b, i) => syncService.moveBook(b.id, i));
+    await Promise.all(updates);
+  } catch (err) {
+    console.error("Move up failed:", err);
   } finally {
     isSorting.value = false;
   }
@@ -324,15 +326,17 @@ const moveDown = async (book: any, folderBooks: any[]) => {
   const index = folderBooks.findIndex(b => b.id === book.id);
   if (index < 0 || index >= folderBooks.length - 1) return;
   
-  const nextBook = folderBooks[index + 1];
   try {
     isSorting.value = true;
-    const bOrder = book.sortOrder ?? 0;
-    const nOrder = nextBook.sortOrder ?? 0;
-    await Promise.all([
-      syncService.moveBook(book.id, nOrder),
-      syncService.moveBook(nextBook.id, bOrder)
-    ]);
+    const siblings = [...folderBooks];
+    // 記憶體中交換位置
+    [siblings[index], siblings[index + 1]] = [siblings[index + 1], siblings[index]];
+    
+    // 全量更新此資料夾內的所有書籍 sortOrder
+    const updates = siblings.map((b, i) => syncService.moveBook(b.id, i));
+    await Promise.all(updates);
+  } catch (err) {
+    console.error("Move down failed:", err);
   } finally {
     isSorting.value = false;
   }
@@ -441,7 +445,10 @@ const searchAvailableBooks = () => {
   }, 400);
 };
 
-const getFileUrl = (book: any) => { if (!book || !book.storeId) return ''; return `${import.meta.env.VITE_API_URL}/api/storehouse/file/${book.storeId}`; };
+const getFileUrl = (book: any) => { 
+  if (!book || !book.storeId) return ''; 
+  return `${import.meta.env.VITE_API_URL}/api/storehouse/file/${book.storeId}`; 
+};
 const isEPUB = (book: any) => { if (!book) return false; return (book.title || '').toLowerCase().endsWith('.epub'); };
 
 watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSON.stringify(newVal)); }, { deep: true });
@@ -510,7 +517,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 
       <div class="ws-body" :class="'mode-' + viewMode">
         <div v-if="viewMode !== 'notes'" class="preview-pane">
-          <iframe v-if="activeBookIsPdf" :src="activeBookFileUrl" class="pdf-frame"></iframe>
+          <iframe v-if="activeBookIsPdf && activeBookFileUrl" :src="activeBookFileUrl" class="pdf-frame"></iframe>
           <div v-else-if="activeBookIsEpub" class="epub-reader">
              <div ref="epubViewerRef" class="epub-canvas"></div>
              <div v-if="isEpubLoading" class="loader"><div class="spin"></div></div>
