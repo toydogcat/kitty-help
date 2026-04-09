@@ -337,28 +337,33 @@ export const syncService = reactive({
             return;
         }
 
-        // --- 核心修復：更新同步隊列中的待處理動作 ---
-        // 如果隊列中有後續動作（如剛創建就馬上修改或刪除），舊 ID 必須換成新 ID
-        const affectedActions = await db.sync_queue.where('entityId').equals(oldId).modify({ entityId: newId });
-        if (affectedActions > 0) {
-            console.log(`[Sync Debug] Updated ${affectedActions} pending actions in queue from ${oldId} to ${newId}`);
-        }
-
         const oldRecord = await table.get(oldId);
-        if (oldRecord) {
-            await table.delete(oldId);
-            await table.put({
-                ...oldRecord,
-                ...res,
-                id: newId,
-                syncStatus: 'synced',
-                updatedAt: new Date().toISOString()
-            });
-            console.log(`[Sync Debug] ${table.name} ID transitioned: ${oldId} -> ${newId}`);
-        } else {
-            // 如果本地找不到舊記錄（可能剛被手動刪除），我們還是要確保新 ID 被同步刪除（如果有 DELETE 動作在隊列裡）
-            console.log(`[Sync Info] Old record ${oldId} not found locally, transition skipped but queue updated.`);
-        }
+        
+        // --- 核心修復：使用原子事務 (Atomic Transaction) ---
+        // 確保「刪除舊 ID」與「寫入新 ID」在資料庫中是同一個瞬間完成
+        // 防止 LiveQuery 在中間狀態時回傳「記錄已消失」的結果
+        await db.transaction('rw', [table, db.sync_queue], async () => {
+            // 1. 更新同步隊列中的待處理動作 (防止後續動作指向已失效的舊 ID)
+            const affectedActions = await db.sync_queue.where('entityId').equals(oldId).modify({ entityId: newId });
+            if (affectedActions > 0) {
+                console.log(`[Sync Debug] Updated ${affectedActions} pending actions in queue from ${oldId} to ${newId}`);
+            }
+
+            // 2. 轉換資料庫記錄
+            if (oldRecord) {
+                await table.delete(oldId);
+                await table.put({
+                    ...oldRecord,
+                    ...res,
+                    id: newId,
+                    syncStatus: 'synced',
+                    updatedAt: new Date().toISOString()
+                });
+                console.log(`[Sync Debug] ${table.name} ID transitioned: ${oldId} -> ${newId}`);
+            } else {
+                console.log(`[Sync Info] Old record ${oldId} not found locally, transition skipped but queue checked.`);
+            }
+        });
     },
 
     syncTimer: null as any,
