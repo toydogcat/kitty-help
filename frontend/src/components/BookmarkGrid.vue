@@ -436,10 +436,8 @@ const moveUp = async (bm: Bookmark) => {
     // Safety: prevent duplicate sort orders after move
     if (newOrder >= oldOrder) newOrder = oldOrder - 1;
     
-    await db.transaction('rw', [db.bookmarks, db.sync_queue], async () => {
-      await syncService.moveBookmark(bm.id, newOrder);
-      await syncService.moveBookmark(prev.id, oldOrder);
-    });
+    await syncService.moveBookmark(bm.id, newOrder);
+    await syncService.moveBookmark(prev.id, oldOrder);
   }
 };
 
@@ -453,10 +451,8 @@ const moveDown = async (bm: Bookmark) => {
     // Safety: prevent duplicate sort orders after move
     if (newOrder <= oldOrder) newOrder = oldOrder + 1;
     
-    await db.transaction('rw', [db.bookmarks, db.sync_queue], async () => {
-      await syncService.moveBookmark(bm.id, newOrder);
-      await syncService.moveBookmark(next.id, oldOrder);
-    });
+    await syncService.moveBookmark(bm.id, newOrder);
+    await syncService.moveBookmark(next.id, oldOrder);
   }
 };
 

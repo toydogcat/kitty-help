@@ -413,10 +413,8 @@ const moveUp = async (item: any) => {
     // Safety check to ensure distinct values
     if (newOrder >= oldOrder) newOrder = oldOrder - 1;
     
-    await db.transaction('rw', [db.snippets, db.sync_queue], async () => {
-      await syncService.moveSnippet(item.id, newOrder);
-      await syncService.moveSnippet(prev.id, oldOrder);
-    });
+    await syncService.moveSnippet(item.id, newOrder);
+    await syncService.moveSnippet(prev.id, oldOrder);
   }
 };
 
@@ -430,10 +428,8 @@ const moveDown = async (item: any) => {
     // Safety check to ensure distinct values
     if (newOrder <= oldOrder) newOrder = oldOrder + 1;
     
-    await db.transaction('rw', [db.snippets, db.sync_queue], async () => {
-      await syncService.moveSnippet(item.id, newOrder);
-      await syncService.moveSnippet(next.id, oldOrder);
-    });
+    await syncService.moveSnippet(item.id, newOrder);
+    await syncService.moveSnippet(next.id, oldOrder);
   }
 };
 </script>
