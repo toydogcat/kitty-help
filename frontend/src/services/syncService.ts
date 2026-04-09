@@ -180,8 +180,15 @@ export const syncService = reactive({
     },
     async addBookToBookcase(data: any) {
         const id = crypto.randomUUID();
-        await db.bookcase.add({ ...data, id, syncStatus: 'pending', updatedAt: new Date().toISOString() });
-        await db.sync_queue.add({ action: 'CREATE', entityType: 'book', entityId: id, data, timestamp: Date.now() });
+        await db.bookcase.add({ 
+            folder: '', 
+            sortOrder: 0, 
+            ...data, 
+            id, 
+            syncStatus: 'pending', 
+            updatedAt: new Date().toISOString() 
+        });
+        await db.sync_queue.add({ action: 'CREATE', entityType: 'book', entityId: id, data: { folder: '', sortOrder: 0, ...data }, timestamp: Date.now() });
         this.requestSync();
     },
     async updateBookFolder(id: string, folder: string) {
@@ -381,8 +388,19 @@ export const syncService = reactive({
                     } else if (action.entityType === 'book') {
                         if (action.action === 'CREATE') {
                             const res = await apiService.addBookToBookcase(action.data);
-                            await db.bookcase.update(action.entityId, { id: res.id, syncStatus: 'synced' });
-                            console.log('✅ Book added on server');
+                            // ID 轉換：IndexDB Key 是不可變的，必須刪除舊的再新增新的
+                            const oldRecord = await db.bookcase.get(action.entityId);
+                            if (oldRecord) {
+                                await db.bookcase.delete(action.entityId);
+                                await db.bookcase.put({ 
+                                    ...oldRecord, 
+                                    ...res, 
+                                    id: res.id, 
+                                    syncStatus: 'synced',
+                                    updatedAt: new Date().toISOString()
+                                });
+                            }
+                            console.log('✅ Book added on server and ID updated locally');
                         } else if (action.action === 'UPDATE') {
                             if (action.data.folder !== undefined) {
                                 await apiService.updateBookFolder(action.entityId, action.data.folder);

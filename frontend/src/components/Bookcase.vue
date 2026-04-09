@@ -26,11 +26,11 @@ const viewMode = ref<'preview' | 'mixed' | 'notes'>('mixed');
 const searchTerm = ref(''); 
 const newFolderName = ref('');
 const customFolders = ref<string[]>([]);
-const dragOverFolder = ref<string | null>(null);
 const dropTargetId = ref<string | null>(null);
 const dropPosition = ref<'before' | 'after' | 'inside' | null>(null);
 const draggedItem = ref<any>(null);
-const collapsedFolders = ref<Set<string>>(new Set());
+const collapsedFolders = ref<string[]>([]);
+const isSorting = ref(false);
 
 // EPUB Reader State
 const epubRendition = ref<any>(null);
@@ -201,6 +201,30 @@ const initEpubReader = async () => {
   }
 };
 
+// --- Computed Helpers ---
+const activeBookIsEpub = computed(() => isEPUB(activeBook.value));
+const activeBookIsPdf = computed(() => activeBook.value?.title?.toLowerCase().endsWith('.pdf') ?? false);
+const activeBookFileUrl = computed(() => getFileUrl(activeBook.value));
+const renderedMarkdown = computed(() => marked(activeNote.value?.content || ''));
+
+const sortedBooks = computed(() => 
+  [...books.value].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+);
+
+const folders = computed(() => {
+  const groups: Record<string, any[]> = { 'Uncategorized': [] };
+  customFolders.value.forEach(f => { if (!groups[f]) groups[f] = []; });
+  
+  const term = searchTerm.value.toLowerCase();
+  sortedBooks.value.forEach(book => {
+    if (term && !book.title?.toLowerCase().includes(term)) return;
+    const f = book.folder || 'Uncategorized';
+    if (!groups[f]) groups[f] = []; 
+    groups[f].push(book);
+  });
+  return groups;
+});
+
 const createNewNote = () => {
   activeNote.value = { id: 'temp-' + Date.now(), title: 'Volume Abstract', content: '', noteType: 'both' };
 };
@@ -217,15 +241,31 @@ const saveCurrentNote = async () => {
   if (!activeBook.value || !activeNote.value) return;
   isSaving.value = true;
   try {
-    const payload = { title: activeNote.value.title, content: activeNote.value.content, 
-                      noteType: activeNote.value.noteType === 'txt' ? 'txt' : 'markdown' };
+    const payload = { 
+      title: activeNote.value.title, 
+      content: activeNote.value.content, 
+      noteType: activeNote.value.noteType === 'txt' ? 'txt' : 'markdown' 
+    };
     if (activeNote.value.id.startsWith('temp-')) {
       await syncService.addBookNote(activeBook.value.id, payload);
     } else { 
       await syncService.updateBookNote(activeNote.value.id, payload); 
     }
-  } catch (e) { alert('Commit fail'); } finally { isSaving.value = false; }
+  } catch (e) { 
+    console.error('Save failed', e);
+  } finally { 
+    isSaving.value = false; 
+  }
 };
+
+let autoSaveTimer: any = null;
+watch(() => activeNote.value?.content, (newVal) => {
+  if (!activeNote.value || activeNote.value.id.startsWith('temp-')) return;
+  if (autoSaveTimer) clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => {
+    saveCurrentNote();
+  }, 2000);
+});
 
 const deleteNote = async (id: string) => {
   if (id.startsWith('temp-')) { activeNote.value = null; return; }
@@ -239,7 +279,12 @@ const removeBookStatus = async (id: string) => {
   if (!confirm('Detach?')) return;
   try { 
     await syncService.removeBook(id); 
-    activeBook.value = null; 
+    const remaining = books.value.filter(b => b.id !== id);
+    if (remaining.length > 0) {
+      selectBook(remaining[0]);
+    } else {
+      activeBook.value = null; 
+    }
   } catch (e) { alert('Operation fail'); }
 };
 
@@ -256,38 +301,58 @@ const importBook = async (res: any) => {
 
 
 const moveUp = async (book: any, folderBooks: any[]) => {
+  if (isSorting.value) return;
   const index = folderBooks.findIndex(b => b.id === book.id);
   if (index <= 0) return;
   
   const prevBook = folderBooks[index - 1];
-  const newOrder = (prevBook.sortOrder || 0) - 1;
-  await syncService.moveBook(book.id, newOrder);
+  try {
+    isSorting.value = true;
+    const bOrder = book.sortOrder ?? 0;
+    const pOrder = prevBook.sortOrder ?? 0;
+    await Promise.all([
+      syncService.moveBook(book.id, pOrder),
+      syncService.moveBook(prevBook.id, bOrder)
+    ]);
+  } finally {
+    isSorting.value = false;
+  }
 };
 
 const moveDown = async (book: any, folderBooks: any[]) => {
+  if (isSorting.value) return;
   const index = folderBooks.findIndex(b => b.id === book.id);
   if (index < 0 || index >= folderBooks.length - 1) return;
   
   const nextBook = folderBooks[index + 1];
-  const newOrder = (nextBook.sortOrder || 0) + 1;
-  await syncService.moveBook(book.id, newOrder);
+  try {
+    isSorting.value = true;
+    const bOrder = book.sortOrder ?? 0;
+    const nOrder = nextBook.sortOrder ?? 0;
+    await Promise.all([
+      syncService.moveBook(book.id, nOrder),
+      syncService.moveBook(nextBook.id, bOrder)
+    ]);
+  } finally {
+    isSorting.value = false;
+  }
 };
 
-const folders = computed(() => {
-  const groups: Record<string, any[]> = { 'Uncategorized': [] };
-  customFolders.value.forEach(f => { if (!groups[f]) groups[f] = []; });
-  
-  // Sort all books by sortOrder before grouping
-  const sortedBooks = [...books.value].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+const addFolder = () => {
+  const name = newFolderName.value.trim();
+  if (!name || name === 'Uncategorized' || customFolders.value.includes(name)) return;
+  customFolders.value.push(name);
+  newFolderName.value = '';
+};
 
-  sortedBooks.forEach(book => {
-    if (searchTerm.value && !book.title?.toLowerCase().includes(searchTerm.value.toLowerCase())) return;
-    const f = book.folder || 'Uncategorized';
-    if (!groups[f]) groups[f] = []; 
-    groups[f].push(book);
-  });
-  return groups;
-});
+const toggleFolder = (name: string) => {
+  const idx = collapsedFolders.value.indexOf(name);
+  if (idx >= 0) {
+    collapsedFolders.value.splice(idx, 1);
+  } else {
+    collapsedFolders.value.push(name);
+  }
+};
 
 const onDragStart = (item: any) => {
   draggedItem.value = item;
@@ -362,9 +427,18 @@ const handleFolderDrop = async (folderName: string) => {
   } catch (e) { 
     console.error("Folder update failed", e);
   } finally {
-    dragOverFolder.value = null;
+    dropTargetId.value = null;
+    dropPosition.value = null;
     draggedItem.value = null;
   }
+};
+
+let searchTimer: any = null;
+const searchAvailableBooks = () => {
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = setTimeout(async () => {
+    availableResources.value = await apiService.getAvailableBooks(searchQuery.value);
+  }, 400);
 };
 
 const getFileUrl = (book: any) => { if (!book || !book.storeId) return ''; return `${import.meta.env.VITE_API_URL}/api/storehouse/file/${book.storeId}`; };
@@ -383,12 +457,12 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
              @dragover.prevent="handleDragOver($event, String(folderName), 'inside')" 
              @dragleave="handleDragLeave" 
              @drop="handleFolderDrop(String(folderName))">
-          <div class="folder-header" @click="collapsedFolders.has(String(folderName)) ? collapsedFolders.delete(String(folderName)) : collapsedFolders.add(String(folderName))">
-            <span class="fold-arrow">{{ collapsedFolders.has(String(folderName)) ? '▶' : '▼' }}</span>
+          <div class="folder-header" @click="toggleFolder(String(folderName))">
+            <span class="fold-arrow">{{ collapsedFolders.includes(String(folderName)) ? '▶' : '▼' }}</span>
             <span class="folder-name">{{ folderName }}</span>
             <span class="count">{{ folderBooks.length }}</span>
           </div>
-          <div v-show="!collapsedFolders.has(String(folderName))" class="folder-content">
+          <div v-show="!collapsedFolders.includes(String(folderName))" class="folder-content">
             <div 
               v-for="book in folderBooks" 
               :key="book.id" 
@@ -411,14 +485,15 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
                 <div class="item-title">{{ book.title }}</div>
                 <div class="item-meta">{{ book.category }}</div>
               </div>
-              <div class="sort-actions" @click.stop>
+              <div class="sort-actions" @click.stop v-if="!isSorting">
                 <button @click="moveUp(book, folderBooks)">▴</button>
                 <button @click="moveDown(book, folderBooks)">▾</button>
               </div>
+              <div class="sort-actions loading" v-else>...</div>
             </div>
           </div>
         </div>
-        <div class="new-folder-area"><input v-model="newFolderName" placeholder="+ Cluster" @keyup.enter="customFolders.push(newFolderName); newFolderName=''" /></div>
+        <div class="new-folder-area"><input v-model="newFolderName" placeholder="+ Cluster" @keyup.enter="addFolder" /></div>
       </div>
     </aside>
 
@@ -435,8 +510,8 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
 
       <div class="ws-body" :class="'mode-' + viewMode">
         <div v-if="viewMode !== 'notes'" class="preview-pane">
-          <iframe v-if="activeBook.title?.toLowerCase().endsWith('.pdf')" :src="getFileUrl(activeBook)" class="pdf-frame"></iframe>
-          <div v-else-if="isEPUB(activeBook)" class="epub-reader">
+          <iframe v-if="activeBookIsPdf" :src="activeBookFileUrl" class="pdf-frame"></iframe>
+          <div v-else-if="activeBookIsEpub" class="epub-reader">
              <div ref="epubViewerRef" class="epub-canvas"></div>
              <div v-if="isEpubLoading" class="loader"><div class="spin"></div></div>
              <div v-if="epubError" class="overlay error"><span>{{ epubError }}</span><button @click="selectBook(activeBook)">RETRY</button></div>
@@ -464,7 +539,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
             </div>
             <div class="ed-body" :class="'v-' + activeNote.noteType">
               <textarea v-if="activeNote.noteType !== 'md'" v-model="activeNote.content" placeholder="Data entry..." />
-              <div v-if="activeNote.noteType !== 'txt'" class="markdown-body" v-html="marked(activeNote.content || '')" />
+              <div v-if="activeNote.noteType !== 'txt'" class="markdown-body" v-html="renderedMarkdown" />
             </div>
           </div>
         </div>
@@ -476,7 +551,7 @@ watch(customFolders, (newVal) => { localStorage.setItem('kb_custom_folders', JSO
       <div class="modal">
         <header>INTEL REPOSITORY</header>
         <div class="m-content">
-          <input v-model="searchQuery" placeholder="Filter Sources..." @input="apiService.getAvailableBooks(searchQuery).then(r => availableResources = r)" />
+          <input v-model="searchQuery" placeholder="Filter Sources..." @input="searchAvailableBooks" />
           <div class="items">
             <div v-for="res in availableResources" :key="res.id" @click="importBook(res)"><span>[{{ res.mediaType }}]</span>{{ res.title || res.caption }}</div>
           </div>
