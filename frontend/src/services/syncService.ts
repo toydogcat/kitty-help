@@ -3,8 +3,21 @@ import { db, type LocalSnippet } from './localDb';
 import { reactive } from 'vue';
 
 export const syncService = reactive({
+    mode: (localStorage.getItem('sync_mode') as 'local' | 'cloud') || 'local',
+
+    setMode(newMode: 'local' | 'cloud') {
+        this.mode = newMode;
+        localStorage.setItem('sync_mode', newMode);
+        console.log(`🌐 Sync Mode switched to: ${newMode}`);
+        // 可以選擇在這裡觸發全域重新整理
+    },
+
     // Snippets Methods (EverSync Enhanced)
     async getSnippets(parentId: string | null = null) {
+        if (this.mode === 'cloud') {
+            console.log('📡 [Cloud Mode] Fetching snippets directly from API...');
+            return await apiService.getSnippets(parentId);
+        }
         const pid = parentId || 'root';
         return await db.snippets
             .where('parentId')
@@ -64,6 +77,10 @@ export const syncService = reactive({
 
     // --- Bookmarks Methods ---
     async getBookmarks(parentId?: string | 'root') {
+        if (this.mode === 'cloud') {
+            console.log('📡 [Cloud Mode] Fetching bookmarks directly from API...');
+            return await apiService.getBookmarks(parentId);
+        }
         const pid = parentId || 'root';
         return await db.bookmarks.where('parentId').equals(pid).sortBy('sortOrder');
     },
@@ -106,6 +123,10 @@ export const syncService = reactive({
 
     // --- Desk Methods ---
     async getShelves() {
+        if (this.mode === 'cloud') {
+            console.log('📡 [Cloud Mode] Fetching shelves directly from API...');
+            return await apiService.getShelves();
+        }
         return await db.shelves.orderBy('sortOrder').toArray();
     },
     async refreshShelves() {
@@ -135,6 +156,11 @@ export const syncService = reactive({
         this.requestSync();
     },
     async getDeskItems(shelfId?: string) {
+        if (this.mode === 'cloud') {
+            const sid = shelfId || 'null';
+            console.log(`📡 [Cloud Mode] Fetching desk items for shelf: ${sid} from API...`);
+            return await apiService.getDeskItems(sid === 'null' ? undefined : sid);
+        }
         const sid = shelfId || 'null';
         return await db.deskItems.where('shelfId').equals(sid).sortBy('sortOrder');
     },
@@ -167,6 +193,10 @@ export const syncService = reactive({
 
     // --- Bookcase Methods ---
     async getBookcase() {
+        if (this.mode === 'cloud') {
+            console.log('📡 [Cloud Mode] Fetching bookcase directly from API...');
+            return await apiService.getBookcase();
+        }
         return await db.bookcase.toArray();
     },
     async refreshBookcase() {
@@ -207,6 +237,10 @@ export const syncService = reactive({
         this.requestSync();
     },
     async getBookNotes(bookId: string) {
+        if (this.mode === 'cloud') {
+            console.log(`📡 [Cloud Mode] Fetching notes for book: ${bookId} from API...`);
+            return await apiService.getBookNotes(bookId);
+        }
         return await db.bookNotes.where('bookId').equals(bookId).toArray();
     },
     async refreshBookNotes(bookId: string) {
@@ -238,6 +272,12 @@ export const syncService = reactive({
 
     // --- Remarks (Obs) Methods ---
     async getRemarks() {
+        if (this.mode === 'cloud') {
+            console.log('📡 [Cloud Mode] Fetching remarks directly from API...');
+            const remote = await apiService.getRemarks();
+            // 雲端模式下 API 回傳格式可能不同，這裡通常回傳原始資料
+            return remote;
+        }
         return await db.remarks.toArray();
     },
     async refreshRemarks() {
